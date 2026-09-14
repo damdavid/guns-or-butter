@@ -23,3 +23,12 @@ yet built — see §10 of the spec for the intended order.
     npm run fixture   # print the reference state as a Production Summary
 
 Requires Node >= 22.6 (runs TypeScript directly via `--experimental-strip-types`).
+
+## License
+
+[MIT](LICENSE) — covers the simulation code and the reconstructed spec in `docs/`.
+
+It does not and cannot cover the source material the spec is derived from: the 1990
+game, its manual, and *Chris Crawford on Game Design* all remain the property of their
+respective owners. None of them are distributed here; `docs/SOURCES.md` points to them
+instead. Short quotations in the spec are there to show the provenance of a claim.
