@@ -1,0 +1,19 @@
+{
+  "name": "guns-or-butter",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Reimplementation of the 1990 Chris Crawford design. See docs/MECHANICS-SPEC.md",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "fixture": "node --experimental-strip-types test/report-fixture.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "typescript": "^5.7.2"
+  }
+}
