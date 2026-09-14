@@ -172,139 +172,102 @@ Two consequences follow, both load-bearing:
 
 #### Measured: forest → Lumber [C]
 
-Twenty-one readings across all three difficulty levels; forest acreage read off the
-province closeups. Refit any time with `docs/fit-terrain.py`.
+Twenty-seven readings across all three levels, with full land composition and province
+counts. Refit any time with `docs/fit-terrain.py`; the sim asserts against them in
+`test/fixture.test.ts`.
 
-| Level | Continent | Forest acres | L=10 | L=25 |
+| Level | Continent | Prov | Farm | Mtn | Forest | Desert | L=10 | L=25 |
+|---|---|---|---|---|---|---|---|---|
+| Beginner | One | 9 | 372 | 0 | 0 | 34 | 87 | 244 |
+| Beginner | trebolokhan *(1990 manual)* | — | 309 | — | — | — | — | 268 @ L=27 |
+| Intermediate | One | 6 | 208 | 0 | 0 | 19 | 29 | 81 |
+| Intermediate | Six | 9 | 523 | 74 | 0 | 14 | 29 | 81 |
+| Intermediate | Four | 8 | 351 | 0 | 9 | 37 | 39 | 111 |
+| Intermediate | Seven | 5 | 238 | 32 | 17 | 6 | 51 | 144 |
+| Intermediate | Two | 8 | 320 | 0 | 26 | 32 | 65 | 185 |
+| Intermediate | Five | 9 | 433 | 0 | 50 | 3 | 101 | 288 |
+| Expert | Eleven | 6 | 204 | 38 | 0 | 0 | 10 | 29 |
+| Expert | Three | 8 | 363 | 0 | 8 | 42 | 21 | 58 |
+| Expert | Four | 9 | 291 | 22 | 9 | 20 | 21 | 58 |
+| Expert | Two | 10 | 382 | 35 | 20 | 12 | 37 | 103 |
+| Expert | Five | 11 | 422 | 66 | 35 | 3 | 56 | 160 |
+| Expert | One | 10 | 360 | 48 | 44 | 0 | 72 | 201 |
+
+#### The model
+
+    y = C / L^1.1344 = max(floor_level, base_level + m_level * acres)
+
+| Level | Players | `base` | `m` per acre | `floor` |
 |---|---|---|---|---|
-| Beginner | One | 0 | 89 | — |
-| Beginner | trebolokhan *(1990 manual, L=27)* | terrain off | — | 268 |
-| Intermediate | One | 0 | 29 | — |
-| Intermediate | Six | 0 | 29 | — |
-| Intermediate | Four | 9 | 39 | — |
-| Intermediate | Seven | 17 | 51 | 144 |
-| Intermediate | Two | 26 | 65 | — |
-| Intermediate | Five | 50 | 101 | 288 |
-| Expert | Eleven | 0 | 10 | 29 |
-| Expert | Three | 8 | 21 | 58 |
-| Expert | Four | 9 | 21 | 58 |
-| Expert | Two | 20 | 37 | 103 |
-| Expert | Five | 35 | 56 | 160 |
-| Expert | One | 44 | 72 | 201 |
+| Beginner | 2 | 6.3626 | n/a — terrain ignored | 6.3626 |
+| Intermediate | 4 | 1.8607 | 0.1117 | 2.1148 |
+| Expert | 8 | 0.6342 | 0.1030 | 0.7431 |
 
-#### The exponent is measured: `a ≈ 1.13`
+Joint least-squares over all 27 readings: **`a = 1.1344`, rmse 1.18 tons**.
 
-Eight same-continent worker pairs. Minimising within-pair disagreement gives
-**`a = 1.1299`**. Independently, the 1990 manual screenshot (L = 27 → 268) with the
-new Beginner reading (L = 10 → 89) gives **`a = 1.1098`** — two observations 36 years
-apart on different continents, agreeing to 2%. My originally assumed 1.100 predicted
-89.87 against an observed 89.
+#### Nation size does not drive the base [C]
 
-`a` shows **no trend with acreage**, which rules out the "terrain acts as extra
-effective labour" model (`C = k(L + w·acres)^a`): under that, the apparent exponent
-would fall as acreage rises. It does not.
+The decisive comparison, and the reason this question is now closed. Two Intermediate
+nations, both with **zero forest**:
 
-#### `f` is LINEAR in acreage, with a floor
+| Continent | Provinces | Farmland | Mountain | Desert | L=10 | L=25 |
+|---|---|---|---|---|---|---|
+| One | 6 | 208 | 0 | 19 | 29 | 81 |
+| Six | 9 | 523 | 74 | 14 | 29 | 81 |
 
-**This overturns the convexity conclusion I drew from the first three points.** That was
-an artefact of the floor — with only 0, 9 and 26 acres, the 0-acre point sitting *above*
-the trend made the first segment look shallow, which reads as convexity. Eleven
-acreages across two levels show the real shape.
+**Identical output** across 1.5× the provinces and 2.5× the farmland. So `base` and
+`floor` are set by difficulty level, not by how big the nation is. The same pair also
+shows **mountain and desert acreage do not leak into Lumber** — 74 mountain acres buy
+nothing. Each raw responds only to its own terrain.
 
-    y = C / L^1.1299 = max(floor_level, base_level + m * acres)
+#### Floor scales with player count [C]
 
-| Level | `base` | `m` per acre | `floor` | fit rmse | dof |
-|---|---|---|---|---|---|
-| Intermediate | 1.8673 | 0.1134 | 2.150 | 0.005 | 2 |
-| Expert | 0.6421 | 0.1043 | 0.752 | 0.071 | 3 |
-| Beginner | terrain disabled — flat `y = 6.599` | — | — | — | — |
+With three levels measured, the scaling is a result rather than the one-parameter guess
+it started as:
 
-Intermediate is near-exact: residuals **+0.004, −0.008, +0.004, −0.000** across 9–50
-acres. Expert is 14× looser, which is discussed below.
+    floor(N) = 18.4461 * N^-1.549          fits all three levels to within 2%
 
-**The floor is confirmed at both levels, and replicated.** Continents One and Six both
-return exactly 29 at 0 acres Intermediate (0.00% spread), and Expert Eleven supplies the
-0-acre Expert point. In both cases the 0-acre value sits *above* the extrapolated line:
-
-    floor / base  =  1.151 (Intermediate)   1.171 (Expert)
-
-So the floor is a **~16% markup over the zero-acre extrapolation at both levels** — the
-design dialogue's *"modicum of natural resources to each mortal"* implemented as a
-`max()`. It binds only in the first acre or two.
-
-#### The level scaling
-
-**The slope is level-independent; the base and floor are not.**
-
-    slope  Int/Exp = 1.087   (~1, i.e. an acre is worth the same everywhere)
-    base   Int/Exp = 2.908
-    floor  Int/Exp = 2.859
-
-Base and floor scale together by the same ~2.9. Against player count (Intermediate 4,
-Expert 8) the candidates land as:
-
-| Hypothesis | Predicted ratio | Predicted `base_Exp` | Error |
+| Players | Observed floor | Predicted | Error |
 |---|---|---|---|
-| `1/players` | 2.00 | 0.934 | 45% |
-| **`1/players^1.5`** | **2.83** | **0.660** | **3%** |
-| `1/players^2` | 4.00 | 0.467 | 27% |
-| `1/(players−1)` | 2.33 | 0.800 | 25% |
+| 2 | 6.3626 | 6.3039 | −0.9% |
+| 4 | 2.1148 | 2.1544 | +1.9% |
+| 8 | 0.7431 | 0.7362 | −0.9% |
 
-`players^-1.5` fits to 3%, and 1.5 is a suspiciously clean exponent. **But this is two
-data points against a one-parameter family — it is a hypothesis, not a result.** Player
-count, map size, total province count and per-nation acreage all co-vary with difficulty
-level, and nothing measured so far separates them.
+Two independent doublings give ratios of **3.009** and **2.846**, against `2^1.549 =
+2.93`. `floor / base` is ~1.15 at both measured levels, and the marginal acre is nearly
+level-independent (0.1117 vs 0.1030, a 8% spread).
 
-Working values for implementation:
+Beginner is not a separate regime: its flat value sits exactly where the same scaling
+predicts a floor. The manual's *"terrain didn't mean anything"* then reads as Beginner
+evaluating the response at zero acres, which lands on a generous floor rather than a
+special case. Note every Beginner reading happens to be zero-forest, so Beginner's
+slope is asserted from the manual, never measured.
 
-    m     = 0.11 per acre                      (level-independent)
-    base  = 1.867 * (4 / players)^1.5          (calibrated at Intermediate)
-    floor = 1.16 * base
-    a     = 1.13
+#### The exponent conflict is resolved [C]
 
-Beginner's terrain-off `y = 6.599` corresponds to ~42 Intermediate or ~57 Expert forest
-acres, so **"terrain off" behaves like a well-endowed nation** — confirming the §3.4
-fitted `k` values are optimistic baselines, not neutral ones.
+An earlier draft recorded a genuine conflict: Beginner readings appeared to want
+`a = 1.1098` while Intermediate/Expert wanted ~1.128. **It was a misread.** Beginner
+continent One at L=10 was first reported as 89 and re-read as **87**:
 
-#### The Expert scatter is consistent with ±1 acre of reading error
+    a from (89 @ 10, 268 @ 27) = 1.1098    <- the outlier
+    a from (87 @ 10, 268 @ 27) = 1.1327    <- agrees with everything else
 
-Expert's rmse is 0.071 against Intermediate's 0.005. Inverting the fitted line to ask
-what acreage each reading *implies*:
-
-| Read | Line implies | Δ |
-|---|---|---|
-| 8 | 8.63 | +0.63 |
-| 9 | 8.63 | −0.37 |
-| 20 | 20.00 | −0.00 |
-| 35 | 33.94 | −1.06 |
-| 44 | 44.80 | +0.80 |
-
-Every discrepancy is under ±1.1 acres. The tell is continents **Three (8 acres) and Four
-(9 acres) returning byte-identical output** — 21 at L=10 and 58 at L=25. At 0.104 per
-acre, one acre should move L=10 output by ~1.4, which is more than integer rounding can
-hide. Both readings are consistent with a true value near 8.6.
-
-So the Expert looseness is most likely **measurement error in the acreage, not model
-error** — and it would also explain why Intermediate, with larger outputs and fewer
-readings, looks tighter. This matters for the next round: how acreage is obtained is now
-the limiting factor on precision, not how many readings there are.
+All 13 same-continent worker pairs now agree, inverse-variance weighted mean
+**1.1334**, joint fit **1.1344**. One exponent fits every level. The calibration
+override seam added to work around the conflict remains in `Economy` — it is still
+useful for the 25 placeholder industries — but nothing depends on it now.
 
 #### Still open
 
-1. **What actually drives `base`?** Record **total acreage and province count** per
-   nation alongside the forest acres. If `base` tracks nation size rather than player
-   count, it is not a difficulty multiplier at all and the formula above is
-   mis-specified. This is the highest-value remaining measurement.
-2. **Is the acreage figure exact or counted?** If the province closeup prints a number,
-   the Three/Four collision needs another explanation — possibly the endowment is
-   quantised. If it is counted off map icons, ±1 is expected and the model is fine.
-3. **A Beginner series is impossible** (terrain disabled), so the level scaling rests on
-   two points. An Intermediate-vs-Expert comparison cannot be done on a shared map
-   either: the same continent name yields different terrain at different levels, as
-   continent One's 0 / 0 / 44 acres across the three levels shows.
-4. **Do mountains and deserts behave the same?** Repeat against Iron Ore or Coal, and
-   against Sulfur.
-5. **Is `a ≈ 1.13` specific to Lumber?** Only Lumber is measured. See §3.4.
+1. **Do mountains and deserts share forest's response?** Untested. Repeat against Iron
+   Ore or Coal, and against Sulfur. The land composition is now recorded for every
+   reading, so this needs only the output figures.
+2. **Is `a ≈ 1.1344` specific to Lumber?** Only Lumber is measured. A two-worker-count
+   reading on one intermediate and one tool tier would test whether the per-class rules
+   in §3.4 hold, and is the highest-value measurement left.
+3. **Residual Expert scatter** of up to ~3.4 tons remains, consistent with ±1 acre of
+   acreage-reading error — continents Three (8 acres) and Four (9 acres) still return
+   byte-identical output, which one acre should not permit.
 
 ---
 
@@ -446,7 +409,7 @@ the main dial controlling how hard the leader compounds. Widen it only with play
 
 | Industry | Class | `a` | `k` | 2× labor → | Source |
 |---|---|---|---|---|---|
-| Lumber | raw | **1.1285** | **6.5599** | 2.19× | **measured** (§2.2) |
+| Lumber | raw | **1.1344** | **6.3626** | 2.20× | **measured** (§2.2) |
 | Sulfur | raw | 1.100 | 4.5000 | 2.14× | placeholder |
 | Iron Ore | raw | 1.100 | 5.1716 | 2.14× | fitted (see caveat) |
 | Coal | raw | 1.100 | 6.0000 | 2.14× | placeholder |
@@ -484,17 +447,16 @@ Ordering matches §3.2 (raws) then §3.3 (recipes). `Food` has no `k`/`a` — ag
 labour is fixed at 1 worker/acre (§4.1) and yield comes from §4.2.
 
 **The one measured exponent came in above its assumed class value.** Lumber is now
-measured at `a = 1.1285` (§2.2), against the 1.100 this table assigned to every raw.
-Its `k = 6.5599` is the mean of the two Beginner terrain-off estimates (6.6205 from
-the new L=10 reading, 6.4989 from the manual's L=27 point), which is what `f = 1`
-means here. Two
+measured at `a = 1.1344` (§2.2), against the 1.100 this table assigned to every raw.
+Its `k = 6.3626` is the Beginner terrain-off value from the joint fit, which is what
+`f = 1` means here. Two
 consequences:
 
 - The raw baseline should probably be **1.13, not 1.10**, which shifts the whole
   depth rule up by ~0.03. I have not applied that to the other rows, because one
   measurement across eight raws does not justify moving seven untested numbers.
 - Iron Ore's `k = 5.1716` is still fitted at the *assumed* `a = 1.100`. At
-  `a = 1.1285` it refits to **4.6938**. Whichever exponent you adopt, refit `k`
+  `a = 1.1344` it refits to **4.6006**. Whichever exponent you adopt, refit `k`
   alongside it — they are not independent.
 
 The cheap test is the §8.3 two-worker-count measurement repeated on one more raw, one

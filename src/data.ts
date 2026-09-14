@@ -32,7 +32,7 @@ export function commodityTable(
 ): Map<CommodityId, Commodity> {
   const list: Commodity[] = [
     // --- raws (§3.2). Lumber's a/k are measured; the other seven are placeholders.
-    { id: "lumber", kind: "raw", inputs: {}, k: 6.5827, a: 1.1273, terrain: "forest" },
+    { id: "lumber", kind: "raw", inputs: {}, k: 6.3626, a: 1.1344, terrain: "forest" },
     { id: "sulfur", kind: "raw", inputs: {}, k: 4.5, a: 1.1, terrain: "desert" },
     { id: "iron-ore", kind: "raw", inputs: {}, k: 5.1716, a: 1.1, terrain: "mountains" },
     { id: "coal", kind: "raw", inputs: {}, k: 6.0, a: 1.1, terrain: "mountains" },
@@ -92,15 +92,20 @@ export const PLAYERS: Record<Level, number> = {
  * and deserts is an untested assumption.
  */
 export const TERRAIN = {
-  /** Marginal return per acre, roughly level-independent. */
-  m: 0.1143,
-  /** Base at Intermediate (4 players); scales as (4/N)^1.5 — a hypothesis, not a result. */
-  baseIntermediate: 1.875,
-  playerExponent: 1.5,
-  /** The floor sits ~15-17% above the zero-acre extrapolation at both measured levels. */
-  floorMultiple: 1.16,
-  /** Beginner, terrain disabled. Defines f = 1. */
-  beginnerY: 6.5827,
+  /** Marginal return per acre. Slightly shallower at Expert; measured per level. */
+  m: 0.111,
+  /**
+   * The zero-acre floor scales with player count as `18.4461 * N^-1.5490`, fitted
+   * across all three levels (2/4/8 players) to within 2%. Two independent doublings
+   * both land near a ratio of 2.9, so this is a measured relationship rather than the
+   * one-parameter guess it started as.
+   */
+  floorCoefficient: 18.4461,
+  playerExponent: -1.549,
+  /** The floor sits ~15% above the zero-acre extrapolation of the linear part. */
+  floorOverBase: 1.1541,
+  /** Beginner, terrain ignored. Defines f = 1. */
+  beginnerY: 6.3626,
 } as const;
 
 export const AGRICULTURE = {

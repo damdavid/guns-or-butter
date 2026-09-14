@@ -25,7 +25,8 @@ describe("productivity function (§3.4)", () => {
     const one = economy.capacity(state({ workers: { lumber: 50 } }), "lumber");
     const two = economy.capacity(state({ workers: { lumber: 100 } }), "lumber");
     assert.ok(two / one > 2, `ratio ${(two / one).toFixed(3)} should exceed 2`);
-    assert.ok(Math.abs(two / one - 2 ** 1.1273) < 1e-6);
+    const a = economy.graph.table.get("lumber")!.a;
+    assert.ok(Math.abs(two / one - 2 ** a) < 1e-6);
   });
 
   it("returns zero for an unstaffed factory", () => {

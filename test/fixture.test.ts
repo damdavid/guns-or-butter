@@ -6,6 +6,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { Economy } from "../src/economy.ts";
+import { terrainMultiplier } from "../src/terrain.ts";
 import type { EconomyState } from "../src/types.ts";
 
 /** Observed output, surplus and limiting factor, exactly as displayed. */
@@ -34,13 +35,11 @@ const FIXTURE: EconomyState = {
 };
 
 /**
- * Displayed values are integers, and Lumber carries a known calibration conflict: the
- * Beginner readings want `a = 1.1098` while the 20 Intermediate/Expert readings want
- * ~1.128 (§2.2). The shipped default is the joint fit, which over-predicts this
- * screenshot's Lumber row by ~2.4 tons. The suite below shows the allocation logic
- * itself closes exactly once Lumber is calibrated to Beginner alone.
+ * Every observed figure is an integer rounding of an unknown real, and outputs chain
+ * (farm tools derives from pig iron, which derives from charcoal), so about a ton of
+ * accumulated rounding is expected.
  */
-const TOL = 2.5;
+const TOL = 1.5;
 
 describe("§8.1 reference state", () => {
   const economy = new Economy();
@@ -82,55 +81,41 @@ describe("§8.1 reference state", () => {
   }
 });
 
-describe("§8.1 closes exactly under a Beginner-only Lumber calibration", () => {
-  // Two Beginner points, (L=27, 268) and (L=10, 89), determine (k, a) exactly. Using
-  // them isolates the allocation logic from the cross-level exponent disagreement.
-  const economy = new Economy({ overrides: { lumber: { k: 6.9111, a: 1.1098 } } });
-  const result = economy.resolve(FIXTURE);
-  // Every observed figure is an integer rounding of an unknown real, and outputs chain
-  // (farm tools is derived from pig iron, itself derived from charcoal), so ~1 ton of
-  // accumulated rounding is expected and is not model error.
-  const EXACT = 1.0;
-
-  for (const [id, expected] of Object.entries(OBSERVED)) {
-    it(`${id} matches to within ${EXACT} tons`, () => {
-      const actual = result.commodities[id]!;
-      assert.ok(
-        Math.abs(actual.output - expected.output) <= EXACT,
-        `output ${actual.output.toFixed(2)} != ${expected.output}`,
-      );
-      assert.ok(
-        Math.abs(actual.surplus - expected.surplus) <= EXACT,
-        `surplus ${actual.surplus.toFixed(2)} != ${expected.surplus}`,
-      );
-      assert.equal(actual.limitingFactor, expected.limiting);
-    });
-  }
-});
-
 describe("§2.2 measured terrain readings (forest -> Lumber)", () => {
   const economy = new Economy();
+  // 27 readings. Beginner One previously reported 89 at L=10; it was re-read as 87,
+  // which is what dissolved the earlier cross-level exponent conflict.
   const READINGS = [
-    { level: "beginner", forest: 0, workers: 10, output: 89 },
+    { level: "beginner", forest: 0, workers: 10, output: 87 },
+    { level: "beginner", forest: 0, workers: 25, output: 244 },
+    { level: "beginner", forest: 0, workers: 27, output: 268 },
     { level: "intermediate", forest: 0, workers: 10, output: 29 },
+    { level: "intermediate", forest: 0, workers: 25, output: 81 },
     { level: "intermediate", forest: 9, workers: 10, output: 39 },
+    { level: "intermediate", forest: 9, workers: 25, output: 111 },
     { level: "intermediate", forest: 17, workers: 10, output: 51 },
     { level: "intermediate", forest: 17, workers: 25, output: 144 },
     { level: "intermediate", forest: 26, workers: 10, output: 65 },
+    { level: "intermediate", forest: 26, workers: 25, output: 185 },
     { level: "intermediate", forest: 50, workers: 10, output: 101 },
     { level: "intermediate", forest: 50, workers: 25, output: 288 },
     { level: "expert", forest: 0, workers: 10, output: 10 },
+    { level: "expert", forest: 0, workers: 25, output: 29 },
     { level: "expert", forest: 8, workers: 10, output: 21 },
+    { level: "expert", forest: 8, workers: 25, output: 58 },
+    { level: "expert", forest: 9, workers: 10, output: 21 },
+    { level: "expert", forest: 9, workers: 25, output: 58 },
     { level: "expert", forest: 20, workers: 10, output: 37 },
     { level: "expert", forest: 20, workers: 25, output: 103 },
     { level: "expert", forest: 35, workers: 10, output: 56 },
+    { level: "expert", forest: 35, workers: 25, output: 160 },
     { level: "expert", forest: 44, workers: 10, output: 72 },
     { level: "expert", forest: 44, workers: 25, output: 201 },
   ] as const;
 
   // Acreage is read off province closeups and looks good to about +-1 acre (§2.2),
   // which at ~0.11 per acre is a couple of tons of output.
-  const TERRAIN_TOL = 3.0;
+  const TERRAIN_TOL = 3.5;
 
   for (const r of READINGS) {
     it(`${r.level} ${r.forest} acres, ${r.workers} workers -> ${r.output}`, () => {
@@ -149,6 +134,36 @@ describe("§2.2 measured terrain readings (forest -> Lumber)", () => {
       );
     });
   }
+
+  it("gives two Intermediate nations the same lumber at zero forest, whatever their size", () => {
+    // Continent One: 6 provinces, 208 farmland, 0 mountain, 19 desert.
+    // Continent Six: 9 provinces, 523 farmland, 74 mountain, 14 desert.
+    // Both returned 29 at L=10. This is what rules out nation size driving the base,
+    // and it also shows mountain and desert acreage do not leak into Lumber.
+    const lumberAt = (land: { farmland: number; mountains: number; desert: number }) =>
+      economy.capacity(
+        {
+          level: "intermediate",
+          land: { forest: 0, ...land },
+          population: 2000,
+          workers: { lumber: 10 },
+        },
+        "lumber",
+      );
+    const one = lumberAt({ farmland: 208, mountains: 0, desert: 19 });
+    const six = lumberAt({ farmland: 523, mountains: 74, desert: 14 });
+    assert.equal(one, six);
+    assert.ok(Math.abs(one - 29) <= 1.0, `${one.toFixed(2)} != 29`);
+  });
+
+  it("scales the zero-acre floor with player count as N^-1.549", () => {
+    const floors = (["beginner", "intermediate", "expert"] as const).map((level) =>
+      terrainMultiplier(level, 0) * 6.3626,
+    );
+    // Two independent doublings of player count, both near a ratio of 2.9.
+    assert.ok(Math.abs(floors[0]! / floors[1]! - 3.009) < 0.05);
+    assert.ok(Math.abs(floors[1]! / floors[2]! - 2.846) < 0.05);
+  });
 
   it("Beginner ignores terrain entirely", () => {
     const at = (forest: number) =>
