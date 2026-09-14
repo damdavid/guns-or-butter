@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Reimplementation of the 1990 Chris Crawford design. See docs/MECHANICS-SPEC.md",
+  "license": "MIT",
   "engines": {
     "node": ">=22.6"
   },
