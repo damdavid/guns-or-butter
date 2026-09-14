@@ -19,21 +19,24 @@ interface Response {
 }
 
 /**
- * Per-level fits from the joint least-squares solve over all 22 Lumber readings
- * (a = 1.1273, rmse 1.37 tons). Expert's slope is measurably shallower than
+ * Per-level fits from the joint least-squares solve over all 27 Lumber readings
+ * (a = 1.1344, rmse 1.18 tons). Expert's slope is measurably shallower than
  * Intermediate's, so a single level-independent `m` is not used where a fit exists.
+ *
+ * Beginner's slope is 0 because the manual states terrain is ignored at that level;
+ * every Beginner reading happens to be zero-forest, so the slope is not testable there.
  */
 const MEASURED: Partial<Record<Level, Response>> = {
-  intermediate: { base: 1.875, m: 0.1143, floor: 2.1635 },
-  expert: { base: 0.6468, m: 0.1051, floor: 0.7581 },
+  beginner: { base: 6.3626, m: 0, floor: 6.3626 },
+  intermediate: { base: 1.8607, m: 0.1117, floor: 2.1148 },
+  expert: { base: 0.6342, m: 0.103, floor: 0.7431 },
 };
 
 export function response(level: Level): Response {
   const measured = MEASURED[level];
   if (measured) return measured;
-  const scale = (4 / PLAYERS[level]) ** TERRAIN.playerExponent;
-  const base = TERRAIN.baseIntermediate * scale;
-  return { base, m: TERRAIN.m, floor: TERRAIN.floorMultiple * base };
+  const floor = TERRAIN.floorCoefficient * PLAYERS[level] ** TERRAIN.playerExponent;
+  return { base: floor / TERRAIN.floorOverBase, m: TERRAIN.m, floor };
 }
 
 /**

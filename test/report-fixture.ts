@@ -22,10 +22,7 @@ const state: EconomyState = {
   workers: WORKERS,
 };
 
-for (const [label, economy] of [
-  ["default calibration (joint fit)", new Economy()],
-  ["Beginner-only Lumber calibration", new Economy({ overrides: { lumber: { k: 6.9111, a: 1.1098 } } })],
-] as const) {
+for (const [label, economy] of [["default calibration", new Economy()]] as const) {
   const r = economy.resolve(state);
   console.log(`\n=== PRODUCTION SUMMARY FOR GANTHOR — ${label} ===`);
   console.log(
