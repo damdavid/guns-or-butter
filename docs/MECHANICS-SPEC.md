@@ -737,6 +737,26 @@ force after victory, and Appendix B specifies the difference for that.
 - **Civilian cost**: the defending province's population is reduced by the military
   power brought against it. Scorched earth — a big conquest guts the prize.
 
+### 5.5.1 Implementation notes [F]
+
+`src/military.ts`. Both of Appendix B's quoted minimums fall out of the formula
+unchanged: an undefended province needs more than 20 firepower by road, more than 50
+across anything else.
+
+**The `+10` is a modifier, not firepower.** A defender who holds is left with its own
+strength less what actually reached it — not less the bonus as well. Otherwise a
+fortification bonus would be consumed as if it were troops, and a defender could be
+ground down by attacks too weak to have any effect.
+
+**A marching force keeps the allegiance it set out with.** Resolving it from the home
+province at battle time instead lets an army change sides mid-turn when its home falls
+to an earlier assault: province A attacks B while B attacks A, B's assault lands first,
+and A's army — already in the field — finds itself fighting for the enemy. Each force
+carries its owning nation from the moment orders are given.
+
+**A later wave whose nation already took the province reinforces it** rather than
+assaulting it, which matters when several provinces converge on one target.
+
 ### 5.6 Execution order [C]
 
 1. All friendly transfers resolve **first** — so defensive reshuffling beats incoming
@@ -1217,11 +1237,14 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    §2.0. Produces contiguous nations on a tiled continent with adjacency, roads,
    terrain, farmland and starting population, and feeds straight into the economy via
    `nationState()`. `npm run map` renders one to SVG.
-3. **Military** — next. Continuous firepower, two orders per province, the §5.5
-   formula, transfers-before-battles. The map already carries the per-edge road flag
-   that the terrain penalty keys on.
-4. **AI opponents.** [F] — nothing is recoverable about Crawford's AI beyond the
-   union-declaration rule in §6.1.
+3. **Military** — **done.** `src/military.ts`: continuous firepower, weapon
+   distribution by prior concentration, two orders per province, the §5.5 formula,
+   transfers-before-battles, sequential waves, scorched earth and the victory check.
+   See §5.5.1.
+4. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
+   union-declaration rule in §6.1. Note the turn loop is not yet assembled either: the
+   economy, map and military each resolve correctly but nothing yet drives them through
+   the phase sequence in §1.2.
 5. **Diplomacy**, with §6.4 in from the start rather than §6.2.
 6. **UI.** This is where the original lost, so budget accordingly.
 

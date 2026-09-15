@@ -12,6 +12,20 @@ export {
   tierYield,
   type PigIronVariant,
 } from "./data.ts";
+export {
+  COMBAT,
+  conqueror,
+  distributeWeapons,
+  firepowerOf,
+  nationFirepower,
+  resolveAssault,
+  resolveMilitary,
+  type Battle,
+  type MilitaryOrder,
+  type MilitaryResult,
+  type Orders,
+  type Transfer,
+} from "./military.ts";
 export { generateWorld, nationState, borderSegments, polygonContains, vertexPairKey, WORLDGEN, type BorderSegment, type WorldgenOptions } from "./worldgen.ts";
 export { makeRng, hashName, type Rng } from "./rng.ts";
 export { triangulate, dualPolygons, edges as spokeEdges, edgeKey } from "./delaunay.ts";
