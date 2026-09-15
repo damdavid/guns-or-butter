@@ -51,7 +51,9 @@ directory contains `KITTYCAT.B/.I` and `OLMI.B/.I`.
 
 ### 1.2.1 Implementation notes [F]
 
-`src/game.ts`. `npm run play -- <continent> <level> <turns>` drives it.
+`src/game.ts`. `npm run play -- <continent> <level> <turns>` watches it run;
+`npm run game -- <continent> <level> <nation>` plays it in the terminal, with a
+production screen laid out after the original's Production Summary on manual p.12.
 
 Phases advance one way only, and input is refused if it belongs to another phase —
 the original warned players in the same terms: *"don't ever select Next Phase until

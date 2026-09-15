@@ -152,9 +152,13 @@ export function workersFor(
   const spare = Math.max(0, population - farmland * AGRICULTURE.workersPerAcre);
   const total = Object.values(allocation).reduce((s, v) => s + Math.max(0, v), 0);
   if (total <= 0 || spare <= 0) return {};
+  // Fractions summing to 1 or less are taken literally, leaving the remainder idle;
+  // anything above 1 is normalised. Without that a player who deliberately holds
+  // labour back would find it silently spent anyway.
+  const scale = total > 1 ? 1 / total : 1;
   const workers: Record<CommodityId, number> = {};
   for (const [id, fraction] of Object.entries(allocation)) {
-    if (fraction > 0) workers[id] = Math.floor((fraction / total) * spare);
+    if (fraction > 0) workers[id] = Math.floor(fraction * scale * spare);
   }
   return workers;
 }

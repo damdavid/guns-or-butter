@@ -44,7 +44,8 @@ AI and diplomacy are specified but not yet built. See §10 of the spec.
     npm run validate  # score the sim against all 644 measurements
     npm run fixture   # print the reference state as a Production Summary
     npm run map -- Kittycat expert out.svg   # render a generated continent
-    npm run play -- Kublai intermediate 20   # drive the turn loop
+    npm run play -- Kublai intermediate 20   # watch the turn loop run
+    npm run game -- Kittycat intermediate    # play it yourself in the terminal
 
 Requires Node >= 22.6, which runs the TypeScript directly via
 `--experimental-strip-types`. The only dev dependencies are `typescript` and
