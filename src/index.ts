@@ -13,6 +13,18 @@ export {
   type PigIronVariant,
 } from "./data.ts";
 export {
+  Game,
+  PHASE_ORDER,
+  balanceAllocation,
+  subsistenceAllocation,
+  workersFor,
+  type Allocation,
+  type GameSnapshot,
+  type Phase,
+  type Ranking,
+  type TurnReport,
+} from "./game.ts";
+export {
   COMBAT,
   conqueror,
   distributeWeapons,

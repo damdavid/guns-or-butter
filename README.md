@@ -31,7 +31,11 @@ population. All 33 commodities have measured parameters; exponents span 1.13 to 
 Capitals, a Delaunay spoke graph, provinces as its centroid dual, roads on half the
 spokes, terrain on the rest, and contiguous nations — feeding straight into the economy.
 
-Military, AI and diplomacy are specified but not yet built. See §10 of the spec.
+**Military and the turn loop complete.** Continuous firepower, the combat formula,
+transfers-before-battles, and a phase loop that ties the three subsystems together —
+production, orders, execution, rankings, undo.
+
+AI and diplomacy are specified but not yet built. See §10 of the spec.
 
 ## Commands
 
@@ -40,6 +44,7 @@ Military, AI and diplomacy are specified but not yet built. See §10 of the spec
     npm run validate  # score the sim against all 644 measurements
     npm run fixture   # print the reference state as a Production Summary
     npm run map -- Kittycat expert out.svg   # render a generated continent
+    npm run play -- Kublai intermediate 20   # drive the turn loop
 
 Requires Node >= 22.6, which runs the TypeScript directly via
 `--experimental-strip-types`. The only dev dependencies are `typescript` and
