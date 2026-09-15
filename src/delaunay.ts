@@ -177,15 +177,20 @@ export function dualPolygons(points: Point[], triangles: Triangle[]): Point[][] 
  * special-casing the coast, and the clip to the map rectangle then gives the continent
  * the "boxy and simple" outline Crawford says his own generator produced.
  */
-export function ringOfGhosts(width: number, height: number, count = 20): Point[] {
-  const cx = width / 2, cy = height / 2;
-  // Just outside the corners. Pushing them further makes the edge provinces balloon
-  // before the clip; closer and the ring starts distorting the interior.
-  const radius = Math.hypot(width, height) * 0.62;
-  return Array.from({ length: count }, (_, i) => {
-    const angle = (i / count) * Math.PI * 2;
-    return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
-  });
+export function ringOfGhosts(width: number, height: number, margin = 140): Point[] {
+  // A rectangle standing off the map, not a circle: the map is a rectangle, and a
+  // circle leaves the corners least protected, which is exactly where the gap showed.
+  //
+  // The offset has to exceed how far inside the edge a capital can sit. The centroid
+  // dual only reaches halfway to a neighbour, so a capital `d` inside the edge with a
+  // ghost `g` outside covers out to `(d + g) / 2` — which clears the edge only when
+  // `g >= d`. Too small an offset and the discarded ghost cells eat into the map.
+  const step = 120;
+  const x0 = -margin, y0 = -margin, x1 = width + margin, y1 = height + margin;
+  const out: Point[] = [];
+  for (let x = x0; x <= x1; x += step) out.push({ x, y: y0 }, { x, y: y1 });
+  for (let y = y0 + step; y < y1; y += step) out.push({ x: x0, y }, { x: x1, y });
+  return out;
 }
 
 function dedupe(poly: Point[]): Point[] {
@@ -194,17 +199,15 @@ function dedupe(poly: Point[]): Point[] {
     const last = out[out.length - 1];
     if (!last || Math.hypot(last.x - q.x, last.y - q.y) > 1e-6) out.push(q);
   }
-  while (out.length > 1 && Math.hypot(out[0]!.x - out[out.length - 1]!.x, out[0]!.y - out[out.length - 1]!.y) < 1e-6) {
+  while (
+    out.length > 1 &&
+    Math.hypot(out[0]!.x - out[out.length - 1]!.x, out[0]!.y - out[out.length - 1]!.y) < 1e-6
+  ) {
     out.pop();
   }
   return out;
 }
 
-/**
- * Sutherland-Hodgman against the map rectangle. Coastal cells are unbounded in the
- * dual, and clipping is also what gives the continent the "boxy and simple" outline
- * Crawford describes his own generator producing.
- */
 /** Shoelace area, used to size a province's acreage from its drawn extent. */
 export function polygonArea(poly: Point[]): number {
   let sum = 0;

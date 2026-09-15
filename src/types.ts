@@ -101,6 +101,24 @@ export interface Province {
   population: number;
   /** Continuous, not unit counts (§5.1). */
   firepower: number;
+  /** True where some stretch of the province's border is coastline rather than a
+   *  neighbour. Naval play was cut from the original, so this is presentational. */
+  coastal: boolean;
+}
+
+/**
+ * One drawn terrain mark. Crawford scattered these inside a polygon straddling each
+ * road-less border, specifically so "the random positioning of these mini-icons masked
+ * the purely geometric shape of the algorithm" (§2).
+ */
+export interface TerrainFeature {
+  type: Exclude<Terrain, "farmland">;
+  x: number;
+  y: number;
+  /** Radians. Only the mountains and trees use it; deserts are dots. */
+  rotation: number;
+  /** Relative, around 1. */
+  scale: number;
 }
 
 export interface Nation {
@@ -114,6 +132,10 @@ export interface World {
   level: Level;
   width: number;
   height: number;
+  /** The coastline the provinces were cut from; everything outside it is ocean. */
+  outline: Point[];
+  /** Scattered terrain marks, straddling the road-less borders they came from. */
+  terrain: TerrainFeature[];
   provinces: Province[];
   nations: Nation[];
 }

@@ -9,7 +9,7 @@ import { polygonArea } from "../src/delaunay.ts";
 import { Economy } from "../src/economy.ts";
 import { hashName, makeRng } from "../src/rng.ts";
 import { uniqueNames } from "../src/names.ts";
-import { WORLDGEN, generateWorld, nationState } from "../src/worldgen.ts";
+import { WORLDGEN, borderSegments, generateWorld, nationState, polygonContains } from "../src/worldgen.ts";
 import type { Level, World } from "../src/types.ts";
 
 const LEVELS: Level[] = ["beginner", "intermediate", "expert"];
@@ -42,10 +42,12 @@ describe("seeding (§2)", () => {
     assert.equal(hashName("Kittycat"), hashName("  kittycat "));
   });
 
-  it("gives different continents different worlds", () => {
+  it("gives different continents different worlds, and different shapes", () => {
     const a = generateWorld("Kittycat", "intermediate");
     const b = generateWorld("Olmi", "intermediate");
     assert.notDeepEqual(a.provinces[0]!.capital, b.provinces[0]!.capital);
+    const area = (w: typeof a) => polygonArea(w.outline);
+    assert.ok(Math.abs(area(a) - area(b)) / area(a) > 0.02, "coastlines are too alike");
   });
 
   it("produces distinct province names", () => {
@@ -119,16 +121,83 @@ describe("geometry", () => {
       }
     });
 
-    it(`${level}: provinces tile the map without large gaps or overlap`, () => {
-      const total = world.provinces.reduce((s, p) => s + polygonArea(p.border), 0);
-      const map = world.width * world.height;
-      assert.ok(Math.abs(total / map - 1) < 0.02, `covered ${(total / map).toFixed(3)} of the map`);
+    it(`${level}: is one landmass — every province reachable overland`, () => {
+      // Naval movement was cut from the original, so an island is unplayable. The
+      // landmass is built from overlapping lobes, and a peninsula can still be severed
+      // if an offshore capital lands in its neck, so this is a real risk not a formality.
+      const seen = new Set([0]);
+      const queue = [0];
+      while (queue.length > 0) {
+        const id = queue.pop()!;
+        for (const n of world.provinces[id]!.neighbours) {
+          if (seen.has(n.province)) continue;
+          seen.add(n.province);
+          queue.push(n.province);
+        }
+      }
+      assert.equal(seen.size, world.provinces.length, "some provinces are cut off");
     });
 
-    it(`${level}: every capital sits inside the map margins`, () => {
+    it(`${level}: the coast is ragged, not an oval`, () => {
+      // Perimeter^2 / 4*pi*area: 1.0 for a circle, and the earlier single-radius
+      // coastline sat near 1.3. Lobes put it above 1.6 with bays and peninsulas.
+      let perimeter = 0;
+      for (let i = 0; i < world.outline.length; i++) {
+        const a = world.outline[i]!;
+        const b = world.outline[(i + 1) % world.outline.length]!;
+        perimeter += Math.hypot(a.x - b.x, a.y - b.y);
+      }
+      const raggedness = (perimeter * perimeter) / (4 * Math.PI * polygonArea(world.outline));
+      assert.ok(raggedness > 1.5, `raggedness ${raggedness.toFixed(2)} is too smooth`);
+    });
+
+    it(`${level}: provinces tile the continent, not the map`, () => {
+      // Most of the map is ocean, so the comparison is against the coastline. The
+      // provinces are cut from the dual rather than clipped to the outline, so the two
+      // agree closely but not exactly.
+      const total = world.provinces.reduce((s, p) => s + polygonArea(p.border), 0);
+      const continent = polygonArea(world.outline);
+      assert.ok(
+        Math.abs(total / continent - 1) < 0.05,
+        `provinces cover ${(total / continent).toFixed(3)} of the outline`,
+      );
+      assert.ok(total < world.width * world.height * 0.75, "the continent should leave ocean");
+    });
+
+    it(`${level}: the continent never reaches the map edge`, () => {
+      // A coastal province with no capital seaward of it runs to the outer ring and is
+      // cut flat against the map border, which looks like a cliff and is a generation
+      // bug, not a coastline.
       for (const p of world.provinces) {
-        assert.ok(p.capital.x > 0 && p.capital.x < world.width);
-        assert.ok(p.capital.y > 0 && p.capital.y < world.height);
+        for (const v of p.border) {
+          assert.ok(
+            v.x > 1 && v.y > 1 && v.x < world.width - 1 && v.y < world.height - 1,
+            `${p.name} is cut off at the map edge`,
+          );
+        }
+      }
+    });
+
+    it(`${level}: has a coastline, and flags exactly the provinces on it`, () => {
+      const coast = borderSegments(world).filter((s) => s.kind === "coast");
+      assert.ok(coast.length > world.provinces.length / 2, "expected a substantial coastline");
+      const onCoast = new Set(coast.flatMap((s) => s.owners));
+      for (const p of world.provinces) {
+        assert.equal(p.coastal, onCoast.has(p.id), `${p.name} coastal flag is wrong`);
+      }
+      assert.ok(world.provinces.some((p) => !p.coastal), "expected some inland provinces");
+    });
+
+    it(`${level}: nation frontiers are shared edges, each with two owners`, () => {
+      for (const seg of borderSegments(world)) {
+        if (seg.kind === "coast") {
+          assert.equal(seg.owners.length, 1);
+        } else {
+          assert.equal(seg.owners.length, 2);
+          const [a, b] = seg.owners;
+          const differ = world.provinces[a!]!.nation !== world.provinces[b!]!.nation;
+          assert.equal(seg.kind === "nation", differ);
+        }
       }
     });
   }
@@ -175,6 +244,42 @@ describe("calibration against the 11 measured nations", () => {
         lopsided.length >= Math.ceil(world.nations.length / 2),
         `only ${lopsided.length}/${world.nations.length} nations have uneven terrain`,
       );
+    });
+  }
+});
+
+describe("terrain marks (§2)", () => {
+  for (const [level, world] of worlds) {
+    it(`${level}: scatters marks, and every one is on land`, () => {
+      assert.ok(world.terrain.length > world.provinces.length, "expected a scattering");
+      for (const f of world.terrain) {
+        assert.ok(
+          world.provinces.some((p) => polygonContains(p.border, f.x, f.y)),
+          `a ${f.type} mark at ${f.x.toFixed(0)},${f.y.toFixed(0)} is in the sea`,
+        );
+      }
+    });
+
+    it(`${level}: mark counts track the acreage they represent`, () => {
+      const acres = { forest: 0, mountains: 0, desert: 0 };
+      for (const p of world.provinces) {
+        acres.forest += p.land.forest;
+        acres.mountains += p.land.mountains;
+        acres.desert += p.land.desert;
+      }
+      for (const type of ["forest", "mountains", "desert"] as const) {
+        const marks = world.terrain.filter((f) => f.type === type).length;
+        if (acres[type] === 0) assert.equal(marks, 0, `${type} has marks but no acreage`);
+        else assert.ok(marks > 0, `${type} has ${acres[type]} acres but no marks`);
+      }
+    });
+
+    it(`${level}: marks sit near the road-less borders they came from`, () => {
+      // They straddle a border, so a mark should never be right on top of a capital.
+      const tooClose = world.terrain.filter((f) =>
+        world.provinces.some((p) => Math.hypot(p.capital.x - f.x, p.capital.y - f.y) < 6),
+      );
+      assert.ok(tooClose.length < world.terrain.length * 0.05, `${tooClose.length} marks on capitals`);
     });
   }
 });
