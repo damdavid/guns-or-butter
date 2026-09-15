@@ -6,7 +6,10 @@ taken from the DOS binary running under emulation.
 
 - `docs/MECHANICS-SPEC.md` — the reconstructed design spec. Every claim is tagged
   `[C]` confirmed, `[I]` inferred, or `[F]` free-to-choose.
-- `docs/fit-terrain.py` — fits the terrain response from in-game readings.
+- `docs/calibrate.py` — fits every commodity's productivity parameters from the
+  measurement CSVs and generates `src/calibration.ts`.
+- `docs/fit-terrain.py` — earlier, forest-only fit; superseded by `calibrate.py`.
+- `docs/*.csv` — 644 output measurements taken from the DOS build under emulation.
 - `src/` — the simulation. No runtime dependencies.
 - `the-global-dilemma-guns-or-butter/` — the original 1990 build, for reference.
 
@@ -18,9 +21,10 @@ yet built — see §10 of the spec for the intended order.
 
 ## Commands
 
-    npm test          # 68 tests, including the manual p.12 reference state
+    npm test          # 81 tests, including the manual p.12 reference state
     npm run typecheck
     npm run fixture   # print the reference state as a Production Summary
+    npm run validate  # score the sim against all 644 measurements
 
 Requires Node >= 22.6 (runs TypeScript directly via `--experimental-strip-types`).
 

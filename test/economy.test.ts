@@ -6,8 +6,10 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { AGRICULTURE, POPULATION, tierYield } from "../src/data.ts";
+import { rawCoefficient, rawParams } from "../src/terrain.ts";
+import { PARAMS } from "../src/calibration.ts";
 import { Economy, nextPopulation } from "../src/economy.ts";
-import { terrainMultiplier } from "../src/terrain.ts";
+
 import type { EconomyState } from "../src/types.ts";
 
 const state = (over: Partial<EconomyState> = {}): EconomyState => ({
@@ -25,7 +27,7 @@ describe("productivity function (§3.4)", () => {
     const one = economy.capacity(state({ workers: { lumber: 50 } }), "lumber");
     const two = economy.capacity(state({ workers: { lumber: 100 } }), "lumber");
     assert.ok(two / one > 2, `ratio ${(two / one).toFixed(3)} should exceed 2`);
-    const a = economy.graph.table.get("lumber")!.a;
+    const a = rawParams(economy.graph.table.get("lumber")!, "beginner")!.a;
     assert.ok(Math.abs(two / one - 2 ** a) < 1e-6);
   });
 
@@ -34,13 +36,27 @@ describe("productivity function (§3.4)", () => {
   });
 
   it("gives advanced tiers a larger exponent and smaller coefficient", () => {
-    const tools = ["farm-tools", "iron-plow", "combine", "irrigation", "tractor"];
-    for (let i = 1; i < tools.length; i++) {
-      const lo = economy.graph.table.get(tools[i - 1]!)!;
-      const hi = economy.graph.table.get(tools[i]!)!;
-      assert.ok(hi.a > lo.a, `${hi.id} exponent should exceed ${lo.id}`);
-      assert.ok(hi.k < lo.k, `${hi.id} coefficient should be below ${lo.id}`);
+    // Crawford's stated rule, now measurable: "smaller proportionality constants and
+    // larger exponents so that they are less efficient at smaller scales and more
+    // efficient at larger scales." Expert is the only level with all five tiers.
+    for (const tiers of [
+      ["farm-tools", "iron-plow", "combine", "irrigation", "tractor"],
+      ["sword", "musket", "rifle", "cannon", "tank"],
+    ]) {
+      for (let i = 1; i < tiers.length; i++) {
+        const lo = PARAMS[tiers[i - 1]!]?.expert!;
+        const hi = PARAMS[tiers[i]!]?.expert!;
+        assert.ok(hi.a > lo.a, `${tiers[i]} exponent should exceed ${tiers[i - 1]}`);
+        assert.ok(hi.k < lo.k, `${tiers[i]} coefficient should be below ${tiers[i - 1]}`);
+      }
     }
+  });
+
+  it("measures exponents spanning 1.13 to 2.53, not one shared value", () => {
+    const all = Object.values(PARAMS).flatMap((per) => Object.values(per ?? {}).map((p) => p.a));
+    assert.ok(Math.min(...all) < 1.15, "tier-1 industries are barely superlinear");
+    assert.ok(Math.max(...all) > 2.4, "the most advanced are steeply superlinear");
+    assert.ok(all.every((a) => a > 1), "every industry has economies of scale");
   });
 
   it("makes a tier-5 tool worse at small scale and better at large", () => {
@@ -138,20 +154,35 @@ describe("demand-driven allocation (§3.5)", () => {
 });
 
 describe("terrain response (§2.2)", () => {
-  it("applies a floor below roughly two acres", () => {
-    const zero = terrainMultiplier("intermediate", 0);
-    assert.equal(terrainMultiplier("intermediate", 1), zero, "1 acre should still be floored");
-    assert.ok(terrainMultiplier("intermediate", 10) > zero);
-  });
+  const economy = new Economy();
+  const lumberK = (level: "beginner" | "intermediate" | "expert", acres: number) =>
+    rawCoefficient(economy.graph.table.get("lumber")!, level, acres);
 
-  it("is monotonic in acreage and linear above the floor", () => {
-    const step = (a: number) =>
-      terrainMultiplier("intermediate", a + 10) - terrainMultiplier("intermediate", a);
-    assert.ok(Math.abs(step(10) - step(40)) < 1e-9, "slope should be constant");
+  it("is linear in acreage with a positive intercept, and no floor", () => {
+    const step = (a: number) => lumberK("intermediate", a + 10) - lumberK("intermediate", a);
+    assert.ok(Math.abs(step(0) - step(40)) < 1e-9, "slope constant from zero acres up");
+    assert.ok(lumberK("intermediate", 0) > 0, "the intercept is the design's 'modicum'");
   });
 
   it("penalises Expert relative to Intermediate at equal acreage", () => {
-    assert.ok(terrainMultiplier("expert", 20) < terrainMultiplier("intermediate", 20));
+    assert.ok(lumberK("expert", 20) < lumberK("intermediate", 20));
+  });
+
+  it("gives each raw its own response, not a shared multiplier", () => {
+    const table = economy.graph.table;
+    const gain = (id: string) => {
+      const c = table.get(id)!;
+      const at0 = rawCoefficient(c, "intermediate", 0);
+      return (rawCoefficient(c, "intermediate", 55) - at0) / at0;
+    };
+    // Both draw on mountains, but Coal gains far more per acre relative to its base.
+    assert.ok(gain("coal") > gain("iron-ore") * 1.5);
+  });
+
+  it("gives advanced raws a near-zero intercept: no terrain, no output", () => {
+    const heavy = economy.graph.table.get("heavy-metal")!;
+    assert.ok(rawCoefficient(heavy, "expert", 0) < 1e-6);
+    assert.ok(rawCoefficient(heavy, "expert", 60) > 0);
   });
 
   it("only multiplies raws whose own terrain the nation holds", () => {

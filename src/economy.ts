@@ -4,10 +4,12 @@
  */
 import { AGRICULTURE, POPULATION, commodityTable, tierYield, type PigIronVariant } from "./data.ts";
 import { buildGraph, type Graph } from "./graph.ts";
-import { acresOf, terrainMultiplier } from "./terrain.ts";
+import { PARAMS } from "./calibration.ts";
+import { acresOf, rawCoefficient, rawParams } from "./terrain.ts";
 import type {
   AgricultureResult,
   CommodityId,
+  Level,
   CommodityResult,
   EconomyResult,
   EconomyState,
@@ -27,13 +29,13 @@ export interface EconomyOptions {
 
 export class Economy {
   readonly graph: Graph;
+  private readonly overrides: NonNullable<EconomyOptions["overrides"]>;
 
   constructor(options: EconomyOptions = {}) {
     const table = commodityTable(options.pigIron);
-    for (const [id, o] of Object.entries(options.overrides ?? {})) {
-      const c = table.get(id);
-      if (!c) throw new Error(`override for unknown commodity: ${id}`);
-      table.set(id, { ...c, k: o?.k ?? c.k, a: o?.a ?? c.a });
+    this.overrides = options.overrides ?? {};
+    for (const id of Object.keys(this.overrides)) {
+      if (!table.has(id)) throw new Error(`override for unknown commodity: ${id}`);
     }
     this.graph = buildGraph(table);
   }
@@ -49,17 +51,28 @@ export class Economy {
   }
 
   /**
-   * Labour-determined output ceiling: `k * f(terrain) * L^a`. Superlinear in labour —
-   * this is the economies-of-scale engine the whole design turns on (§3.4).
+   * Labour-determined output ceiling, superlinear in labour — the economies-of-scale
+   * engine the whole design turns on (§3.4). Every exponent is measured, and they
+   * range from 1.126 (Lumber, Farm Tools, Sword) to 2.53 (Diesel Engine).
+   *
+   * Raws draw their coefficient from their own terrain; everything else takes a flat
+   * per-level multiplier, which also turns out to apply to intermediates and tiers.
    */
   capacity(state: EconomyState, id: CommodityId): number {
     const c = this.graph.table.get(id);
     if (!c) throw new Error(`unknown commodity: ${id}`);
     const workers = state.workers[id] ?? 0;
     if (workers <= 0) return 0;
-    const f =
-      c.kind === "raw" ? terrainMultiplier(state.level, acresOf(state.land, c.terrain)) : 1;
-    return c.k * f * workers ** c.a;
+    const over = this.overrides[id];
+    if (c.kind === "raw") {
+      const p = rawParams(c, state.level);
+      if (!p) return 0;
+      const K = over?.k ?? rawCoefficient(c, state.level, acresOf(state.land, c.terrain));
+      return K * workers ** (over?.a ?? p.a);
+    }
+    const p = PARAMS[c.id]?.[state.level] ?? nearestParams(c.id, state.level);
+    if (!p && over?.k === undefined) return 0;
+    return (over?.k ?? p!.k) * workers ** (over?.a ?? p?.a ?? 1.1);
   }
 
   resolve(state: EconomyState): EconomyResult {
@@ -201,6 +214,20 @@ export class Economy {
       surplus: food - required,
     };
   }
+}
+
+const LEVEL_ORDER: Level[] = ["beginner", "intermediate", "expert"];
+
+/** Nearest measured level, for commodities never sampled at the level asked for. */
+function nearestParams(id: CommodityId, level: Level) {
+  const per = PARAMS[id];
+  if (!per) return undefined;
+  const i = LEVEL_ORDER.indexOf(level);
+  for (let d = 1; d < LEVEL_ORDER.length; d++) {
+    const found = per[LEVEL_ORDER[i - d]!] ?? per[LEVEL_ORDER[i + d]!];
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /** Growth goes as the square root of food surplus; decline is steeper (§4.4). */
