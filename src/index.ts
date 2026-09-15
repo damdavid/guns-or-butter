@@ -12,4 +12,8 @@ export {
   tierYield,
   type PigIronVariant,
 } from "./data.ts";
+export { generateWorld, nationState, WORLDGEN, type WorldgenOptions } from "./worldgen.ts";
+export { makeRng, hashName, type Rng } from "./rng.ts";
+export { triangulate, dualPolygons, edges as spokeEdges, edgeKey } from "./delaunay.ts";
+export { provinceName, uniqueNames } from "./names.ts";
 export type * from "./types.ts";

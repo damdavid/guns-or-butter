@@ -27,8 +27,11 @@ than ported.
 demand-driven allocation with input hoarding and depth-ordered priority, agriculture,
 population. All 33 commodities have measured parameters; exponents span 1.13 to 2.53.
 
-Map generation, military and diplomacy are specified but not yet built. See §10 of the
-spec for the intended order.
+**Map generation complete.** Continents are seeded by name, as in the original.
+Capitals, a Delaunay spoke graph, provinces as its centroid dual, roads on half the
+spokes, terrain on the rest, and contiguous nations — feeding straight into the economy.
+
+Military, AI and diplomacy are specified but not yet built. See §10 of the spec.
 
 ## Commands
 
@@ -36,6 +39,7 @@ spec for the intended order.
     npm run typecheck
     npm run validate  # score the sim against all 644 measurements
     npm run fixture   # print the reference state as a Production Summary
+    npm run map -- Kittycat expert out.svg   # render a generated continent
 
 Requires Node >= 22.6, which runs the TypeScript directly via
 `--experimental-strip-types`. The only dev dependencies are `typescript` and
