@@ -93,6 +93,57 @@ about half of those crossings are roads; the other half carry the terrain penalt
 Crawford's own regret: continents came out "a little too conservative — always boxy
 and simple," and generation was slow. Worth more variety in step 1.
 
+### 2.0 Implementation notes [F]
+
+Built in `src/worldgen.ts`, with the geometry in `src/delaunay.ts`. Render one with
+`npm run map -- <continent> <level>`; map generation is the step where looking at the
+output tells you far more than a passing test does.
+
+**Delaunay stands in for the minimum-length spoke heuristic.** Crawford wanted to
+"minimize the total lengths of all spokes" and found the exact solve intractable at 64
+cities. Delaunay is planar, contains the Euclidean minimum spanning tree, and — the
+part that matters — its dual tiles, which is what makes step 3 possible at all.
+
+**Provinces use the centroid dual.** Walking a capital's incident triangles and stepping
+*midpoint of spoke → triangle centroid → midpoint of spoke* honours the spec's "connect
+the midpoints of the spokes" while still tiling; midpoints alone would leave a gap at
+every triangle. The fan must be walked by connectivity, not sorted by angle: angular
+sorting looks equivalent but degenerates on boundary capitals and produces provinces
+that cross the map.
+
+**Coastal cells are handled with ghost points.** A capital on the convex hull has an
+unbounded dual cell. Two attempts to close one directly — through the capital, then by
+running the open ends outward — produced slivers and then map-spanning wedges. Ringing
+the map in 20 points outside it makes every real capital interior, so every cell is
+bounded, and clipping to the map rectangle then produces exactly the boxy outline
+Crawford describes. The ghosts take no part in adjacency.
+
+**Wiggle before clipping**, and displace shared vertices consistently via a lookup keyed
+on position — otherwise neighbouring provinces part company along every border, and
+wiggling after the clip pushes vertices back outside the map.
+
+Calibrated against the 11 nations in the measurement CSVs:
+
+| Quantity | Observed | Generator |
+|---|---|---|
+| Provinces per nation | 5–11, mean 8.2 | 8, drifting 7–9 |
+| Farmland per province | 34–58 acres | 42 mean, scaled by drawn area |
+| Other terrain per province | ~7.2 acres | 7.2 mean |
+| Starting population | **1.4933 × farmland**, sd 0.0021 | same, exactly |
+
+That population relationship is the tightest thing in the whole dataset — 11 nations
+agreeing to three decimal places — so starting population is derived from farmland
+rather than generated independently.
+
+Terrain is placed on the road-less borders and **straddles** them, so both provinces
+share the acreage, and its type is drawn from regional seeds rather than per-edge. The
+measured nations cluster hard — continent Six holds 74 mountain acres and no forest at
+all — which an even sprinkle would not reproduce.
+
+Still free, and worth revisiting: Crawford wanted more varied coastlines than his own
+generator produced, and clipping to a rectangle is if anything boxier. Islands and lakes
+were cut from the original and are not modelled.
+
 ### 2.1 Terrain → resources [C]
 
 | Terrain | Provides |
@@ -1133,11 +1184,13 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    asserts the §8.1 reference state and the §2.2 terrain readings, and
    `npm run validate` scores all 644 measurements (median error 1.2% above
    200 tons).
-2. **Map generation** — next. Seeded by continent name. Cities, then spokes, then
-   provinces as the dual of the spoke graph, then ~half the spokes marked as roads,
-   then terrain into the road-less gaps (§2).
-3. **Military.** Continuous firepower, two orders per province, the §5.5 formula,
-   transfers-before-battles.
+2. **Map generation** — **done.** `src/worldgen.ts`, seeded by continent name; see
+   §2.0. Produces contiguous nations on a tiled continent with adjacency, roads,
+   terrain, farmland and starting population, and feeds straight into the economy via
+   `nationState()`. `npm run map` renders one to SVG.
+3. **Military** — next. Continuous firepower, two orders per province, the §5.5
+   formula, transfers-before-battles. The map already carries the per-edge road flag
+   that the terrain penalty keys on.
 4. **AI opponents.** [F] — nothing is recoverable about Crawford's AI beyond the
    union-declaration rule in §6.1.
 5. **Diplomacy**, with §6.4 in from the start rather than §6.2.

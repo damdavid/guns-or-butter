@@ -76,3 +76,44 @@ export interface EconomyResult {
   population: number;
   nextPopulation: number;
 }
+
+// --- world generation (§2) -------------------------------------------------------
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface Province {
+  id: number;
+  name: string;
+  /** Index into `World.nations`. */
+  nation: number;
+  capital: Point;
+  /** Closed polygon; neighbouring provinces share its vertices exactly. */
+  border: Point[];
+  /**
+   * Adjacency. Every entry is attackable; `road` marks the ~50% subset that avoids the
+   * combat terrain penalty (§5.5). Spokes are adjacency, roads are a subset of them.
+   */
+  neighbours: { province: number; road: boolean }[];
+  land: Land;
+  population: number;
+  /** Continuous, not unit counts (§5.1). */
+  firepower: number;
+}
+
+export interface Nation {
+  id: number;
+  provinces: number[];
+}
+
+export interface World {
+  /** Doubles as the RNG seed, so a world is reproducible from its name alone. */
+  name: string;
+  level: Level;
+  width: number;
+  height: number;
+  provinces: Province[];
+  nations: Nation[];
+}
