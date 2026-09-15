@@ -428,9 +428,9 @@ displayed as integers and a reading of 3 carries ±17% of rounding on its own:
 | Observed output | n | median | p90 |
 |---|---|---|---|
 | < 10 | 60 | 12.1% | 100% |
-| 10–50 | 125 | 5.7% | 60% |
-| 50–200 | 197 | 3.3% | 18% |
-| ≥ 200 | 258 | **1.2%** | 6.5% |
+| 10–50 | 125 | 5.4% | 33% |
+| 50–200 | 197 | 3.1% | 13% |
+| ≥ 200 | 258 | **1.2%** | 6.4% |
 
 Error falls monotonically with magnitude, which is the signature of rounding-bound
 measurement rather than model error. The values that matter for gameplay are good to
@@ -442,8 +442,16 @@ about 1%.
   all ten other series give ~1.13, its coefficient is an order of magnitude out, and it
   breaks monotonicity in mountain acreage. Treated as a transcription error pending a
   re-read; the exclusion is declared in both `calibrate.py` and the validator.
-- **Petroleum is observed at one continent only**, so its response to desert acreage is
-  a single point and its level scaling is extrapolated.
+- **Petroleum is the sparsest series**: seven non-zero readings across four continents,
+  and its longest single series has only three points. Its exponent rests on that one
+  series, and its desert response is the weakest fit in the table — the Expert Two
+  reading is over-predicted by a factor of 3.7. It is also the only commodity for which
+  the fitter's point thresholds mattered: an earlier revision required four points per
+  series to fit an exponent, which silently dropped Petroleum, zeroed its capacity, and
+  through it killed High Explosives, Diesel Engine, Cannon, Tank and Tractor. The
+  exponent now needs three points but the coefficient needs only one, since `a` pinned
+  makes every individual reading a `k` estimate. Two coverage tests in
+  `test/economy.test.ts` now assert that no commodity can lose its parameters.
 - **Acreage is good to about ±1 acre**, which dominates the error on small-acreage
   nations. Continents Three (8 acres) and Four (9 acres) return byte-identical output,
   which one acre should not permit.

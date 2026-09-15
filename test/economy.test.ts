@@ -69,6 +69,55 @@ describe("productivity function (§3.4)", () => {
   });
 });
 
+describe("calibration coverage", () => {
+  const economy = new Economy();
+  const LEVELS = ["beginner", "intermediate", "expert"] as const;
+
+  // Petroleum was silently absent from calibration.ts for one commit: its longest
+  // measured series has 3 points and the exponent fitter required 4, so it was dropped
+  // and then skipped by the emitter. Capacity fell to zero, which killed High
+  // Explosives and Diesel Engine and with them Cannon, Tank and Tractor. These two
+  // tests make that class of gap impossible to ship again.
+  it("gives every commodity non-zero capacity at every level", () => {
+    const generous = { farmland: 500, forest: 80, mountains: 80, desert: 80 };
+    for (const level of LEVELS) {
+      for (const id of economy.graph.table.keys()) {
+        const cap = economy.capacity(
+          { level, land: generous, population: 100_000, workers: { [id]: 100 } },
+          id,
+        );
+        assert.ok(cap > 0, `${id} has no capacity at ${level}`);
+      }
+    }
+  });
+
+  it("lets every commodity produce when its own chain is staffed", () => {
+    // Staffing every factory at once instead would starve most of them, and correctly
+    // so: demand is capacity-proportional and the steep-exponent industries outbid the
+    // rest for shared inputs (§3.5). So each commodity is tested with only its own
+    // transitive inputs staffed.
+    const { table } = economy.graph;
+    const chain = (id: string, seen = new Set<string>()): Set<string> => {
+      if (seen.has(id)) return seen;
+      seen.add(id);
+      for (const input of Object.keys(table.get(id)!.inputs)) chain(input, seen);
+      return seen;
+    };
+    const dead: string[] = [];
+    for (const id of table.keys()) {
+      const workers = Object.fromEntries([...chain(id)].map((c) => [c, 400]));
+      const result = economy.resolve({
+        level: "expert",
+        land: { farmland: 400, forest: 80, mountains: 80, desert: 80 },
+        population: 1_000_000,
+        workers,
+      });
+      if (result.commodities[id]!.output <= 0) dead.push(id);
+    }
+    assert.deepEqual(dead, [], `no output: ${dead.join(", ")}`);
+  });
+});
+
 describe("graph structure (§8.4)", () => {
   const { depth, consumers } = new Economy().graph;
 

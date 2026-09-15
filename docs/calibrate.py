@@ -91,7 +91,7 @@ def fit_exponents(series):
     """One exponent per commodity, weighted towards long clean series."""
     by_c = defaultdict(list)
     for (c, lvl, cont), pts in series.items():
-        if len(pts) < 4 or (c, lvl, cont) in EXCLUDE:
+        if len(pts) < 3 or (c, lvl, cont) in EXCLUDE:
             continue
         a, k, res = loglog(pts)
         by_c[c].append((a, len(pts), res))
@@ -227,19 +227,23 @@ def emit(series, land, exps, ks):
             continue
         rows = []
         for lvl in LEVELS:
-            series_here = [(cont, s) for (cc, ll, cont), s in series.items()
-                           if cc == c and ll == lvl and (cc, ll, cont) not in EXCLUDE
-                           and len(s) >= 3]
-            if not series_here:
+            all_here = [(cont, s) for (cc, ll, cont), s in series.items()
+                        if cc == c and ll == lvl and (cc, ll, cont) not in EXCLUDE]
+            # The exponent needs a slope, so only series with >= 3 points vote on it.
+            exp_series = [(cont, s) for cont, s in all_here if len(s) >= 3]
+            if not exp_series:
                 continue
             # Fit the exponent PER CONTINENT and average. Pooling the points instead
             # biases the slope: each continent is a parallel line at its own offset, so
             # one line through all of them tilts toward whichever has the wider L range.
-            fits = [loglog(s) for _, s in series_here]
-            w = np.array([len(s) / (1.0 + 40.0 * f[2]) for (_, s), f in zip(series_here, fits)])
+            fits = [loglog(s) for _, s in exp_series]
+            w = np.array([len(s) / (1.0 + 40.0 * f[2]) for (_, s), f in zip(exp_series, fits)])
             a = float((w * np.array([f[0] for f in fits])).sum() / w.sum())
+            # k, by contrast, needs only one reading per continent once a is known. Using
+            # every series -- not just the long ones -- is what lets Petroleum, observed
+            # 1-3 times per continent, still get a terrain response.
             xs, ys = [], []
-            for cont, s in series_here:
+            for cont, s in all_here:
                 ys.append(float(np.mean([o / L**a for L, o in s])))
                 xs.append(land[(lvl, cont)][TERRAIN[c]])
             if len(set(xs)) >= 2:
