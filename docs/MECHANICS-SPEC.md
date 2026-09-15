@@ -368,104 +368,88 @@ progression to population growth *without a research tree* — you cannot use an
 advanced industry until you are big enough to feed it labor. Crawford's phrasing:
 without this "we would have 15th century peasants building digital watches."
 
-#### How `a` is assigned
+#### Every exponent is now measured [C]
 
-**Two different rules, because two different things are going on.** Crawford's stated
-rule is about *technological* advancement, not graph position, so:
+644 output readings — 53 raw series with land composition, 22 intermediate/tool/weapon
+series — across all three levels. Fitted by `docs/calibrate.py`, which emits
+`src/calibration.ts`; scored by `npm run validate`.
 
-- **Raws and intermediates** — exponent follows **graph depth**:
-  `a = 1.100 + 0.025 × depth`. These form a chain of increasing processing
-  complexity, so depth is the right proxy.
-- **Tool and weapon tiers** — exponent follows **tech tier**:
-  `a = 1.20 + 0.04 × (tier − 1)`, giving 1.20 → 1.36.
+    capacity = K * L^a        both K and a measured per (commodity, level)
 
-Do **not** use depth for the tiers. Depth and tier disagree there (§8.4): Cannon sits
-at depth 2 but is weapon tier 4, and Sword at depth 3 is tier 1. Driving `a` off depth
-would hand Sword a *larger* economy-of-scale exponent than Cannon, inverting the whole
-technological progression. The split to remember: **depth governs allocation priority,
-tier governs the exponent.**
+**The exponent is per-commodity and spans 1.13 to 2.53.** An earlier draft assigned
+1.10 to every raw and derived the rest from a depth rule. That was wrong in kind, not
+just in value — the real structure is a tight ladder:
 
-The 0.04 step and the 1.36 ceiling are a deliberate choice, not a recovered value.
-Crawford's design failed partly to runaway growth (§9.2), and the exponent spread is
-the main dial controlling how hard the leader compounds. Widen it only with playtesting.
+| a | Commodities |
+|---|---|
+| 1.126–1.134 | Farm Tools, Sword, Pig Iron, Charcoal, Lumber, Iron Ore |
+| 1.39–1.42 | Gunpowder, Musket, Iron Plow |
+| 1.62–1.73 | Steam Engine, Iron, Rifle, Sulfur, Explosives, Coal |
+| 1.77–2.03 | Combine, Low-Grade Steel, Light Metal, Irrigation, Heavy Metal, Wire, Pipe |
+| 2.07–2.25 | Electrics, Cannon, Nitrate, High Explosives, Instruments, Tank, Ball Bearing |
+| 2.35–2.53 | Tractor, High-Grade Steel, Diesel Engine |
 
-#### How `k` is assigned
+This is Crawford's rule made visible — *"smaller proportionality constants and larger
+exponents so that they are less efficient at smaller scales and more efficient at
+larger scales"* — and it holds monotonically across both the tool and weapon tiers. A
+tractor factory is near-useless small and dominant large; that is what forces
+technology to follow population.
 
-- **Five industries are anchored** to the §8.1 reference state by
-  `k = capacity / L^a`: Lumber, Iron Ore, Charcoal, Pig Iron, Farm Tools.
-- **Tool and weapon tiers are derived** from the confirmed 342 t crossover (§4.3),
-  anchored on the Farm Tools fit. Labour parity at the crossover requires
-  `(342 / k_n)^(1/a_n) = (171 / k_{n+1})^(1/a_{n+1})`, so
-  `k_{n+1} = 171 / (342 / k_n)^(a_{n+1}/a_n)`.
-  Verified: the crossover lands at 45.4 / 79.4 / 136.4 / 230.7 workers for tiers
-  1→2 / 2→3 / 3→4 / 4→5, identical on both sides of each step.
-  Weapon tiers reuse the agricultural chain, which makes tier-1 guns and tier-1 butter
-  an exactly even labour trade — thematically the right anchor for this game, but [F].
-- **Everything else is a placeholder.** Intermediates use a per-depth base with a
-  10% penalty per input beyond the first (`k = base_depth × 0.9^(inputs−1)`),
-  bases back-fitted from Charcoal and Pig Iron. Unfitted raws are ranked by how bulky
-  and common the material is. These are starting numbers to make the sim run, not
-  recovered data.
+**Farm Tools and Sword share parameters exactly** (a = 1.1264, identical k at every
+level), as do Pig Iron and Iron Ore. Tier-1 butter and tier-1 guns are an exactly even
+labour trade, which for a game with this title reads as deliberate.
 
-| Industry | Class | `a` | `k` | 2× labor → | Source |
-|---|---|---|---|---|---|
-| Lumber | raw | **1.1344** | **6.3626** | 2.20× | **measured** (§2.2) |
-| Sulfur | raw | 1.100 | 4.5000 | 2.14× | placeholder |
-| Iron Ore | raw | 1.100 | 5.1716 | 2.14× | fitted (see caveat) |
-| Coal | raw | 1.100 | 6.0000 | 2.14× | placeholder |
-| Light Metal | raw | 1.100 | 4.0000 | 2.14× | placeholder |
-| Nitrate | raw | 1.100 | 4.0000 | 2.14× | placeholder |
-| Heavy Metal | raw | 1.100 | 3.5000 | 2.14× | placeholder |
-| Petroleum | raw | 1.100 | 3.0000 | 2.14× | placeholder |
-| Charcoal | depth 1 | 1.125 | 6.5279 | 2.18× | **fitted** |
-| Pig Iron | depth 2 | 1.150 | 4.6430 | 2.22× | **fitted** |
-| Gunpowder | depth 2 | 1.150 | 4.6430 | 2.22× | placeholder |
-| Iron | depth 1 | 1.125 | 5.8751 | 2.18× | placeholder |
-| Low-Grade Steel | depth 1 | 1.125 | 5.2876 | 2.18× | placeholder |
-| Explosives | depth 2 | 1.150 | 4.1787 | 2.22× | placeholder |
-| High-Grade Steel | depth 1 | 1.125 | 5.2876 | 2.18× | placeholder |
-| High Explosives | depth 1 | 1.125 | 5.2876 | 2.18× | placeholder |
-| Steam Engine | depth 2 | 1.150 | 4.6430 | 2.22× | placeholder |
-| Wire | depth 1 | 1.125 | 6.5279 | 2.18× | placeholder |
-| Pipe | depth 1 | 1.125 | 6.5279 | 2.18× | placeholder |
-| Electrics | depth 2 | 1.150 | 4.6430 | 2.22× | placeholder |
-| Ball Bearing | depth 2 | 1.150 | 4.6430 | 2.22× | placeholder |
-| Diesel Engine | depth 3 | 1.175 | 2.9721 | 2.26× | placeholder |
-| Instruments | depth 3 | 1.175 | 3.6693 | 2.26× | placeholder |
-| Farm Tools | tool tier 1 | 1.200 | 3.5126 | 2.30× | **fitted** |
-| Iron Plow | tool tier 2 | 1.240 | 1.5077 | 2.36× | crossover |
-| Combine | tool tier 3 | 1.280 | 0.6328 | 2.43× | crossover |
-| Irrigation | tool tier 4 | 1.320 | 0.2599 | 2.50× | crossover |
-| Tractor | tool tier 5 | 1.360 | 0.1045 | 2.57× | crossover |
-| Sword | weapon tier 1 | 1.200 | 3.5126 | 2.30× | crossover |
-| Musket | weapon tier 2 | 1.240 | 1.5077 | 2.36× | crossover |
-| Rifle | weapon tier 3 | 1.280 | 0.6328 | 2.43× | crossover |
-| Cannon | weapon tier 4 | 1.320 | 0.2599 | 2.50× | crossover |
-| Tank | weapon tier 5 | 1.360 | 0.1045 | 2.57× | crossover |
+#### Parameters vary by level, for every commodity
 
-Ordering matches §3.2 (raws) then §3.3 (recipes). `Food` has no `k`/`a` — agricultural
-labour is fixed at 1 worker/acre (§4.1) and yield comes from §4.2.
+Not just raws. Charcoal's coefficient falls from 6.49 (Beginner) to 4.71
+(Intermediate) to 2.90 (Expert), and it has no terrain input at all. **The per-level
+ratio is not shared across commodities** — Steam Engine's Intermediate/Expert ratio is
+6.4 where Charcoal's is 1.6 — so a single level multiplier does not work. It was tried
+and left p90 error at 37%; parameters are now stored per (commodity, level).
 
-**The one measured exponent came in above its assumed class value.** Lumber is now
-measured at `a = 1.1344` (§2.2), against the 1.100 this table assigned to every raw.
-Its `k = 6.3626` is the Beginner terrain-off value from the joint fit, which is what
-`f = 1` means here. Two
-consequences:
+#### Raws: per-commodity terrain response, and no floor
 
-- The raw baseline should probably be **1.13, not 1.10**, which shifts the whole
-  depth rule up by ~0.03. I have not applied that to the other rows, because one
-  measurement across eight raws does not justify moving seven untested numbers.
-- Iron Ore's `k = 5.1716` is still fitted at the *assumed* `a = 1.100`. At
-  `a = 1.1344` it refits to **4.6006**. Whichever exponent you adopt, refit `k`
-  alongside it — they are not independent.
+    capacity_raw = (base + m * acres) * L^a       in that raw's own terrain
 
-The cheap test is the §8.3 two-worker-count measurement repeated on one more raw, one
-intermediate and one tool tier. If those also land ~0.03 high, shift the base of both
-rules and refit every `k`.
+Three corrections to earlier drafts, all forced by the larger dataset:
 
-The steep `k` collapse across tiers (3.51 → 0.10) is the intended shape, not an error:
-an advanced tool is near-useless at small scale and dominant at large, which is exactly
-what forces tech transitions to follow population growth.
+- **The response is not shared across raws.** Coal gains far more per mountain acre,
+  relative to its own base, than Iron Ore does. Each raw needs its own `base` and `m`.
+- **There is no `max()` floor.** The floor was inferred from three points; with five
+  points per series a plain line fits, and the non-zero intercept *is* the design
+  dialogue's "modicum of natural resources." Simpler, and closer to the text.
+- **Advanced raws have an intercept of ~0.** Heavy Metal, Nitrate and Light Metal
+  produce essentially nothing without their terrain, at any labour. The modicum is real
+  only for the early-tier raws — which is exactly where the manual's "you can still get
+  these things, but it will cost you a lot more workers" applies.
+
+#### Accuracy
+
+Relative error against all 640 scored readings, stratified because outputs are
+displayed as integers and a reading of 3 carries ±17% of rounding on its own:
+
+| Observed output | n | median | p90 |
+|---|---|---|---|
+| < 10 | 60 | 12.1% | 100% |
+| 10–50 | 125 | 5.7% | 60% |
+| 50–200 | 197 | 3.3% | 18% |
+| ≥ 200 | 258 | **1.2%** | 6.5% |
+
+Error falls monotonically with magnitude, which is the signature of rounding-bound
+measurement rather than model error. The values that matter for gameplay are good to
+about 1%.
+
+#### Known data problems
+
+- **Continent Seven's Iron Ore series is excluded.** It fits an exponent of 1.65 where
+  all ten other series give ~1.13, its coefficient is an order of magnitude out, and it
+  breaks monotonicity in mountain acreage. Treated as a transcription error pending a
+  re-read; the exclusion is declared in both `calibrate.py` and the validator.
+- **Petroleum is observed at one continent only**, so its response to desert acreage is
+  a single point and its level scaling is extrapolated.
+- **Acreage is good to about ±1 acre**, which dominates the error on small-acreage
+  nations. Continents Three (8 acres) and Four (9 acres) return byte-identical output,
+  which one acre should not permit.
 
 ### 3.5 Allocation: demand-driven, and deliberately dumb [C]
 

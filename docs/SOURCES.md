@@ -11,6 +11,12 @@ fetch them here if you want to check the spec's citations.
 | The 1990 DOS build | [Internet Archive](https://archive.org/details/msdos_The_Global_Dilemma_-_Guns_or_Butter_1990) | Commodity names and UI strings lifted from `G&B.EXE`; the source of every in-game measurement in §2.2 |
 | Crawford's source-code library | [erasmatazz.com](https://www.erasmatazz.com/library/source-code/index.html) | Confirms no source exists for this title — he notes he does not think he has anything on it |
 
+The measurement files in this directory are original readings taken from that build,
+not material from any of the sources above. `gb_resources.xlsx` is the working
+workbook and `gb_resources.txt` a pipe-delimited export of it; the two CSVs are the
+canonical form and the only one the tooling reads. They are the basis for every productivity
+parameter in `src/calibration.ts`.
+
 To reproduce the §2.2 terrain measurements yourself, run the DOS build under
 [js-dos](https://js-dos.com) or DOSBox and read `Factory Size` off the factory screens.
 

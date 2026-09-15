@@ -11,7 +11,8 @@
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "fixture": "node --experimental-strip-types test/report-fixture.ts"
+    "fixture": "node --experimental-strip-types test/report-fixture.ts",
+    "validate": "node --experimental-strip-types test/validate-calibration.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
