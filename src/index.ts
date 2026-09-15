@@ -12,7 +12,7 @@ export {
   tierYield,
   type PigIronVariant,
 } from "./data.ts";
-export { generateWorld, nationState, WORLDGEN, type WorldgenOptions } from "./worldgen.ts";
+export { generateWorld, nationState, borderSegments, polygonContains, vertexPairKey, WORLDGEN, type BorderSegment, type WorldgenOptions } from "./worldgen.ts";
 export { makeRng, hashName, type Rng } from "./rng.ts";
 export { triangulate, dualPolygons, edges as spokeEdges, edgeKey } from "./delaunay.ts";
 export { provinceName, uniqueNames } from "./names.ts";

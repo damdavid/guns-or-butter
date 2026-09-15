@@ -111,16 +111,45 @@ every triangle. The fan must be walked by connectivity, not sorted by angle: ang
 sorting looks equivalent but degenerates on boundary capitals and produces provinces
 that cross the map.
 
-**Coastal cells are handled with ghost points.** A capital on the convex hull has an
-unbounded dual cell. Two attempts to close one directly — through the capital, then by
-running the open ends outward — produced slivers and then map-spanning wedges. Ringing
-the map in 20 points outside it makes every real capital interior, so every cell is
-bounded, and clipping to the map rectangle then produces exactly the boxy outline
-Crawford describes. The ghosts take no part in adjacency.
+**Coastal cells are handled with offshore capitals.** A capital on the convex hull has
+an unbounded dual cell. Two attempts to close one directly — through the capital, then
+by running the open ends outward — produced slivers and then map-spanning wedges.
+Instead, capitals are sown across the whole map and only those inside the coastline
+become provinces; the rest stay at sea, where they bound the coastal cells and give the
+continent its irregular edge. They take no part in adjacency.
+
+Their spacing is a genuine tug-of-war. Too fine and the sea points crowd land capitals
+out of each other's Delaunay neighbourhood, severing adjacency — at 9 units against
+~100-unit land spacing, one beginner world left 15 of 16 provinces unreachable. Too
+sparse, or confined to a coastal band, and a province with open water beyond it runs to
+the map border and is cut flat there. They are now spaced like the land capitals and
+cover the whole ocean, with a repair pass that joins any stranded peninsula to its
+nearest neighbour rather than relying on the tuning holding.
+
+**The continent is a union of overlapping lobes, not a radial outline.** A first version
+used `r(theta) = 1 + harmonics`, which is star-shaped by construction: one radius per
+bearing, so it can wobble but can never reach a peninsula out past a bay beside it.
+Three to five lobes, each hung off an earlier one, give isthmuses where two barely meet
+and peninsulas where one hangs off the edge. Measured raggedness — perimeter squared
+over `4 * pi * area`, where a circle is 1.0 — runs 1.7 to 3.1, against about 1.3 for the
+radial version. The lobes are recentred and shrunk to fit the map before use, and the
+mask is then held fixed: growing it to reach the target province count pushed the coast
+past the map border on 13 worlds in 30.
+
+**The coastline is traced from the provinces**, by chaining the border edges that have
+only one province on them, rather than being the mask they were cut from. The shoreline
+drawn is therefore exactly where the provinces end.
 
 **Wiggle before clipping**, and displace shared vertices consistently via a lookup keyed
 on position — otherwise neighbouring provinces part company along every border, and
 wiggling after the clip pushes vertices back outside the map.
+
+**Terrain is drawn, not just counted.** Marks are scattered in a band straddling each
+road-less border — the same border the acreage comes from — so the picture and the
+economy agree. Each type differs in silhouette as well as hue, because at map scale
+shape carries more than colour: a grey triangle beside a green one reads as the same
+object. Deserts additionally need fewer, larger marks; at the density that suits peaks
+and trees, dune shapes overlap into an indistinct mass.
 
 Calibrated against the 11 nations in the measurement CSVs:
 
