@@ -49,6 +49,44 @@ Strictly sequential; **no going back** once a phase is advanced.
 The autosave is keyed on continent name + level, which is why the shipped game
 directory contains `KITTYCAT.B/.I` and `OLMI.B/.I`.
 
+### 1.2.1 Implementation notes [F]
+
+`src/game.ts`. `npm run play -- <continent> <level> <turns>` drives it.
+
+Phases advance one way only, and input is refused if it belongs to another phase —
+the original warned players in the same terms: *"don't ever select Next Phase until
+you're certain that you've finished your work in that phase."* `Undo Turn` restores a
+snapshot taken at the start of the turn, and is available only at Rankings.
+
+**The Economic Union phase is absent**, because diplomacy is specified but not built.
+It belongs before production, at Expert only.
+
+**Population lives on provinces, but the economy works on nation totals.** Food surplus
+is resolved per nation and then pushed back down in proportion to where the people
+already are, because conquest moves provinces between nations and the two views have to
+be reconciled every turn.
+
+**Labour is stored as fractions, not worker counts** — matching the original's sliders,
+and necessary because the workforce changes size every turn as population moves.
+
+#### An unbalanced allocation produces nothing, not merely less
+
+Worth knowing before building an AI, and the clearest demonstration of §3.5 in motion.
+A plausible opening split — a fifth of the workforce each into lumber, iron ore,
+charcoal, pig iron and farm tools — left **farm tools at zero output for fifteen
+consecutive turns**, while the nation starved from 484 people down to an equilibrium at
+bare farmland yield.
+
+Nothing was broken. Charcoal sits at depth 1 and farm tools at depth 3, so under the
+priority rule charcoal claimed *every ton of lumber* before the tool factory saw any.
+Demand is proportional to capacity, so charcoal's claim did not shrink to match what it
+could use.
+
+`balanceAllocation` implements the manual's own remedy — follow the limiting factor from
+the throttled factory to its missing input, and move labour there — and turns the same
+opening into steady growth: 484 people to 580 over twelve turns, farm tools 204 to 336
+tons. It is scaffolding for the loop and a building block for the AI, not the AI.
+
 ### 1.3 Victory [C]
 
 Conquer the world. The running measure of standing is **population**, not territory
@@ -1241,12 +1279,13 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    distribution by prior concentration, two orders per province, the §5.5 formula,
    transfers-before-battles, sequential waves, scorched earth and the victory check.
    See §5.5.1.
-4. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
-   union-declaration rule in §6.1. Note the turn loop is not yet assembled either: the
-   economy, map and military each resolve correctly but nothing yet drives them through
-   the phase sequence in §1.2.
-5. **Diplomacy**, with §6.4 in from the start rather than §6.2.
-6. **UI.** This is where the original lost, so budget accordingly.
+4. **Turn loop** — **done.** `src/game.ts`, §1.2.1. Phases, orders, undo, autosave key,
+   rankings, victory, and the couplings between the three subsystems.
+5. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
+   union-declaration rule in §6.1. `balanceAllocation` is a starting point for the
+   economic half of it.
+6. **Diplomacy**, with §6.4 in from the start rather than §6.2.
+7. **UI.** This is where the original lost, so budget accordingly.
 
 Three oracles are available while you build: the DOS build under emulation, the §8.1
 fixture, and the measurement CSVs via `npm run validate`.

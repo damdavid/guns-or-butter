@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "fixture": "node --experimental-strip-types test/report-fixture.ts",
     "validate": "node --experimental-strip-types test/validate-calibration.ts",
-    "map": "node --experimental-strip-types test/render-map.ts"
+    "map": "node --experimental-strip-types test/render-map.ts",
+    "play": "node --experimental-strip-types test/play.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
