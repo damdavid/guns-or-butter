@@ -104,6 +104,40 @@ def fit_exponents(series):
     return out
 
 
+def fit_response(pts, a):
+    """Fit `base + m*acres` against readings, minimising RELATIVE error.
+
+    Absolute least squares is wrong here: a raw's outputs span three orders of
+    magnitude within one level, so the largest reading would set both parameters on
+    its own. Relative error also stops `base` being driven negative and clamped to
+    zero, which mattered for Petroleum -- its zero-desert reading (4 tons at 160
+    workers) proves the intercept is non-zero, and clamping was costing a 267% error.
+    """
+    acres = np.array([p[0] for p in pts], float)
+    scale = np.array([p[1] ** a for p in pts], float)
+    obs = np.array([p[2] for p in pts], float)
+    if len(set(acres.tolist())) < 2:
+        return float(np.mean(obs / scale)), 0.0
+
+    # Seed from the unweighted linear fit, then refine on a local grid.
+    k = obs / scale
+    m0, b0 = np.polyfit(acres, k, 1)
+    best = (np.inf, max(b0, 0.0), max(m0, 0.0))
+    span_b = max(abs(b0), k.max()) * 1.5
+    span_m = max(abs(m0), k.max() / max(acres.max(), 1)) * 1.5
+    for _ in range(4):
+        _, cb, cm = best
+        for b in np.linspace(max(0.0, cb - span_b), cb + span_b, 120):
+            for m in np.linspace(max(0.0, cm - span_m), cm + span_m, 120):
+                pred = np.maximum(0.0, b + m * acres) * scale
+                err = float((((pred - obs) / obs) ** 2).sum())
+                if err < best[0]:
+                    best = (err, float(b), float(m))
+        span_b /= 8.0
+        span_m /= 8.0
+    return best[1], best[2]
+
+
 def refit_k(series, exps):
     """With a pinned, k follows from each series by least squares in log space."""
     out = {}
@@ -222,6 +256,7 @@ def emit(series, land, exps, ks):
               " * terrain, no output, whatever the labour.",
               " */",
               "export const RAW_PARAMS: Partial<Record<CommodityId, Partial<Record<Level, RawParams>>>> = {"]
+    raw_rows = {}
     for c in TERRAIN:
         if c not in exps:
             continue
@@ -242,20 +277,67 @@ def emit(series, land, exps, ks):
             # k, by contrast, needs only one reading per continent once a is known. Using
             # every series -- not just the long ones -- is what lets Petroleum, observed
             # 1-3 times per continent, still get a terrain response.
-            xs, ys = [], []
-            for cont, s in all_here:
-                ys.append(float(np.mean([o / L**a for L, o in s])))
-                xs.append(land[(lvl, cont)][TERRAIN[c]])
-            if len(set(xs)) >= 2:
-                m, b = np.polyfit(np.array(xs), np.array(ys), 1)
-            else:
-                m, b = 0.0, float(np.mean(ys))
-            rows.append((lvl, a, max(float(b), 0.0), float(m)))
+            pts = [(land[(lvl, cont)][TERRAIN[c]], L, o)
+                   for cont, s in all_here for L, o in s]
+            b, m = fit_response(pts, a)
+            rows.append((lvl, a, b, m))
         if not rows:
             continue
+        raw_rows[c] = {lvl: (a, b, m) for lvl, a, b, m in rows}
+
+    # Project the levels a raw was never sampled at, from how its terrain siblings move
+    # between those levels. Petroleum is only ever observed at Expert, and Heavy Metal
+    # likewise; without this they would inherit Expert parameters at Beginner, where
+    # Sulfur's base is 94x larger. Terrain is ignored at Beginner, so m projects to 0.
+    ratios = {}
+    for terr in set(TERRAIN.values()):
+        sibs = [c for c in raw_rows if TERRAIN[c] == terr]
+        for src in LEVELS:
+            for dst in LEVELS:
+                if src == dst:
+                    continue
+                bs = [raw_rows[c][dst][1] / raw_rows[c][src][1]
+                      for c in sibs
+                      if src in raw_rows[c] and dst in raw_rows[c] and raw_rows[c][src][1] > 0]
+                # Beginner has m = 0 by construction (terrain ignored), so only pairs
+                # with a positive slope at both ends can inform a slope ratio.
+                ms = [raw_rows[c][dst][2] / raw_rows[c][src][2]
+                      for c in sibs
+                      if src in raw_rows[c] and dst in raw_rows[c]
+                      and raw_rows[c][src][2] > 0 and raw_rows[c][dst][2] > 0]
+                if bs:
+                    ratios[(terr, src, dst)] = (
+                        float(np.exp(np.mean(np.log(bs)))),
+                        float(np.exp(np.mean(np.log(ms)))) if ms else 0.0,
+                    )
+
+    projected = {}
+    for c, per in raw_rows.items():
+        for dst in LEVELS:
+            if dst in per:
+                continue
+            src = min((l for l in per), key=lambda l: abs(LEVELS.index(l) - LEVELS.index(dst)))
+            r = ratios.get((TERRAIN[c], src, dst))
+            if not r:
+                continue
+            a, b, m = per[src]
+            projected[(c, dst)] = (a, b * r[0], 0.0 if dst == "Beginner" else m * r[1])
+
+    for c in TERRAIN:
+        if c not in raw_rows:
+            continue
         lines.append(f"  \"{ID[c]}\": {{")
-        for lvl, a, b, m in rows:
-            lines.append(f"    {LEVEL_ID[lvl]}: {{ a: {a:.4f}, base: {b:.6f}, m: {m:.6f} }},")
+        for lvl in LEVELS:
+            if lvl in raw_rows[c]:
+                a, b, m = raw_rows[c][lvl]
+                note = ""
+            elif (c, lvl) in projected:
+                a, b, m = projected[(c, lvl)]
+                note = "  // projected from terrain siblings; never sampled"
+            else:
+                continue
+            lines.append(
+                f"    {LEVEL_ID[lvl]}: {{ a: {a:.4f}, base: {b:.6f}, m: {m:.6f} }},{note}")
         lines.append("  },")
     lines += ["};", ""]
     with open("src/calibration.ts", "w") as f:

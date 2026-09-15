@@ -118,36 +118,42 @@ export const PARAMS: Partial<Record<CommodityId, Partial<Record<Level, Params>>>
 export const RAW_PARAMS: Partial<Record<CommodityId, Partial<Record<Level, RawParams>>>> = {
   "lumber": {
     beginner: { a: 1.1268, base: 6.489669, m: 0.000000 },
-    intermediate: { a: 1.1266, base: 2.125067, m: 0.108964 },
-    expert: { a: 1.1329, base: 0.717943, m: 0.100671 },
+    intermediate: { a: 1.1266, base: 2.151396, m: 0.105951 },
+    expert: { a: 1.1329, base: 0.753670, m: 0.098361 },
   },
   "sulfur": {
     beginner: { a: 1.6247, base: 0.998894, m: 0.000000 },
-    intermediate: { a: 1.7071, base: 0.128931, m: 0.011424 },
-    expert: { a: 1.7317, base: 0.010571, m: 0.010582 },
+    intermediate: { a: 1.7071, base: 0.125657, m: 0.011558 },
+    expert: { a: 1.7317, base: 0.021648, m: 0.007561 },
   },
   "iron-ore": {
     beginner: { a: 1.1260, base: 4.716465, m: 0.000000 },
-    intermediate: { a: 1.1292, base: 1.541343, m: 0.036989 },
-    expert: { a: 1.1396, base: 0.490549, m: 0.034156 },
+    intermediate: { a: 1.1292, base: 1.544499, m: 0.036782 },
+    expert: { a: 1.1396, base: 0.528971, m: 0.032885 },
   },
   "coal": {
     beginner: { a: 1.6910, base: 0.673704, m: 0.000000 },
-    intermediate: { a: 1.7284, base: 0.107631, m: 0.005112 },
-    expert: { a: 1.7472, base: 0.005168, m: 0.003550 },
+    intermediate: { a: 1.7284, base: 0.108748, m: 0.004961 },
+    expert: { a: 1.7472, base: 0.021019, m: 0.002944 },
   },
   "light-metal": {
-    intermediate: { a: 1.9679, base: 0.011088, m: 0.000758 },
-    expert: { a: 2.0404, base: 0.000000, m: 0.000364 },
+    beginner: { a: 1.9679, base: 0.053246, m: 0.000000 },  // projected from terrain siblings; never sampled
+    intermediate: { a: 1.9679, base: 0.012242, m: 0.000657 },
+    expert: { a: 2.0404, base: 0.001260, m: 0.000293 },
   },
   "nitrate": {
-    intermediate: { a: 2.0389, base: 0.005095, m: 0.000781 },
-    expert: { a: 2.1471, base: 0.000000, m: 0.000441 },
+    beginner: { a: 2.0389, base: 0.037150, m: 0.000000 },  // projected from terrain siblings; never sampled
+    intermediate: { a: 2.0389, base: 0.004673, m: 0.000753 },
+    expert: { a: 2.1471, base: 0.000538, m: 0.000215 },
   },
   "heavy-metal": {
-    expert: { a: 2.0208, base: 0.000000, m: 0.000144 },
+    beginner: { a: 2.0208, base: 0.009864, m: 0.000000 },  // projected from terrain siblings; never sampled
+    intermediate: { a: 2.0208, base: 0.003078, m: 0.000188 },  // projected from terrain siblings; never sampled
+    expert: { a: 2.0208, base: 0.000583, m: 0.000116 },
   },
   "petroleum": {
-    expert: { a: 2.2324, base: 0.000000, m: 0.000042 },
+    beginner: { a: 2.2324, base: 0.001795, m: 0.000000 },  // projected from terrain siblings; never sampled
+    intermediate: { a: 2.2324, base: 0.000276, m: 0.000034 },  // projected from terrain siblings; never sampled
+    expert: { a: 2.2324, base: 0.000039, m: 0.000015 },
   },
 };

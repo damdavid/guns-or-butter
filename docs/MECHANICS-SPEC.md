@@ -415,22 +415,33 @@ Three corrections to earlier drafts, all forced by the larger dataset:
 - **There is no `max()` floor.** The floor was inferred from three points; with five
   points per series a plain line fits, and the non-zero intercept *is* the design
   dialogue's "modicum of natural resources." Simpler, and closer to the text.
-- **Advanced raws have an intercept of ~0.** Heavy Metal, Nitrate and Light Metal
-  produce essentially nothing without their terrain, at any labour. The modicum is real
-  only for the early-tier raws — which is exactly where the manual's "you can still get
-  these things, but it will cost you a lot more workers" applies.
+- **Every raw keeps a small positive intercept.** An earlier revision reported the
+  advanced raws as having a zero intercept, but that was an artifact of least squares
+  driving `base` negative and the emitter clamping it. Petroleum's zero-desert reading —
+  4 tons at 160 workers — proves otherwise. The response is now fitted in **relative**
+  error, which both stops the clamping and stops the largest reading in a series from
+  setting both parameters on its own, since a raw's outputs span three orders of
+  magnitude within one level. So the modicum applies to all eight raws, exactly as the
+  manual describes: *"you can still get these things ... but it will cost you a lot more
+  workers."*
+- **Levels a raw was never sampled at are projected from its terrain siblings.**
+  Petroleum is observed only at Expert and Heavy Metal likewise; without projection they
+  would inherit Expert parameters at Beginner, where Sulfur's base is 46× larger. The
+  projection takes the geometric-mean per-level ratio across raws sharing that terrain,
+  and sets `m = 0` at Beginner since terrain is ignored there. Projected entries are
+  marked as such in `src/calibration.ts`.
 
 #### Accuracy
 
 Relative error across all 644 readings, stratified because outputs are
 displayed as integers and a reading of 3 carries ±17% of rounding on its own:
 
-| Observed output | n | median | p90 |
-|---|---|---|---|
-| < 10 | 60 | 12.1% | 100% |
-| 10–50 | 126 | 5.4% | 33% |
-| 50–200 | 198 | 3.1% | 13% |
-| ≥ 200 | 260 | **1.2%** | 6.4% |
+| Observed output | n | median | p90 | worst |
+|---|---|---|---|---|
+| < 10 | 60 | 10.4% | 37% | 75% |
+| 10–50 | 126 | 4.5% | 20% | 62% |
+| 50–200 | 198 | 2.6% | 14% | 62% |
+| ≥ 200 | 260 | **1.2%** | 7.4% | 47% |
 
 Error falls monotonically with magnitude, which is the signature of rounding-bound
 measurement rather than model error. The values that matter for gameplay are good to
@@ -448,8 +459,13 @@ about 1%.
   named empty set so the next bad series is a one-line change.
 - **Petroleum is the sparsest series**: seven non-zero readings across four continents,
   and its longest single series has only three points. Its exponent rests on that one
-  series, and its desert response is the weakest fit in the table — the Expert Two
-  reading is over-predicted by a factor of 3.7. It is also the only commodity for which
+  series and its Beginner and Intermediate parameters are projected, not measured.
+  Relative-error fitting cut its worst prediction from 267% to 62%. Extrapolating its
+  *exponent* from the Sulfur → Nitrate step was tried and rejected: that gives 2.5625
+  against a measured 2.2324 and roughly doubles the error, because the one long series
+  constrains the exponent well even though it constrains little else. The extrapolated
+  *slope* (0.000018) and the relative-error fit (0.000015) agree, which is the one place
+  the sibling-scaling idea corroborated the direct fit. It is also the only commodity for which
   the fitter's point thresholds mattered: an earlier revision required four points per
   series to fit an exponent, which silently dropped Petroleum, zeroed its capacity, and
   through it killed High Explosives, Diesel Engine, Cannon, Tank and Tractor. The
