@@ -14,7 +14,8 @@
     "fixture": "node --experimental-strip-types test/report-fixture.ts",
     "validate": "node --experimental-strip-types test/validate-calibration.ts",
     "map": "node --experimental-strip-types test/render-map.ts",
-    "play": "node --experimental-strip-types test/play.ts"
+    "play": "node --experimental-strip-types test/play.ts",
+    "game": "node --experimental-strip-types test/interactive.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
