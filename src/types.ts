@@ -14,11 +14,11 @@ export interface Commodity {
   kind: CommodityKind;
   /** Tons of each input consumed per ton of output. Empty for raws. */
   inputs: Readonly<Record<CommodityId, number>>;
-  /** Productivity coefficient. For raws this is the f=1 (terrain-off) baseline. */
-  k: number;
-  /** Productivity exponent, > 1 — the economies-of-scale engine (§3.4). */
-  a: number;
-  /** Raws only: the terrain whose acreage raises this commodity's productivity. */
+  /**
+   * Raws only: the terrain whose acreage raises this commodity's productivity.
+   * Productivity parameters themselves live in src/calibration.ts, keyed on
+   * (commodity, level), because they are measured rather than authored.
+   */
   terrain?: Terrain;
   /** Tools and weapons: 1-5. Drives food yield / firepower per ton, both 2^(tier-1). */
   tier?: number;

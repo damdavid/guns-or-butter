@@ -20,9 +20,9 @@ const EPS = 1e-9;
 export interface EconomyOptions {
   pigIron?: PigIronVariant;
   /**
-   * Per-commodity `k`/`a` overrides. Most of the table is placeholder values (§3.4)
-   * that will move as more readings arrive, so calibration needs to be swappable
-   * without editing the data table.
+   * Per-commodity overrides on the measured coefficient and exponent. Used to probe
+   * "what if this industry were calibrated differently" without regenerating
+   * src/calibration.ts — see the §8.2 pig iron test for the motivating case.
    */
   overrides?: Partial<Record<CommodityId, { k?: number; a?: number }>>;
 }
@@ -55,8 +55,9 @@ export class Economy {
    * engine the whole design turns on (§3.4). Every exponent is measured, and they
    * range from 1.126 (Lumber, Farm Tools, Sword) to 2.53 (Diesel Engine).
    *
-   * Raws draw their coefficient from their own terrain; everything else takes a flat
-   * per-level multiplier, which also turns out to apply to intermediates and tiers.
+   * Raws draw their coefficient from their own terrain acreage; everything else has a
+   * coefficient measured directly per level. Both vary by difficulty level, and the
+   * per-level ratio differs between commodities, so no single multiplier will do.
    */
   capacity(state: EconomyState, id: CommodityId): number {
     const c = this.graph.table.get(id);

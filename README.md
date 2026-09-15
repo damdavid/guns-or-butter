@@ -4,29 +4,42 @@ A reimplementation of Chris Crawford's *The Global Dilemma: Guns or Butter* (199
 rebuilt from the original manual, Crawford's design retrospective, and measurements
 taken from the DOS binary running under emulation.
 
+No source code for the game survives — Crawford's own
+[source-release page](https://www.erasmatazz.com/library/source-code/index.html) notes
+he does not think he has anything on this title — so the design is reconstructed rather
+than ported.
+
+## Layout
+
 - `docs/MECHANICS-SPEC.md` — the reconstructed design spec. Every claim is tagged
-  `[C]` confirmed, `[I]` inferred, or `[F]` free-to-choose.
-- `docs/calibrate.py` — fits every commodity's productivity parameters from the
-  measurement CSVs and generates `src/calibration.ts`.
-- `docs/fit-terrain.py` — earlier, forest-only fit; superseded by `calibrate.py`.
-- `docs/*.csv` — 644 output measurements taken from the DOS build under emulation.
+  `[C]` confirmed, `[I]` inferred, or `[F]` free-to-choose, so the boundary between
+  recovered fact and invention stays visible.
+- `docs/*.csv` — 644 output measurements taken from the DOS build. Original readings,
+  and the basis for every productivity parameter.
+- `docs/calibrate.py` — fits those measurements and generates `src/calibration.ts`.
+- `docs/SOURCES.md` — where to obtain the copyrighted source material, which is not
+  committed here.
 - `src/` — the simulation. No runtime dependencies.
-- `the-global-dilemma-guns-or-butter/` — the original 1990 build, for reference.
 
 ## Status
 
-Economy sim only: production graph, productivity function, demand-driven allocation,
-agriculture, population. Map generation, military and diplomacy are specified but not
-yet built — see §10 of the spec for the intended order.
+**Economy sim complete and calibrated.** Production graph, superlinear productivity,
+demand-driven allocation with input hoarding and depth-ordered priority, agriculture,
+population. All 33 commodities have measured parameters; exponents span 1.13 to 2.53.
+
+Map generation, military and diplomacy are specified but not yet built. See §10 of the
+spec for the intended order.
 
 ## Commands
 
-    npm test          # 81 tests, including the manual p.12 reference state
+    npm test          # 81 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
+    npm run validate  # score the sim against the 640 usable measurements
     npm run fixture   # print the reference state as a Production Summary
-    npm run validate  # score the sim against all 644 measurements
 
-Requires Node >= 22.6 (runs TypeScript directly via `--experimental-strip-types`).
+Requires Node >= 22.6, which runs the TypeScript directly via
+`--experimental-strip-types`. The only dev dependencies are `typescript` and
+`@types/node`.
 
 ## License
 
