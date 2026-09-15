@@ -142,9 +142,12 @@ export const RAW_PARAMS: Partial<Record<CommodityId, Partial<Record<Level, RawPa
   },
   "nitrate": {
     intermediate: { a: 2.0389, base: 0.005095, m: 0.000781 },
-    expert: { a: 2.1471, base: 0.000000, m: 0.000452 },
+    expert: { a: 2.1471, base: 0.000000, m: 0.000441 },
   },
   "heavy-metal": {
-    expert: { a: 2.0208, base: 0.000000, m: 0.000199 },
+    expert: { a: 2.0208, base: 0.000000, m: 0.000144 },
+  },
+  "petroleum": {
+    expert: { a: 2.2324, base: 0.000000, m: 0.000042 },
   },
 };

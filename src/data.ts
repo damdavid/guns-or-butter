@@ -30,8 +30,8 @@ const PIG_IRON: Record<PigIronVariant, Record<CommodityId, number>> = {
 export function commodityTable(
   pigIron: PigIronVariant = DEFAULT_PIG_IRON,
 ): Map<CommodityId, Commodity> {
-  const list: Omit<Commodity, "k" | "a">[] = [
-    // --- raws (§3.2). Capacity comes from RAW_RESPONSE, keyed on `terrain`.
+  const list: Commodity[] = [
+    // --- raws (§3.2). Capacity comes from RAW_PARAMS, keyed on `terrain`.
     { id: "lumber", kind: "raw", inputs: {}, terrain: "forest" },
     { id: "sulfur", kind: "raw", inputs: {}, terrain: "desert" },
     { id: "iron-ore", kind: "raw", inputs: {}, terrain: "mountains" },
@@ -72,12 +72,7 @@ export function commodityTable(
     { id: "cannon", kind: "weapon", tier: 4, inputs: { "low-grade-steel": 0.5, "high-explosives": 0.5 } },
     { id: "tank", kind: "weapon", tier: 5, inputs: { "high-grade-steel": 0.4, "high-explosives": 0.25, "diesel-engine": 0.25, instruments: 0.125 } },
   ];
-  return new Map(
-    list.map((c) => [
-      c.id,
-      { ...c, a: 0, k: 0 } as Commodity,
-    ]),
-  );
+  return new Map(list.map((c) => [c.id, c]));
 }
 
 /** Tier n yields 2^(n-1), for both food per ton of tool and firepower per ton (§4.3, §5.2). */

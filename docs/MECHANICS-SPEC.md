@@ -126,35 +126,39 @@ base is the plain sum over its provinces [C]:
 > resource base was simply the sum of the resource bases of each province in the
 > country."
 
-There is also a **guaranteed floor on every resource**, independent of terrain — an
-explicit design decision, so that a badly-seeded start is not unwinnable:
+The design also promises a **modicum for everyone**, independent of terrain — an
+explicit decision so that a badly-seeded start is not unwinnable:
 
 > "we must not take it so far that a particularly unfortunate mortal would never be
 > able to get his economy started ... Let us provide a modicum of natural resources to
 > each mortal, augmented by a bounteous supply for those blessed with the proper
 > terrain."
 
-Reconciling those two statements: the endowment is additive per province with a
-non-zero floor, and it acts as a **productivity multiplier** on the raw extraction
-industries rather than as a hard output ceiling:
+Measurement locates that modicum precisely (§3.4): it is the **intercept** of a linear
+response, not a `max()` floor, and it is real only for the early-tier raws.
 
-    capacity_raw = k_raw * f(endowment_raw) * L^a_raw        with f(0) > 0
+    capacity_raw = (base + m * acres) * L^a       in that raw's own terrain
 
-**Only the eight raws take a terrain term.** Intermediates, tools and weapons consume
-commodities rather than land, so their capacity is unmodified. Farmland is separate
-again — it feeds acreage into §4, not this multiplier.
+**Terrain affects only the raws, but difficulty level affects everything.** Each raw
+responds to one terrain type and nothing else — a nation with 74 mountain acres and no
+forest produces exactly as much lumber as one with no mountains at all. Intermediates,
+tools and weapons take no terrain term, but their coefficients *do* vary by difficulty
+level, which an earlier draft of this section denied. Farmland is separate again: it
+feeds acreage into §4, not into this response.
 
 ### 2.2 Terrain magnitude — measured
 
 **No source gives a per-acre coefficient.** The manual says only "a lot more workers,"
 ch24 says only "a fixed amount," and the design dialogue says only "a modicum ...
-augmented by a bounteous supply." There is no number to recover; `f` must be measured
-or chosen.
+augmented by a bounteous supply." Every number below is measured, not recovered.
 
-**The multiplier reading is confirmed in-game** [C]. In an Intermediate game, Lumber's
-`Limiting Factor` reads `Labor` at *every* worker allocation, however far it is pushed.
-The endowment therefore scales productivity; it is **not** a hard output ceiling, and
-the formula above stands.
+This section establishes the *shape* of the terrain response from Lumber alone. §3.4
+supersedes it on magnitudes: each raw turns out to have its own response, so the
+per-commodity parameters there are the ones to implement.
+
+**Terrain scales productivity and never caps output** [C]. In an Intermediate game,
+Lumber's `Limiting Factor` reads `Labor` at *every* worker allocation, however far it
+is pushed.
 
 Two consequences follow, both load-bearing:
 
@@ -173,7 +177,7 @@ Two consequences follow, both load-bearing:
 #### Measured: forest → Lumber [C]
 
 Twenty-seven readings across all three levels, with full land composition and province
-counts. Refit any time with `docs/fit-terrain.py`; the sim asserts against them in
+counts. Refit any time with `docs/calibrate.py`; the sim asserts against them in
 `test/fixture.test.ts`.
 
 | Level | Continent | Prov | Farm | Mtn | Forest | Desert | L=10 | L=25 |
@@ -220,28 +224,20 @@ nations, both with **zero forest**:
 shows **mountain and desert acreage do not leak into Lumber** — 74 mountain acres buy
 nothing. Each raw responds only to its own terrain.
 
-#### Floor scales with player count [C]
+#### Superseded: the floor and its player-count scaling
 
-With three levels measured, the scaling is a result rather than the one-parameter guess
-it started as:
+This section previously reported a zero-acre floor scaling as `18.4461 * N^-1.549`
+across all three levels, fitted to within 2%. **Both the floor and that scaling were
+artifacts of thin data.** With five worker points per series rather than two, a plain
+line fits from zero acres upward and no `max()` is needed; and with each raw fitted
+separately, the per-level coefficients do not share a single exponent in player count.
 
-    floor(N) = 18.4461 * N^-1.549          fits all three levels to within 2%
-
-| Players | Observed floor | Predicted | Error |
-|---|---|---|---|
-| 2 | 6.3626 | 6.3039 | −0.9% |
-| 4 | 2.1148 | 2.1544 | +1.9% |
-| 8 | 0.7431 | 0.7362 | −0.9% |
-
-Two independent doublings give ratios of **3.009** and **2.846**, against `2^1.549 =
-2.93`. `floor / base` is ~1.15 at both measured levels, and the marginal acre is nearly
-level-independent (0.1117 vs 0.1030, a 8% spread).
-
-Beginner is not a separate regime: its flat value sits exactly where the same scaling
-predicts a floor. The manual's *"terrain didn't mean anything"* then reads as Beginner
-evaluating the response at zero acres, which lands on a generous floor rather than a
-special case. Note every Beginner reading happens to be zero-forest, so Beginner's
-slope is asserted from the manual, never measured.
+What survives: coefficients do fall steeply with difficulty level — for Lumber the
+ratio is close to 3 per level step — and the intercept is non-zero for the early-tier
+raws, which is the "modicum" the design dialogue promises. §3.4 has the measured
+values. The episode is recorded here because it is the second conclusion in this
+document that better data overturned, and the pattern is worth distrusting: anything
+fitted from two or three points here has been wrong about as often as right.
 
 #### The exponent conflict is resolved [C]
 
@@ -370,8 +366,9 @@ without this "we would have 15th century peasants building digital watches."
 
 #### Every exponent is now measured [C]
 
-644 output readings — 53 raw series with land composition, 22 intermediate/tool/weapon
-series — across all three levels. Fitted by `docs/calibrate.py`, which emits
+644 output readings — 297 across 53 raw series carrying land composition, 347 across 22
+intermediate/tool/weapon series — covering all three levels. 640 are scored; the four
+belonging to the one excluded series are not. Fitted by `docs/calibrate.py`, which emits
 `src/calibration.ts`; scored by `npm run validate`.
 
     capacity = K * L^a        both K and a measured per (commodity, level)
@@ -425,15 +422,15 @@ Three corrections to earlier drafts, all forced by the larger dataset:
 
 #### Accuracy
 
-Relative error against all 640 scored readings, stratified because outputs are
+Relative error across the 640 scored readings, stratified because outputs are
 displayed as integers and a reading of 3 carries ±17% of rounding on its own:
 
 | Observed output | n | median | p90 |
 |---|---|---|---|
 | < 10 | 60 | 12.1% | 100% |
-| 10–50 | 125 | 5.7% | 60% |
-| 50–200 | 197 | 3.3% | 18% |
-| ≥ 200 | 258 | **1.2%** | 6.5% |
+| 10–50 | 125 | 5.4% | 33% |
+| 50–200 | 197 | 3.1% | 13% |
+| ≥ 200 | 258 | **1.2%** | 6.4% |
 
 Error falls monotonically with magnitude, which is the signature of rounding-bound
 measurement rather than model error. The values that matter for gameplay are good to
@@ -445,8 +442,16 @@ about 1%.
   all ten other series give ~1.13, its coefficient is an order of magnitude out, and it
   breaks monotonicity in mountain acreage. Treated as a transcription error pending a
   re-read; the exclusion is declared in both `calibrate.py` and the validator.
-- **Petroleum is observed at one continent only**, so its response to desert acreage is
-  a single point and its level scaling is extrapolated.
+- **Petroleum is the sparsest series**: seven non-zero readings across four continents,
+  and its longest single series has only three points. Its exponent rests on that one
+  series, and its desert response is the weakest fit in the table — the Expert Two
+  reading is over-predicted by a factor of 3.7. It is also the only commodity for which
+  the fitter's point thresholds mattered: an earlier revision required four points per
+  series to fit an exponent, which silently dropped Petroleum, zeroed its capacity, and
+  through it killed High Explosives, Diesel Engine, Cannon, Tank and Tractor. The
+  exponent now needs three points but the coefficient needs only one, since `a` pinned
+  makes every individual reading a `k` estimate. Two coverage tests in
+  `test/economy.test.ts` now assert that no commodity can lose its parameters.
 - **Acreage is good to about ±1 acre**, which dominates the error on small-acreage
   nations. Continents Three (8 acres) and Four (9 acres) return byte-identical output,
   which one acre should not permit.
@@ -871,8 +876,8 @@ interface Commodity {
   id: CommodityId
   priority: number                          // display order == allocation priority
   inputs: { id: CommodityId; perTon: number }[]
-  k: number                                 // productivity coefficient
-  a: number                                 // productivity exponent, > 1
+  // Productivity parameters are NOT here: they are measured per (commodity, level)
+  // and live in src/calibration.ts, generated from the measurement CSVs.
   terrain?: TerrainType                     // absence raises labor cost, never blocks
 }
 
@@ -1100,18 +1105,35 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
 
 ---
 
-## 10. Recommended build order
+## 10. Build order and status
 
-1. **Economy sim, headless.** Commodity graph, productivity function, demand-driven
-   allocation, food and population. Assert against the §8.1 reference state — it is a
-   complete, self-consistent test fixture. Get this right before drawing anything.
-2. **Map generation.** Seeded by name. Provinces as the dual of a road graph.
+1. **Economy sim, headless** — **done.** `src/` implements the commodity graph,
+   productivity function, demand-driven allocation, agriculture and population, with
+   every parameter measured rather than authored. Validated two ways: `npm test`
+   asserts the §8.1 reference state and the §2.2 terrain readings, and
+   `npm run validate` scores the 640 usable measurements (median error 1.2% above
+   200 tons).
+2. **Map generation** — next. Seeded by continent name. Cities, then spokes, then
+   provinces as the dual of the spoke graph, then ~half the spokes marked as roads,
+   then terrain into the road-less gaps (§2).
 3. **Military.** Continuous firepower, two orders per province, the §5.5 formula,
    transfers-before-battles.
 4. **AI opponents.** [F] — nothing is recoverable about Crawford's AI beyond the
    union-declaration rule in §6.1.
-5. **Diplomacy**, with the §9.1 fix in from the start.
+5. **Diplomacy**, with §6.4 in from the start rather than §6.2.
 6. **UI.** This is where the original lost, so budget accordingly.
 
-Two independent oracles are available while you build: the DOSBox build of the
-original, and the §8.1 fixture.
+Three oracles are available while you build: the DOS build under emulation, the §8.1
+fixture, and the measurement CSVs via `npm run validate`.
+
+### What is still unmeasured
+
+Everything in the economy is now measured except the population response. `POPULATION.growth`
+and `POPULATION.decline` in `src/data.ts` are [F] placeholders — the manual gives the
+functional form (growth as the square root of surplus) and one boundary condition (an
+all-labour tier-1 agricultural start should yield roughly 30% growth), but no
+coefficients. Calibrating those needs turn-over-turn population readings, which no
+measurement set so far provides.
+
+Two smaller data gaps, neither blocking: continent Seven's Iron Ore series is excluded
+as a probable transcription error, and Petroleum is observed on one continent only.
