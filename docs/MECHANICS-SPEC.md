@@ -367,8 +367,8 @@ without this "we would have 15th century peasants building digital watches."
 #### Every exponent is now measured [C]
 
 644 output readings — 297 across 53 raw series carrying land composition, 347 across 22
-intermediate/tool/weapon series — covering all three levels. 640 are scored; the four
-belonging to the one excluded series are not. Fitted by `docs/calibrate.py`, which emits
+intermediate/tool/weapon series — covering all three levels. All 644 are scored; nothing
+is excluded. Fitted by `docs/calibrate.py`, which emits
 `src/calibration.ts`; scored by `npm run validate`.
 
     capacity = K * L^a        both K and a measured per (commodity, level)
@@ -415,22 +415,33 @@ Three corrections to earlier drafts, all forced by the larger dataset:
 - **There is no `max()` floor.** The floor was inferred from three points; with five
   points per series a plain line fits, and the non-zero intercept *is* the design
   dialogue's "modicum of natural resources." Simpler, and closer to the text.
-- **Advanced raws have an intercept of ~0.** Heavy Metal, Nitrate and Light Metal
-  produce essentially nothing without their terrain, at any labour. The modicum is real
-  only for the early-tier raws — which is exactly where the manual's "you can still get
-  these things, but it will cost you a lot more workers" applies.
+- **Every raw keeps a small positive intercept.** An earlier revision reported the
+  advanced raws as having a zero intercept, but that was an artifact of least squares
+  driving `base` negative and the emitter clamping it. Petroleum's zero-desert reading —
+  4 tons at 160 workers — proves otherwise. The response is now fitted in **relative**
+  error, which both stops the clamping and stops the largest reading in a series from
+  setting both parameters on its own, since a raw's outputs span three orders of
+  magnitude within one level. So the modicum applies to all eight raws, exactly as the
+  manual describes: *"you can still get these things ... but it will cost you a lot more
+  workers."*
+- **Levels a raw was never sampled at are projected from its terrain siblings.**
+  Petroleum is observed only at Expert and Heavy Metal likewise; without projection they
+  would inherit Expert parameters at Beginner, where Sulfur's base is 46× larger. The
+  projection takes the geometric-mean per-level ratio across raws sharing that terrain,
+  and sets `m = 0` at Beginner since terrain is ignored there. Projected entries are
+  marked as such in `src/calibration.ts`.
 
 #### Accuracy
 
-Relative error across the 640 scored readings, stratified because outputs are
+Relative error across all 644 readings, stratified because outputs are
 displayed as integers and a reading of 3 carries ±17% of rounding on its own:
 
-| Observed output | n | median | p90 |
-|---|---|---|---|
-| < 10 | 60 | 12.1% | 100% |
-| 10–50 | 125 | 5.4% | 33% |
-| 50–200 | 197 | 3.1% | 13% |
-| ≥ 200 | 258 | **1.2%** | 6.4% |
+| Observed output | n | median | p90 | worst |
+|---|---|---|---|---|
+| < 10 | 60 | 10.4% | 37% | 75% |
+| 10–50 | 126 | 4.5% | 20% | 62% |
+| 50–200 | 198 | 2.6% | 14% | 62% |
+| ≥ 200 | 260 | **1.2%** | 7.4% | 47% |
 
 Error falls monotonically with magnitude, which is the signature of rounding-bound
 measurement rather than model error. The values that matter for gameplay are good to
@@ -438,14 +449,23 @@ about 1%.
 
 #### Known data problems
 
-- **Continent Seven's Iron Ore series is excluded.** It fits an exponent of 1.65 where
-  all ten other series give ~1.13, its coefficient is an order of magnitude out, and it
-  breaks monotonicity in mountain acreage. Treated as a transcription error pending a
-  re-read; the exclusion is declared in both `calibrate.py` and the validator.
+- **Continent Seven's Iron Ore was wrong and has been re-read.** The original series
+  fitted an exponent of 1.65 where every other Iron Ore series gave ~1.13, and it broke
+  monotonicity in mountain acreage — 32 acres yielded less than 0 acres did elsewhere.
+  Both were correct diagnoses: the re-read replaced it, and Iron Ore's exponent spread
+  across eleven series fell from sd 0.1495 to 0.0096, its Intermediate terrain fit from
+  23.7% to 2.1% max error, and its worst single prediction from 181.7% to 9.9%. Nothing
+  is excluded from the fit any more, though `EXCLUDE` remains in `calibrate.py` as a
+  named empty set so the next bad series is a one-line change.
 - **Petroleum is the sparsest series**: seven non-zero readings across four continents,
   and its longest single series has only three points. Its exponent rests on that one
-  series, and its desert response is the weakest fit in the table — the Expert Two
-  reading is over-predicted by a factor of 3.7. It is also the only commodity for which
+  series and its Beginner and Intermediate parameters are projected, not measured.
+  Relative-error fitting cut its worst prediction from 267% to 62%. Extrapolating its
+  *exponent* from the Sulfur → Nitrate step was tried and rejected: that gives 2.5625
+  against a measured 2.2324 and roughly doubles the error, because the one long series
+  constrains the exponent well even though it constrains little else. The extrapolated
+  *slope* (0.000018) and the relative-error fit (0.000015) agree, which is the one place
+  the sibling-scaling idea corroborated the direct fit. It is also the only commodity for which
   the fitter's point thresholds mattered: an earlier revision required four points per
   series to fit an exponent, which silently dropped Petroleum, zeroed its capacity, and
   through it killed High Explosives, Diesel Engine, Cannon, Tank and Tractor. The
@@ -1111,7 +1131,7 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    productivity function, demand-driven allocation, agriculture and population, with
    every parameter measured rather than authored. Validated two ways: `npm test`
    asserts the §8.1 reference state and the §2.2 terrain readings, and
-   `npm run validate` scores the 640 usable measurements (median error 1.2% above
+   `npm run validate` scores all 644 measurements (median error 1.2% above
    200 tons).
 2. **Map generation** — next. Seeded by continent name. Cities, then spokes, then
    provinces as the dual of the spoke graph, then ~half the spokes marked as roads,
@@ -1135,5 +1155,5 @@ all-labour tier-1 agricultural start should yield roughly 30% growth), but no
 coefficients. Calibrating those needs turn-over-turn population readings, which no
 measurement set so far provides.
 
-Two smaller data gaps, neither blocking: continent Seven's Iron Ore series is excluded
-as a probable transcription error, and Petroleum is observed on one continent only.
+One smaller data gap, not blocking: Petroleum has only seven non-zero readings and is
+the weakest fit in the table — the row to re-measure first.

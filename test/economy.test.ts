@@ -103,9 +103,15 @@ describe("calibration coverage", () => {
       for (const input of Object.keys(table.get(id)!.inputs)) chain(input, seen);
       return seen;
     };
+    // Raws get far more labour than the factories downstream of them. With uniform
+    // staffing a chain can starve itself: Combine needs both Iron and, via Steam
+    // Engine, Low-Grade Steel, and those two compete for the same Iron Ore with Iron
+    // winning on table order. That is the allocation rule working, not a bad parameter.
     const dead: string[] = [];
     for (const id of table.keys()) {
-      const workers = Object.fromEntries([...chain(id)].map((c) => [c, 400]));
+      const workers = Object.fromEntries(
+        [...chain(id)].map((c) => [c, table.get(c)!.kind === "raw" ? 4000 : 400]),
+      );
       const result = economy.resolve({
         level: "expert",
         land: { farmland: 400, forest: 80, mountains: 80, desert: 80 },
@@ -228,10 +234,21 @@ describe("terrain response (§2.2)", () => {
     assert.ok(gain("coal") > gain("iron-ore") * 1.5);
   });
 
-  it("gives advanced raws a near-zero intercept: no terrain, no output", () => {
-    const heavy = economy.graph.table.get("heavy-metal")!;
-    assert.ok(rawCoefficient(heavy, "expert", 0) < 1e-6);
-    assert.ok(rawCoefficient(heavy, "expert", 60) > 0);
+  it("leaves every raw a small positive intercept — the design's 'modicum'", () => {
+    // An earlier revision reported advanced raws as having a zero intercept, but that
+    // was an artifact of least squares driving `base` negative and the emitter clamping
+    // it. Petroleum's zero-desert reading — 4 tons at 160 workers — proves otherwise.
+    // Relative-error fitting keeps these small and positive, which matches the manual:
+    // "you can still get these things ... but it will cost you a lot more workers."
+    for (const id of ["lumber", "sulfur", "iron-ore", "coal", "light-metal", "nitrate", "heavy-metal", "petroleum"]) {
+      const c = economy.graph.table.get(id)!;
+      const bare = rawCoefficient(c, "expert", 0);
+      assert.ok(bare > 0, `${id} should produce something with no terrain`);
+      assert.ok(
+        bare < rawCoefficient(c, "expert", 60),
+        `${id} should still gain from terrain`,
+      );
+    }
   });
 
   it("only multiplies raws whose own terrain the nation holds", () => {

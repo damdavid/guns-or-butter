@@ -34,7 +34,7 @@ spec for the intended order.
 
     npm test          # 81 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
-    npm run validate  # score the sim against the 640 usable measurements
+    npm run validate  # score the sim against all 644 measurements
     npm run fixture   # print the reference state as a Production Summary
 
 Requires Node >= 22.6, which runs the TypeScript directly via

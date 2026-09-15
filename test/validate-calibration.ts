@@ -32,8 +32,8 @@ const economy = new Economy();
 interface Point { id: string; level: Level; acres: Record<string, number>; L: number; obs: number; continent: string }
 const points: Point[] = [];
 
-/** Same exclusion as docs/calibrate.py: this series contradicts the other ten. */
-const EXCLUDED = new Set(["iron-ore|intermediate|Seven"]);
+/** Mirrors EXCLUDE in docs/calibrate.py. Empty since Seven's Iron Ore was re-read. */
+const EXCLUDED = new Set<string>();
 
 {
   const rows = readFileSync("docs/raw-outputs-by-worker-and-terrain.csv", "utf8")
