@@ -24,11 +24,11 @@ TERRAIN = {
 }
 LEVELS = ["Beginner", "Intermediate", "Expert"]
 
-# Continent Seven's Iron Ore series fits an exponent of 1.65 where all ten other
-# series give ~1.13, and its coefficient is an order of magnitude out. It also breaks
-# monotonicity in mountain acreage: 32 acres yields less at L=10 than 0 acres does
-# elsewhere. Treated as a transcription error pending a re-read.
-EXCLUDE = {("Iron Ore", "Intermediate", "Seven")}
+# Nothing is currently excluded. Continent Seven's Iron Ore series was excluded for
+# several revisions -- it fitted an exponent of 1.65 where every other series gave
+# ~1.13 -- and a re-read confirmed the original values were wrong. Kept as a named set
+# so the next bad series is a one-line change rather than a restructure.
+EXCLUDE: set[tuple[str, str, str]] = set()
 
 ID = {
     "Lumber": "lumber", "Sulfur": "sulfur", "Iron Ore": "iron-ore", "Coal": "coal",

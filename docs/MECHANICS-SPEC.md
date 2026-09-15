@@ -367,8 +367,8 @@ without this "we would have 15th century peasants building digital watches."
 #### Every exponent is now measured [C]
 
 644 output readings — 297 across 53 raw series carrying land composition, 347 across 22
-intermediate/tool/weapon series — covering all three levels. 640 are scored; the four
-belonging to the one excluded series are not. Fitted by `docs/calibrate.py`, which emits
+intermediate/tool/weapon series — covering all three levels. All 644 are scored; nothing
+is excluded. Fitted by `docs/calibrate.py`, which emits
 `src/calibration.ts`; scored by `npm run validate`.
 
     capacity = K * L^a        both K and a measured per (commodity, level)
@@ -422,15 +422,15 @@ Three corrections to earlier drafts, all forced by the larger dataset:
 
 #### Accuracy
 
-Relative error across the 640 scored readings, stratified because outputs are
+Relative error across all 644 readings, stratified because outputs are
 displayed as integers and a reading of 3 carries ±17% of rounding on its own:
 
 | Observed output | n | median | p90 |
 |---|---|---|---|
 | < 10 | 60 | 12.1% | 100% |
-| 10–50 | 125 | 5.4% | 33% |
-| 50–200 | 197 | 3.1% | 13% |
-| ≥ 200 | 258 | **1.2%** | 6.4% |
+| 10–50 | 126 | 5.4% | 33% |
+| 50–200 | 198 | 3.1% | 13% |
+| ≥ 200 | 260 | **1.2%** | 6.4% |
 
 Error falls monotonically with magnitude, which is the signature of rounding-bound
 measurement rather than model error. The values that matter for gameplay are good to
@@ -438,10 +438,14 @@ about 1%.
 
 #### Known data problems
 
-- **Continent Seven's Iron Ore series is excluded.** It fits an exponent of 1.65 where
-  all ten other series give ~1.13, its coefficient is an order of magnitude out, and it
-  breaks monotonicity in mountain acreage. Treated as a transcription error pending a
-  re-read; the exclusion is declared in both `calibrate.py` and the validator.
+- **Continent Seven's Iron Ore was wrong and has been re-read.** The original series
+  fitted an exponent of 1.65 where every other Iron Ore series gave ~1.13, and it broke
+  monotonicity in mountain acreage — 32 acres yielded less than 0 acres did elsewhere.
+  Both were correct diagnoses: the re-read replaced it, and Iron Ore's exponent spread
+  across eleven series fell from sd 0.1495 to 0.0096, its Intermediate terrain fit from
+  23.7% to 2.1% max error, and its worst single prediction from 181.7% to 9.9%. Nothing
+  is excluded from the fit any more, though `EXCLUDE` remains in `calibrate.py` as a
+  named empty set so the next bad series is a one-line change.
 - **Petroleum is the sparsest series**: seven non-zero readings across four continents,
   and its longest single series has only three points. Its exponent rests on that one
   series, and its desert response is the weakest fit in the table — the Expert Two
@@ -1111,7 +1115,7 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    productivity function, demand-driven allocation, agriculture and population, with
    every parameter measured rather than authored. Validated two ways: `npm test`
    asserts the §8.1 reference state and the §2.2 terrain readings, and
-   `npm run validate` scores the 640 usable measurements (median error 1.2% above
+   `npm run validate` scores all 644 measurements (median error 1.2% above
    200 tons).
 2. **Map generation** — next. Seeded by continent name. Cities, then spokes, then
    provinces as the dual of the spoke graph, then ~half the spokes marked as roads,
@@ -1135,5 +1139,5 @@ all-labour tier-1 agricultural start should yield roughly 30% growth), but no
 coefficients. Calibrating those needs turn-over-turn population readings, which no
 measurement set so far provides.
 
-Two smaller data gaps, neither blocking: continent Seven's Iron Ore series is excluded
-as a probable transcription error, and Petroleum is observed on one continent only.
+One smaller data gap, not blocking: Petroleum has only seven non-zero readings and is
+the weakest fit in the table — the row to re-measure first.

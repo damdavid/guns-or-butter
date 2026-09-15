@@ -128,7 +128,7 @@ export const RAW_PARAMS: Partial<Record<CommodityId, Partial<Record<Level, RawPa
   },
   "iron-ore": {
     beginner: { a: 1.1260, base: 4.716465, m: 0.000000 },
-    intermediate: { a: 1.1293, base: 1.537474, m: 0.036977 },
+    intermediate: { a: 1.1292, base: 1.541343, m: 0.036989 },
     expert: { a: 1.1396, base: 0.490549, m: 0.034156 },
   },
   "coal": {
