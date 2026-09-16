@@ -28,6 +28,9 @@ than ported.
 **Economy sim complete and calibrated.** Production graph, superlinear productivity,
 demand-driven allocation with input hoarding and depth-ordered priority, agriculture,
 population. All 33 commodities have measured parameters; exponents span 1.13 to 2.53.
+The population response is measured too, from 29 readings — which cost the manual two of
+its stated rules, since growth turns out to be linear with saturation rather than a square
+root, and the "30% growth" boundary condition is 14.5% in the shipped game.
 
 **Map generation complete.** Continents are seeded by name, as in the original.
 Capitals, a Delaunay spoke graph, provinces as its centroid dual, roads on half the

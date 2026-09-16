@@ -96,22 +96,30 @@ export const AGRICULTURE = {
 } as const;
 
 /**
- * Population response to food surplus (§4.4).
+ * Population response to food (§4.4), fitted to 29 readings from the DOS build (§4.4.1).
  *
- *     growth  = POPULATION.growth  * sqrt(surplus * population)
- *     decline = POPULATION.decline * sqrt(deficit * population)
+ *     growth  = growth * surplus / (1 + surplus / (saturation * population))
+ *     decline = decline * deficit
+ *     floor   = floorPerAcre * farmland        // decline stops here
  *
- * `growth` is fitted to the one measurement taken from the DOS build (§4.4.1): 628
- * people on a 214-ton surplus grew to 719. Read as a rate it is the more natural
- * statement — growth per head goes as the square root of surplus *per head* — which
- * keeps the manual's diminishing returns and, unlike a bare sqrt(surplus), does not have
- * a nation of ten thousand growing by the same 91 people as a nation of six hundred.
+ * The manual's "square root" turns out not to be how the shipped game behaves: growth is
+ * *linear* in surplus, and the diminishing return Crawford wanted — "we can't have them
+ * doubling their population merely by doubling their food surplus" — comes from the
+ * saturating denominator instead. Doubling a surplus of 0.34 per head multiplies growth
+ * by 1.75, not 2.
  *
- * One reading cannot separate this from the alternatives; §4.4.1 lists the readings that
- * would. `decline` is still [F] and unmeasured: it carries the spec's "famine bites 1.5x
- * harder than plenty rewards" at the same scale, no more.
+ * Accuracy against the readings: growth median 4.7%, worst 9.7%; decline median 0.0%,
+ * worst 6.6%. `saturation` fitted to 2.02 and is written as measured.
  */
 export const POPULATION = {
-  growth: 0.2482,
-  decline: 0.3724,
+  growth: 0.4727,
+  saturation: 2.0242,
+  /** Linear across every measured deficit, which reach 0.23 per head (§4.4.1). */
+  decline: 0.6971,
+  /**
+   * Famine will not take a nation below this multiple of its farmland. Six readings sat
+   * exactly here and lost nobody at all, to deficits as deep as 207 tons. The constant is
+   * worldgen's measured population-to-farmland ratio, which is where a nation starts.
+   */
+  floorPerAcre: 1.4933,
 } as const;

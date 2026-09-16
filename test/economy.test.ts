@@ -307,37 +307,72 @@ describe("agriculture and population (§4)", () => {
     assert.equal(AGRICULTURE.foodPerPerson, 1);
   });
 
-  it("reproduces the reading taken from the DOS build (§4.4.1)", () => {
-    // 628 people on a 214-ton surplus grew to 719. This is the only measurement of the
-    // population response there is, and the growth coefficient is fitted to it.
-    assert.ok(Math.abs(nextPopulation(628, 214) - 719) < 0.5,
-      `got ${nextPopulation(628, 214)}, wanted 719`);
+  // The 29 population readings taken from the DOS build (§4.4.1). Every parameter in
+  // POPULATION is fitted to these, so they are the oracle: population, surplus, expected
+  // next population, farmland.
+  const READINGS: [number, number, number, number][] = [
+    [628, 481, 787, 421], [628, 214, 719, 421], [628, 103, 676, 421], [628, 51, 649, 421],
+    [628, -53, 628, 421], [628, -122, 628, 421], [628, -172, 628, 421], [628, -207, 628, 421],
+    [787, 476, 959, 421], [959, 304, 1092, 421], [1161, 240, 1273, 421],
+    [1316, 172, 1400, 467], [1316, -104, 1244, 467], [1316, -200, 1174, 467],
+    [1316, -304, 1089, 467],
+    [647, 189, 730, 433], [647, 63, 675, 433], [647, -49, 647, 433], [647, -214, 647, 433],
+    [647, 196, 732, 433], [732, 349, 868, 433], [868, 431, 1035, 433], [1035, 686, 1278, 433],
+    [1278, 264, 1381, 433], [1278, 55, 1302, 433], [1278, -1, 1277, 433],
+    [1278, -53, 1241, 433], [1278, -97, 1210, 433], [1278, -149, 1175, 433],
+  ];
+
+  it("reproduces all 29 population readings within 10%", () => {
+    const errors = READINGS.map(([pop, surplus, expected, farmland]) => {
+      const got = Math.round(nextPopulation(pop, surplus, farmland));
+      const change = Math.abs(expected - pop);
+      // A reading with no change at all is the famine floor; it has to be exact.
+      if (change === 0) {
+        assert.equal(got, expected,
+          `pop ${pop} on ${surplus} should not move off the floor, got ${got}`);
+        return 0;
+      }
+      return (Math.abs(got - expected) / change) * 100;
+    });
+    const sorted = [...errors].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)]!;
+    assert.ok(Math.max(...errors) < 10, `worst error ${Math.max(...errors).toFixed(1)}%`);
+    assert.ok(median < 5, `median error ${median.toFixed(1)}%`);
   });
 
-  it("grows as the square root of surplus per head, and shrinks faster than it grows", () => {
-    assert.equal(nextPopulation(100, 0), 100);
-    assert.equal(nextPopulation(100, 100), 100 + POPULATION.growth * 100);
-    assert.equal(nextPopulation(100, -100), 100 - POPULATION.decline * 100);
-    assert.ok(POPULATION.decline > POPULATION.growth, "famine must bite harder than plenty rewards");
+  it("is linear in surplus but saturating, not a square root", () => {
+    // The manual asks for a diminishing return — "we can't have them doubling their
+    // population merely by doubling their food surplus" — but the shipped game gets it
+    // from the saturating denominator, not from a square root. Doubling the surplus
+    // multiplies the gain by less than 2 and by more than the 1.41 a square root gives.
+    const one = nextPopulation(628, 214, 421) - 628;
+    const two = nextPopulation(628, 428, 421) - 628;
+    assert.ok(two / one < 2, `doubling surplus gave ${(two / one).toFixed(3)}x`);
+    assert.ok(two / one > 1.6, `a square root would give 1.41x, got ${(two / one).toFixed(3)}x`);
 
-    // Quadrupling the surplus only doubles the gain — the diminishing return the manual
-    // insists on, so a nation cannot double its population by doubling its food.
-    const a = nextPopulation(100, 25) - 100;
-    const b = nextPopulation(100, 100) - 100;
-    assert.ok(Math.abs(b / a - 2) < 1e-9);
+    // Linear in the small-surplus limit, where the saturation term is negligible.
+    const tiny = nextPopulation(100_000, 1, 0) - 100_000;
+    assert.ok(Math.abs(tiny - POPULATION.growth) < 1e-4, `got ${tiny}`);
   });
 
-  it("scales growth with the population being fed", () => {
-    // What a bare sqrt(surplus) would not do: the same surplus in a nation ten times the
-    // size feeds proportionally more people, so the gain goes up with the square root of
-    // that size rather than staying flat.
-    const small = nextPopulation(100, 200) - 100;
-    const large = nextPopulation(10_000, 200) - 10_000;
-    assert.ok(Math.abs(large / small - 10) < 1e-9, `got ${large / small}, wanted 10`);
+  it("stops famine at the farmland floor, and does not push a nation up to it", () => {
+    const floor = POPULATION.floorPerAcre * 421;
+    assert.ok(Math.abs(floor - 628.7) < 0.5, `floor for 421 acres is ${floor.toFixed(1)}`);
+
+    // Six readings sat on this floor and lost nobody to deficits as deep as 207 tons.
+    assert.equal(Math.round(nextPopulation(628, -207, 421)), 628);
+    // Well above the floor, famine bites normally.
+    assert.ok(nextPopulation(1316, -304, 467) < 1316 - 200);
+    // The floor is a carrying capacity that the farmland guarantees, so a nation already
+    // below it — stripped by conquest, say — has nothing left for famine to take. It is
+    // not pushed back up to the floor either.
+    assert.equal(nextPopulation(300, -100, 421), 300);
+    // Losing the farmland is what lowers the floor, and then famine can bite again.
+    assert.ok(nextPopulation(300, -100, 100) < 300);
   });
 
   it("never drives population below zero", () => {
-    assert.equal(nextPopulation(5, -1_000_000), 0);
+    assert.equal(nextPopulation(5, -1_000_000, 0), 0);
   });
 });
 
