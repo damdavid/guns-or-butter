@@ -371,6 +371,24 @@ describe("agriculture and population (§4)", () => {
     assert.ok(nextPopulation(300, -100, 100) < 300);
   });
 
+  it("moves the famine floor with territory, in both directions", () => {
+    // The floor is farmland, not a remembered starting size, because a turn is a
+    // generation and nothing carries over (§3.1.1). So conquest is worth more than it
+    // looks: taking farmland lowers how far the victim can be starved.
+    const starve = (pop: number, farmland: number) => {
+      let p = pop;
+      // Long enough for a steady deficit to drive any of these down to the floor.
+      for (let turn = 0; turn < 60; turn++) p = nextPopulation(p, -400, farmland);
+      return Math.round(p);
+    };
+    const floorFor = (farmland: number) => Math.round(POPULATION.floorPerAcre * farmland);
+
+    assert.equal(starve(1316, 467), floorFor(467));
+    assert.equal(starve(4000, 934), floorFor(934), "twice the land, twice the floor");
+    assert.equal(starve(1316, 200), floorFor(200));
+    assert.ok(starve(1316, 200) < starve(1316, 467), "less land must mean a lower floor");
+  });
+
   it("never drives population below zero", () => {
     assert.equal(nextPopulation(5, -1_000_000, 0), 0);
   });

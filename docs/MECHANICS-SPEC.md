@@ -400,6 +400,24 @@ These are deliberate and load-bearing. Do not "fix" them casually.
   two months before ship because it worked but wasn't fun.
 - **The player's only lever is the fraction of the workforce assigned to each factory.**
 
+#### 3.1.1 The principle behind them: a turn is a generation [C]
+
+"A turn is a generation, so capital fully depreciates each turn" is given above as the
+justification for having no capital, but it is the more general rule and it settles
+questions well outside §3. **Nothing carries from one turn to the next except land,
+population and territory.** There is no stored state for a nation to draw on, anywhere.
+
+It decides three questions that otherwise look like free choices:
+
+| Question | Answer it forces | Where |
+| --- | --- | --- |
+| What happens to unused commodity output? | Discarded. | §3.1 |
+| Does firepower accumulate, or is it what you built this turn? | A flow, not a stock. | §5.3.1 |
+| Is the famine floor a remembered starting population, or a function of farmland? | Farmland. A remembered figure would be exactly the carried-over state the design excludes. | §4.4.1 |
+
+Reach for this first when a mechanic seems to need memory. The answer is almost always
+that it does not have any.
+
 ### 3.2 Commodity set [C — names lifted from the binary]
 
 **Raw** (terrain-gated): Lumber, Sulfur, Iron Ore, Coal, Light Metal, Nitrate, Heavy Metal, Petroleum
@@ -823,16 +841,26 @@ The full readings settle it — growth is linear near zero, population converges
 and the oscillation was an artefact of the wrong functional form rather than a feature of
 the game.
 
-##### What is still open
+##### Both open questions, now closed
 
-- **Whether the floor is farmland or memory.** Every no-decline reading is at the initial
-  population, which is also `1.4933 * farmland`, so "famine stops at 1.4933 acres' worth"
-  and "famine cannot take you below where you started" fit equally well. The experiment:
-  grow a nation, let it *gain* territory, then starve it and see whether it stops at the
-  old starting population or at 1.4933x the new farmland.
-- **Whether decline saturates.** Every measured deficit is shallow — at most 0.23 per head
-  — and linear fits them to 0%. A deficit approaching one ton per head would show whether
-  it curves.
+Neither needed another reading; §3.1.1 settles them.
+
+- **The floor is `1.4933 * farmland`, not a remembered starting population.** The readings
+  fit both equally well, because a nation starts at exactly `1.4933 * farmland`. The
+  design principle breaks the tie: a remembered starting figure is carried-over state, and
+  this game has none. So a nation that *gains* farmland raises its own floor, and one that
+  loses farmland can be starved further than its original size — which also makes conquest
+  of farmland worth more than it first appears, since it moves the victim's floor down as
+  well as the conqueror's up.
+- **Decline is linear.** Every measured deficit is shallow, at most 0.23 per head, and
+  linear fits them to a median of 0.0%. Nothing in the design suggests a curve, and the
+  saturation in the *growth* term exists to stop a nation buying unbounded growth with
+  food it has no other use for — a constraint with no counterpart on the way down.
+
+One empirical caveat worth keeping in view: because no measured deficit exceeds 0.23 per
+head, linearity is established over that range and adopted beyond it on principle. At a
+deficit approaching one ton per head the rule costs a nation 70% of its people in a turn,
+and no reading confirms that directly.
 
 **Population is the workforce.** In the reference state, population 461 against 458
 allocated workers. Population is also the victory metric and the input to economies
