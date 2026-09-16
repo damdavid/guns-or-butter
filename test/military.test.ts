@@ -178,44 +178,70 @@ describe("weapon distribution (§5.3)", () => {
   const close = (actual: number, expected: number, what: string) =>
     assert.ok(Math.abs(actual - expected) < 1e-9, `${what}: got ${actual}, wanted ${expected}`);
 
-  it("gives every province a flat 1, then follows last turn's concentration", () => {
+  it("replaces last turn's firepower rather than adding to it", () => {
     const world = withFirepower(line([true, true, true]), { 0: 30, 1: 10 });
-    // Two provinces, so 2 of the 40 goes out flat and the remaining 38 splits 3:1.
+    // Two provinces, so 2 of the 40 goes out flat and the remaining 38 splits 3:1 on
+    // last turn's holdings. The 40 already there is gone, not banked.
     const after = distributeWeapons(world, 0, 40);
-    close(after.provinces[0]!.firepower, 30 + 1 + 28.5, "the massed province");
-    close(after.provinces[1]!.firepower, 10 + 1 + 9.5, "the thin one");
-    close(nationFirepower(after, 0), 80, "total firepower");
+    close(after.provinces[0]!.firepower, 1 + 28.5, "the province that was massed");
+    close(after.provinces[1]!.firepower, 1 + 9.5, "the thin one");
+    close(nationFirepower(after, 0), 40, "the nation holds exactly what it produced");
   });
 
-  it("lifts a stripped province off zero, where the proportional rule never could", () => {
-    // A province holding nothing is owed nothing under a pure proportional split, so it
-    // held nothing for the rest of the game — an absorbing state that left a province
-    // taken bare, or one that spent everything on a failed assault, indefensible.
-    let world = withFirepower(line([true, true, true]), { 0: 100, 1: 0 });
-    for (let turn = 0; turn < 3; turn++) world = distributeWeapons(world, 0, 20);
-    assert.ok(world.provinces[1]!.firepower >= 3, "three turns of garrison should have arrived");
-    // It still concentrates: the province that was already massed gains far more.
-    assert.ok(world.provinces[0]!.firepower - 100 > world.provinces[1]!.firepower * 5);
+  it("zeroes every province when nothing is produced", () => {
+    // Reported from play: stopping weapon production left the provinces holding their
+    // accumulated firepower for the rest of the game.
+    const world = withFirepower(line([true, true, true]), { 0: 200, 1: 75 });
+    const after = distributeWeapons(world, 0, 0);
+    assert.equal(after.provinces[0]!.firepower, 0);
+    assert.equal(after.provinces[1]!.firepower, 0);
+    assert.equal(nationFirepower(after, 0), 0);
+  });
+
+  it("gives a province holding nothing the flat garrison anyway", () => {
+    // Without the flat grant a province at zero has no weight and would be shut out of
+    // the split entirely.
+    const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 100, 1: 0 }), 0, 20);
+    close(after.provinces[0]!.firepower, 19, "the massed province");
+    close(after.provinces[1]!.firepower, 1, "the empty one");
   });
 
   it("splits evenly when there is not enough for one each", () => {
     const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 90, 1: 10 }), 0, 1);
-    close(after.provinces[0]!.firepower, 90.5, "the massed province");
-    close(after.provinces[1]!.firepower, 10.5, "the thin one");
-    close(nationFirepower(after, 0), 101, "nothing may go missing");
+    close(after.provinces[0]!.firepower, 0.5, "the massed province");
+    close(after.provinces[1]!.firepower, 0.5, "the thin one");
+    close(nationFirepower(after, 0), 1, "nothing may go missing");
   });
 
-  it("spreads evenly when nothing is massed anywhere — the opening turn", () => {
+  it("hands out exactly what it was given, whatever the amount", () => {
+    for (const amount of [0, 0.5, 1, 2, 37, 1000]) {
+      const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 7, 1: 0 }), 0, amount);
+      close(nationFirepower(after, 0), amount, `producing ${amount}`);
+    }
+  });
+
+  it("reproduces a uniform spread forever, so marching is the only way to concentrate", () => {
+    // The structural consequence of a flow model: the proportional term can only
+    // reinforce a concentration that already exists, and nothing accumulates to create
+    // one. A nation spread evenly stays spread evenly however long it produces.
+    let world = line([true, true, true]);
+    for (let turn = 0; turn < 5; turn++) world = distributeWeapons(world, 0, 40);
+    close(world.provinces[0]!.firepower, 20, "province 0 after five turns");
+    close(world.provinces[1]!.firepower, 20, "province 1 after five turns");
+
+    // Marching one province's force into its neighbour is what breaks the symmetry, and
+    // next turn's production follows the concentration it created.
+    const marched = resolveMilitary(world, { 0: { marchFraction: 1, target: 1 } }).world;
+    close(marched.provinces[1]!.firepower, 40, "province 1 after the reinforcement");
+    const next = distributeWeapons(marched, 0, 40);
+    assert.ok(next.provinces[1]!.firepower > next.provinces[0]!.firepower * 10,
+      `concentration should now pay: got ${next.provinces[0]!.firepower} and ${next.provinces[1]!.firepower}`);
+  });
+
+  it("spreads evenly when nothing is held anywhere — the opening turn", () => {
     const after = distributeWeapons(line([true, true, true]), 0, 50);
     assert.equal(after.provinces[0]!.firepower, 25);
     assert.equal(after.provinces[1]!.firepower, 25);
-  });
-
-  it("conserves the firepower it is given", () => {
-    for (const amount of [0.5, 1, 2, 37, 1000]) {
-      const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 7, 1: 0 }), 0, amount);
-      close(nationFirepower(after, 0), 7 + amount, `distributing ${amount}`);
-    }
   });
 
   it("gives the other nation nothing", () => {

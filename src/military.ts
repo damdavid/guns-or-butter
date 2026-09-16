@@ -76,32 +76,37 @@ export function firepowerOf(output: Readonly<Record<CommodityId, number>>, tiers
 }
 
 /**
- * Spread a nation's new firepower over its provinces: a flat 1 to each, then the rest in
- * proportion to what each already holds (§5.3). Automatic, with no player control: where
- * you massed last turn is where production flows this turn, which quietly rewards
- * concentration.
+ * Set each province's firepower from this turn's weapon production: a flat 1 to each,
+ * then the rest in proportion to what each held last turn (§5.3).
  *
- * The flat 1 comes off the top because the proportional rule alone has an absorbing
- * state — a province holding nothing is owed nothing, so it holds nothing for the rest of
- * the game. That is how a province taken by an enemy and stripped bare, or one that spent
- * everything on a failed assault, became permanently indefensible. Every province now
- * gets at least a garrison.
+ * Firepower is a flow, not a stock (§5.3.1). Each turn's production *replaces* what was
+ * there rather than adding to it, so an army is what you are building now and nothing
+ * more — stop making weapons and you are defenceless next turn. This matches the
+ * economy's own "use it or lose it" rule (§3), where unused output is discarded at end
+ * of turn rather than stockpiled.
  *
- * When there is not enough to go round — fewer than one per province — every province
- * gets the same fraction instead, which keeps the split free of any ordering bias and
- * leaves nothing undistributed.
+ * The weights are last turn's concentration, read before anything is overwritten, which
+ * is what makes marching forces together worth doing: a province you reinforce this turn
+ * draws a larger share of next turn's production. Under a flow model that is the *only*
+ * way to concentrate, because a uniform distribution reproduces itself forever.
  *
- * With nothing massed anywhere — the opening turn — the remainder falls back to an even
- * spread, since the proportional rule has nothing to work from.
+ * The flat 1 comes off the top so that a province holding nothing is not weight-starved
+ * out of the split entirely (§5.3.1). Where there is less than one firepower per province
+ * to hand out, every province gets the same fraction instead, which keeps the split free
+ * of ordering bias and leaves nothing undistributed.
+ *
+ * With nothing held anywhere — the opening turn — the remainder falls back to an even
+ * spread, since the proportional rule has nothing to work from. With nothing produced,
+ * every province is set to zero, which is the point of the rule.
  */
 export function distributeWeapons(world: World, nation: number, firepower: number): World {
-  if (firepower <= 0) return world;
   const own = world.provinces.filter((p) => p.nation === nation);
   if (own.length === 0) return world;
 
-  const flat = Math.min(1, firepower / own.length);
-  const rest = firepower - flat * own.length;
+  const total = Math.max(0, firepower);
   const held = own.reduce((sum, p) => sum + p.firepower, 0);
+  const flat = Math.min(1, total / own.length);
+  const rest = total - flat * own.length;
   const share = new Map<number, number>();
   for (const p of own) {
     share.set(p.id, flat + (held > 0 ? (p.firepower / held) * rest : rest / own.length));
@@ -109,7 +114,7 @@ export function distributeWeapons(world: World, nation: number, firepower: numbe
   return {
     ...world,
     provinces: world.provinces.map((p) =>
-      share.has(p.id) ? { ...p, firepower: p.firepower + share.get(p.id)! } : p,
+      share.has(p.id) ? { ...p, firepower: share.get(p.id)! } : p,
     ),
   };
 }

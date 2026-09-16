@@ -791,27 +791,49 @@ provinces in proportion to the previous turn's firepower concentration.** Where 
 massed last turn is where production flows this turn. Simple, and it gives
 concentration a second-order payoff.
 
-#### 5.3.1 Deviation: a flat garrison first [F]
+#### 5.3.1 Deviation: firepower is a flow, not a stock [F]
 
-This implementation grants **each province a flat 1 firepower before** the proportional
-split, and distributes only the remainder by concentration. That is a deliberate
-departure from the `[C]` rule above, not a reading of it.
+Two deliberate departures from the `[C]` rule above. Neither is a reading of it.
 
-The reason is that the pure proportional rule has an absorbing state at zero. A province
-holding nothing is owed nothing, so once emptied it stays empty for the rest of the game
-however much the nation produces. Two ordinary events empty a province: losing it to an
-enemy who strips it, and spending everything on an assault that fails. Either left a
-province permanently indefensible, which reads as a bug to a player even though it
-follows from the rule.
+**Each turn's production replaces a province's firepower rather than adding to it.**
+In the original, firepower accumulated: the manual's design dialogue has weapons
+"distributed each turn in proportion to the previous turn's concentration" and says
+nothing anywhere about weapons being lost, so a nation that armed itself and then stopped
+kept that army for the rest of the game at no cost. Here an army is what you are building
+*now*: stop making weapons and you are defenceless next turn. That matches the economy's
+own rule (§3) — unused output is discarded at end of turn, "use it or lose it" — and it
+supplies one of the brakes §9.2 says the design is missing, since a standing army is a
+permanent charge against the population you are actually scored on.
 
-The flat grant is small enough not to undo what §5.3 is for. Concentration still pays:
-with 100 firepower massed in one province and none in the other, three turns of 20 leave
-the massed province far ahead, because 18 of each 20 still follows the old rule.
+**Each province gets a flat 1 before the proportional split**, with only the remainder
+following last turn's concentration. Without it a province holding nothing has no weight
+and is shut out of the distribution entirely.
 
-Where there is less than one firepower per province to hand out, every province gets the
-same fraction instead. That keeps the split free of ordering bias — no province is
-privileged by its index — and leaves nothing undistributed. `distributeWeapons` conserves
-exactly what it is given, which is asserted over a range of amounts.
+##### Consequences, measured
+
+A uniform spread reproduces itself forever. The proportional term can only reinforce a
+concentration that already exists, and under a flow model nothing accumulates to create
+one, so **marching forces together is the only way to concentrate** — a province you
+reinforce this turn draws a larger share of next turn's production. That makes the
+transfer order a real strategic move rather than a convenience.
+
+Reinforcements cannot feed a same-turn attack. `resolveMilitary` debits every marching
+force from its home province before any transfer lands (§5.6), so funnelling into a hub
+and attacking out of it takes two turns.
+
+Offence remains reachable, but it is bounded by production rather than by history. Nine
+provinces funnelling into one hub reach a fixed point in a single turn:
+
+| Weapon production | Hub firepower at equilibrium |
+| --- | --- |
+| 33/turn | 22.0 |
+| 59/turn | 39.3 |
+| 120/turn | 80.0 |
+
+Appendix B's threshold is >20 by road against an undefended province, so 33/turn is about
+the floor for offensive capability at nine provinces — and it does not grow with patience.
+Compare the stock model, where the same nation reached 237 total firepower in four turns
+simply by waiting.
 
 ### 5.4 Orders [C]
 
@@ -1317,6 +1339,12 @@ with conquered population, or attrition on overextended borders.
 Note the scorched-earth rule (§5.5) is already a partial brake — conquest destroys
 the population that makes the prize valuable. Consider strengthening it before
 adding new systems.
+
+§5.3.1 adds a second: firepower is a flow rather than a stock, so military strength
+has to be paid for every turn out of the labour that would otherwise feed people. An
+armed nation cannot coast. That brakes military runaway specifically; it does nothing
+about an economic leader compounding through superlinear productivity, which is the
+larger half of the problem and still open.
 
 ### 9.3 The economy is opaque
 
