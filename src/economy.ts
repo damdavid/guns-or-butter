@@ -231,10 +231,14 @@ function nearestParams(id: CommodityId, level: Level) {
   return undefined;
 }
 
-/** Growth goes as the square root of food surplus; decline is steeper (§4.4). */
+/**
+ * Growth goes as the square root of food surplus *per head*, so it scales with the
+ * population it is feeding; decline is steeper (§4.4). Measured, see §4.4.1.
+ */
 export function nextPopulation(population: number, foodSurplus: number): number {
+  if (population <= 0) return 0;
   if (foodSurplus >= 0) {
-    return population + POPULATION.growth * Math.sqrt(foodSurplus);
+    return population + POPULATION.growth * Math.sqrt(foodSurplus * population);
   }
-  return Math.max(0, population - POPULATION.decline * Math.sqrt(-foodSurplus));
+  return Math.max(0, population - POPULATION.decline * Math.sqrt(-foodSurplus * population));
 }
