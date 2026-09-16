@@ -20,6 +20,8 @@ than ported.
 - `docs/SOURCES.md` — where to obtain the copyrighted source material, which is not
   committed here.
 - `src/` — the simulation. No runtime dependencies.
+- `web/` — the browser front end: plain TypeScript and direct DOM, bundled by esbuild.
+  The map renderer in `src/svg.ts` is shared with the command-line one.
 
 ## Status
 
@@ -35,21 +37,33 @@ spokes, terrain on the rest, and contiguous nations — feeding straight into th
 transfers-before-battles, and a phase loop that ties the three subsystems together —
 production, orders, execution, rankings, undo.
 
+**Browser UI, first pass.** `npm run dev`. Sliders for the worker allocation that
+*preview* the pro-rata redistribution before it is committed, military orders given by
+clicking province to province, the battle log, and the standings. Deliberately built
+before the AI: the UI is where the original lost, and it is the only subsystem whose
+defects are invisible to tests — playing it found four that the unit tests did not.
+See §10.1.
+
 AI and diplomacy are specified but not yet built. See §10 of the spec.
 
 ## Commands
 
-    npm test          # 81 tests, including the 1990 manual's p.12 reference state
+    npm run dev       # play it in a browser on localhost:5173
+    npm test          # 212 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
+    npm run build     # bundle the browser app to web/dist/
     npm run validate  # score the sim against all 644 measurements
     npm run fixture   # print the reference state as a Production Summary
     npm run map -- Kittycat expert out.svg   # render a generated continent
     npm run play -- Kublai intermediate 20   # watch the turn loop run
     npm run game -- Kittycat intermediate    # play it yourself in the terminal
 
+The browser app takes `?continent=`, `?level=` and `?nation=` query parameters, so
+`localhost:5173/?continent=Kublai&level=expert` starts a different world.
+
 Requires Node >= 22.6, which runs the TypeScript directly via
-`--experimental-strip-types`. The only dev dependencies are `typescript` and
-`@types/node`.
+`--experimental-strip-types`. Nothing ships at runtime; the dev dependencies are
+`typescript`, `@types/node`, and `esbuild` for the browser bundle.
 
 ## License
 

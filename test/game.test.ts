@@ -3,7 +3,10 @@
  */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { Game, balanceAllocation, reallocate, subsistenceAllocation, workersFor } from "../src/game.ts";
+import {
+  Game, balanceAllocation, reallocate, subsistenceAllocation, workersFor,
+  type Allocation,
+} from "../src/game.ts";
 import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 
@@ -216,6 +219,49 @@ describe("labour allocation", () => {
     });
     assert.ok(balanced.commodities["farm-tools"]!.output > 0);
     assert.ok(balanced.agriculture.surplus > naive.agriculture.surplus);
+  });
+
+  it("opens a factory nobody is staffing, rather than shuffling the running ones", () => {
+    // Found in the browser. Muskets want iron, and iron had no share at all, so the
+    // balancer — which only ever topped up factories already running — shuffled lumber
+    // and charcoal for eighty passes and never touched iron.
+    const economy = new Economy();
+    const game = Game.create("Kublai", "intermediate");
+    const { land, population } = nationState(game.world, 0);
+    const context = { level: "intermediate" as const, land, population };
+    const wanting: Allocation = { ...subsistenceAllocation(), musket: 0.35 };
+    assert.equal(wanting["iron"], undefined, "the premise is that iron is unstaffed");
+
+    const balanced = balanceAllocation(economy, wanting, context);
+    assert.ok((balanced["iron"] ?? 0) > 0, "iron should have been opened");
+    // Muskets also want gunpowder, and the greedy single-step search does not get that
+    // far, so they stay at zero. Feeding a whole cold chain is the AI's job (§10).
+  });
+
+  it("does not drain the finished good it was asked to make", () => {
+    // Nothing consumes a sword, so its entire output read as surplus and it looked like
+    // the richest donor in the economy: the balancer took 0.35 down to 0.07 and output
+    // fell from a peak of 59 tons to 35.
+    const economy = new Economy();
+    const game = Game.create("Kublai", "intermediate");
+    const { land, population } = nationState(game.world, 0);
+    const context = { level: "intermediate" as const, land, population };
+    const wanting: Allocation = { ...subsistenceAllocation(), sword: 0.35 };
+
+    const balanced = balanceAllocation(economy, wanting, context);
+    const before = economy.resolve({
+      ...context,
+      workers: workersFor(wanting, population, land.farmland),
+    });
+    const after = economy.resolve({
+      ...context,
+      workers: workersFor(balanced, population, land.farmland),
+    });
+
+    assert.ok(after.commodities["sword"]!.output > before.commodities["sword"]!.output,
+      "balancing should raise sword output, not lower it");
+    assert.ok(balanced["sword"]! > 0.1, `swords were drained to ${balanced["sword"]}`);
+    assert.ok(after.firepower > before.firepower);
   });
 });
 

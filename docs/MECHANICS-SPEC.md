@@ -1334,14 +1334,69 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    See §5.5.1.
 4. **Turn loop** — **done.** `src/game.ts`, §1.2.1. Phases, orders, undo, autosave key,
    rankings, victory, and the couplings between the three subsystems.
-5. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
+5. **UI** — **done, first pass.** `web/`, bundled by esbuild into a single module with
+   no runtime dependencies. Moved ahead of the AI deliberately: this is the subsystem
+   the original lost on, and it is the only one whose defects are invisible to tests.
+   Playing it found four bugs the 210 unit tests did not — see §10.1.
+6. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
    union-declaration rule in §6.1. `balanceAllocation` is a starting point for the
-   economic half of it.
-6. **Diplomacy**, with §6.4 in from the start rather than §6.2.
-7. **UI.** This is where the original lost, so budget accordingly.
+   economic half of it, with the limits recorded in §10.2.
+7. **Diplomacy**, with §6.4 in from the start rather than §6.2.
 
 Three oracles are available while you build: the DOS build under emulation, the §8.1
 fixture, and the measurement CSVs via `npm run validate`.
+
+### 10.1 What playing it in a browser found
+
+`npm run dev` serves the app; the whole of the state is one `Game`, and each phase
+renders its own panel. The §3.6 redistribution is now *previewable*, which is the point
+of having built it: drag a factory's slider and every unlocked factory moves pro rata
+before anything is committed, so the manual's warning that this "can completely
+obliterate your carefully considered worker allocations" is something you watch happen
+rather than something you discover afterwards.
+
+Four defects surfaced from driving the real thing, none of which a unit test would have
+caught, because all four were about what a player can see or do:
+
+- **A march could be ordered from a province with no firepower.** The map accepted the
+  click and the execution phase dutifully reported "Aishil sends 0 of 0", but the orders
+  panel only listed armed provinces, so the order was invisible and uncancellable. Only
+  armed provinces are selectable now.
+- **The selection outline was being painted over.** Province fills are drawn early and
+  the nation borders are separate lines drawn on top at more than four times the width,
+  so the one outline the player needs to see was buried. Highlights are now a final
+  overlay pass, and a test asserts that ordering.
+- **An ordered march left no mark on the map.** You could read it in the table and
+  nowhere else. Marches are now drawn capital to capital, red for an attack and dashed
+  green for a reinforcement — which also makes visible that marching into your own
+  province is a legal reinforcement rather than an attack.
+- **Populations printed raw**, so a nation that had taken civilian losses read as
+  "607.6216175606817 people".
+
+### 10.2 Limits of `balanceAllocation`
+
+Auto-balance is scaffolding, not the AI, and playing it exposed how far it is from one.
+Two flaws were fixed because the UI exposes the function directly to the player:
+
+- It could only ever top up a factory that was **already running**, so a chain stalled
+  on an unstaffed input stayed stalled. Muskets want iron, iron had no share at all, and
+  eighty passes shuffled lumber and charcoal without once touching iron.
+- Nothing consumes a finished good, so its entire output read as surplus and it always
+  looked like the richest donor in the economy — the balancer **drained the very factory
+  the player had just asked for**, taking swords from 0.35 down to 0.07 and output from a
+  peak of 59 tons to 35.
+
+What remains wrong is left for step 6, because fixing it is the AI's job and not a
+presentational matter:
+
+- The search is greedy on a single largest shortfall and follows the limiting factor
+  exactly one step, so it cannot feed a cold chain with more than one missing input.
+  Muskets need iron *and* gunpowder; iron needs coal; gunpowder needs sulfur. The whole
+  chain has to open at once and the heuristic opens one link at a time.
+- It is not monotone. Sword output over eighty passes goes 47 → 58 → 70 → 45: it walks
+  past a better allocation and keeps going, because it optimises "surplus near zero"
+  per §3.5's advice rather than any stated objective. A real AI needs an objective
+  function, which is exactly the §6 decision about what a nation is trying to do.
 
 ### What is still unmeasured
 

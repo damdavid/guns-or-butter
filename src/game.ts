@@ -138,7 +138,10 @@ export function reallocate(
  * the priority rule (§3.5) it took every ton of lumber and starved the tools completely.
  *
  * Each pass moves a little labour from an industry that is running at capacity with
- * output to spare, to whichever input is throttling something else.
+ * output to spare, to whichever input is throttling something else. The receiving
+ * factory may be one nobody is staffing yet: a chain often stalls on an input at zero,
+ * and refusing to open it would leave, say, swords at no output however much labour
+ * went into them.
  */
 export function balanceAllocation(
   economy: Economy,
@@ -148,7 +151,8 @@ export function balanceAllocation(
   locked: readonly CommodityId[] = [],
 ): Allocation {
   const pinned = new Set(locked);
-  const ids = Object.keys(base).filter((id) => (base[id] ?? 0) > 0);
+  // Donors have to be running to have anything to give; recipients need not be.
+  const staffed = () => Object.keys(current).filter((id) => (current[id] ?? 0) > 0);
   let current: Record<CommodityId, number> = { ...base };
 
   for (let pass = 0; pass < passes; pass++) {
@@ -161,11 +165,11 @@ export function balanceAllocation(
     // would click through from the throttled factory to its missing input.
     let needy: CommodityId | null = null;
     let worstGap = 0;
-    for (const id of ids) {
+    for (const id of staffed()) {
       const c = result.commodities[id];
       if (!c || c.limitingFactor === "Labor") continue;
       const gap = c.capacity - c.output;
-      if (gap > worstGap && ids.includes(c.limitingFactor)) {
+      if (gap > worstGap && economy.graph.table.has(c.limitingFactor)) {
         worstGap = gap;
         needy = c.limitingFactor;
       }
@@ -174,18 +178,28 @@ export function balanceAllocation(
     if (!needy || pinned.has(needy)) break;
 
     // Take from whoever has the most going spare and is not itself throttled.
-    let donor: CommodityId | null = null;
-    let bestSpare = 0;
-    for (const id of ids) {
-      if (id === needy || pinned.has(id)) continue;
-      const c = result.commodities[id];
-      if (!c || (current[id] ?? 0) <= 0.02) continue;
-      const spare = c.surplus;
-      if (spare > bestSpare) {
-        bestSpare = spare;
-        donor = id;
+    //
+    // Nothing consumes a finished good, so its whole output reads as surplus and it
+    // would always look like the richest donor — the balancer used to drain the very
+    // factory the player had just asked for (swords 0.35 down to 0.07). Raid those only
+    // when there is no intermediate left to take from, which is the case when someone
+    // has put everything into one weapon and its chain has to come from somewhere.
+    const findDonor = (terminal: boolean): CommodityId | null => {
+      let best: CommodityId | null = null;
+      let bestSpare = 0;
+      for (const id of staffed()) {
+        if (id === needy || pinned.has(id)) continue;
+        if ((economy.graph.consumers.get(id)?.length ?? 0) === 0 !== terminal) continue;
+        const c = result.commodities[id];
+        if (!c || (current[id] ?? 0) <= 0.02) continue;
+        if (c.surplus > bestSpare) {
+          bestSpare = c.surplus;
+          best = id;
+        }
       }
-    }
+      return best;
+    };
+    const donor = findDonor(false) ?? findDonor(true);
     if (!donor) break;
 
     const step = Math.min(0.02, (current[donor] ?? 0) / 2);
