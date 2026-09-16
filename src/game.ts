@@ -284,6 +284,21 @@ export class Game {
     return (this.locked[nation] ?? []).includes(id);
   }
 
+  /**
+   * Pin every factory the nation is actually running. Zero-worker commodities are left
+   * unlocked so a new industry can still be started; locking those too would freeze the
+   * economy outright rather than protect it.
+   */
+  lockAll(nation: number): CommodityId[] {
+    const allocation = this.allocations[nation] ?? subsistenceAllocation();
+    this.locked[nation] = Object.keys(allocation).filter((id) => (allocation[id] ?? 0) > 0);
+    return this.locked[nation]!;
+  }
+
+  unlockAll(nation: number): void {
+    this.locked[nation] = [];
+  }
+
   /** Pin or release a factory's allocation (§3.6). */
   toggleLock(nation: number, id: CommodityId): boolean {
     const pinned = new Set(this.locked[nation] ?? []);
