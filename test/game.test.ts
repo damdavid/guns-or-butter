@@ -332,15 +332,28 @@ describe("worker redistribution and locks (§3.6)", () => {
     assert.ok(Math.abs(after["farm-tools"]! - 0.3) < 1e-9);
   });
 
-  it("locks every running factory, and leaves idle ones free to start", () => {
+  it("locks every factory, unstaffed ones included", () => {
+    // Pinning only the staffed ones was tried first and is the wrong default: it leaves
+    // every idle factory free to be raised, and raising one drains the economy behind
+    // your back. "All" means all, so releasing what you mean to tune is the whole of
+    // what can move.
     const game = Game.create("Kublai", "intermediate");
-    game.setAllocation(0, { lumber: 0.4, "pig-iron": 0.4, "farm-tools": 0.2, sword: 0 });
+    game.setAllocation(0, { lumber: 0.4, "pig-iron": 0.4, "farm-tools": 0.2 });
     const pinned = game.lockAll(0);
-    assert.deepEqual(pinned.sort(), ["farm-tools", "lumber", "pig-iron"]);
-    assert.equal(game.isLocked(0, "sword"), false, "an unstaffed factory stays free");
+    assert.equal(pinned.length, 33, "every commodity in the graph");
+    assert.equal(game.isLocked(0, "sword"), true, "an unstaffed factory is pinned too");
+    assert.equal(game.isLocked(0, "tractor"), true);
   });
 
-  it("locking everything running freezes the economy", () => {
+  it("stops an unstaffed factory being started once everything is locked", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.setAllocation(0, { lumber: 0.5, "pig-iron": 0.3, "farm-tools": 0.2 });
+    game.lockAll(0);
+    game.setWorkerShare(0, "sword", 0.3);
+    assert.ok((game.allocations[0]!["sword"] ?? 0) === 0, "sword is pinned at nothing");
+  });
+
+  it("locking everything freezes the economy", () => {
     const game = Game.create("Kublai", "intermediate");
     game.setAllocation(0, { lumber: 0.5, "pig-iron": 0.3, "farm-tools": 0.2 });
     game.lockAll(0);
