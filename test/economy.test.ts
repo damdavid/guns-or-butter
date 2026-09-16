@@ -307,14 +307,33 @@ describe("agriculture and population (§4)", () => {
     assert.equal(AGRICULTURE.foodPerPerson, 1);
   });
 
-  it("grows as the square root of surplus, and shrinks faster than it grows", () => {
+  it("reproduces the reading taken from the DOS build (§4.4.1)", () => {
+    // 628 people on a 214-ton surplus grew to 719. This is the only measurement of the
+    // population response there is, and the growth coefficient is fitted to it.
+    assert.ok(Math.abs(nextPopulation(628, 214) - 719) < 0.5,
+      `got ${nextPopulation(628, 214)}, wanted 719`);
+  });
+
+  it("grows as the square root of surplus per head, and shrinks faster than it grows", () => {
     assert.equal(nextPopulation(100, 0), 100);
-    assert.equal(nextPopulation(100, 100), 100 + POPULATION.growth * 10);
-    assert.equal(nextPopulation(100, -100), 100 - POPULATION.decline * 10);
-    // Quadrupling the surplus only doubles the gain.
+    assert.equal(nextPopulation(100, 100), 100 + POPULATION.growth * 100);
+    assert.equal(nextPopulation(100, -100), 100 - POPULATION.decline * 100);
+    assert.ok(POPULATION.decline > POPULATION.growth, "famine must bite harder than plenty rewards");
+
+    // Quadrupling the surplus only doubles the gain — the diminishing return the manual
+    // insists on, so a nation cannot double its population by doubling its food.
     const a = nextPopulation(100, 25) - 100;
     const b = nextPopulation(100, 100) - 100;
     assert.ok(Math.abs(b / a - 2) < 1e-9);
+  });
+
+  it("scales growth with the population being fed", () => {
+    // What a bare sqrt(surplus) would not do: the same surplus in a nation ten times the
+    // size feeds proportionally more people, so the gain goes up with the square root of
+    // that size rather than staying flat.
+    const small = nextPopulation(100, 200) - 100;
+    const large = nextPopulation(10_000, 200) - 10_000;
+    assert.ok(Math.abs(large / small - 10) < 1e-9, `got ${large / small}, wanted 10`);
   });
 
   it("never drives population below zero", () => {

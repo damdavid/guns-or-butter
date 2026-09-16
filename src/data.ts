@@ -96,11 +96,22 @@ export const AGRICULTURE = {
 } as const;
 
 /**
- * Population response to food surplus (§4.4). Growth goes as the square root of
- * surplus; decline is steeper than growth. Both coefficients are unmeasured — calibrate
- * `growth` so an all-labour tier-1 agricultural start yields ~30% growth.
+ * Population response to food surplus (§4.4).
+ *
+ *     growth  = POPULATION.growth  * sqrt(surplus * population)
+ *     decline = POPULATION.decline * sqrt(deficit * population)
+ *
+ * `growth` is fitted to the one measurement taken from the DOS build (§4.4.1): 628
+ * people on a 214-ton surplus grew to 719. Read as a rate it is the more natural
+ * statement — growth per head goes as the square root of surplus *per head* — which
+ * keeps the manual's diminishing returns and, unlike a bare sqrt(surplus), does not have
+ * a nation of ten thousand growing by the same 91 people as a nation of six hundred.
+ *
+ * One reading cannot separate this from the alternatives; §4.4.1 lists the readings that
+ * would. `decline` is still [F] and unmeasured: it carries the spec's "famine bites 1.5x
+ * harder than plenty rewards" at the same scale, no more.
  */
 export const POPULATION = {
-  growth: 1.0,
-  decline: 1.5,
+  growth: 0.2482,
+  decline: 0.3724,
 } as const;
