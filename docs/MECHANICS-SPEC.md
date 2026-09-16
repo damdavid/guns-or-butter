@@ -791,37 +791,51 @@ provinces in proportion to the previous turn's firepower concentration.** Where 
 massed last turn is where production flows this turn. Simple, and it gives
 concentration a second-order payoff.
 
-#### 5.3.1 Deviation: firepower is a flow, not a stock [F]
+#### 5.3.1 Deviation: firepower is a flow, drawn down in proportion [F]
 
 Two deliberate departures from the `[C]` rule above. Neither is a reading of it.
 
-**Each turn's production replaces a province's firepower rather than adding to it.**
-In the original, firepower accumulated: the manual's design dialogue has weapons
-"distributed each turn in proportion to the previous turn's concentration" and says
-nothing anywhere about weapons being lost, so a nation that armed itself and then stopped
-kept that army for the rest of the game at no cost. Here an army is what you are building
-*now*: stop making weapons and you are defenceless next turn. That matches the economy's
-own rule (§3) — unused output is discarded at end of turn, "use it or lose it" — and it
-supplies one of the brakes §9.2 says the design is missing, since a standing army is a
-permanent charge against the population you are actually scored on.
+**A nation's firepower tracks this turn's weapon production.** In the original it
+accumulated: the manual's design dialogue has weapons "distributed each turn in
+proportion to the previous turn's concentration" and never mentions them being lost, so a
+nation could arm itself once and coast for the rest of the game at no cost. Here the
+provinces always sum to what the nation can field now. Stop making weapons and you are
+defenceless. That matches the economy's own rule (§3) — unused output is discarded at end
+of turn, "use it or lose it" — and it supplies one of the brakes §9.2 says the design
+lacks, since a standing army is a permanent charge against the population you are scored
+on.
 
-**Each province gets a flat 1 before the proportional split**, with only the remainder
-following last turn's concentration. Without it a province holding nothing has no weight
-and is shut out of the distribution entirely.
+**How the total is apportioned depends on which way it moves.** Nothing is ever cleared
+and rebuilt; a province is scaled or added to, so what it held carries through.
+
+| National power | Rule |
+| --- | --- |
+| Rising | The *increase* is handed out: a flat 1 to each province, then the remainder in proportion to what each already holds. |
+| Steady | Nothing moves. |
+| Falling, including to nothing | Every province is scaled by the same factor, so the shape of the deployment survives the cut. |
+
+So 66 and 33 against a national 100 become 33 and 16 at a national 50, and at a national
+0 every province is 0. A province is drawn from in proportion to what it holds.
+
+The flat grant applies **only to the increase**. A province holding nothing has no weight
+and would be shut out of a rise entirely, so it needs that floor; but granting one on a
+drawdown would quietly flatten the concentration the player built up, which is the thing
+§5.3 exists to reward. The consequence is that an emptied province stays empty until
+national power next rises, and is then garrisoned.
 
 ##### Consequences, measured
 
 A uniform spread reproduces itself forever. The proportional term can only reinforce a
-concentration that already exists, and under a flow model nothing accumulates to create
-one, so **marching forces together is the only way to concentrate** — a province you
-reinforce this turn draws a larger share of next turn's production. That makes the
-transfer order a real strategic move rather than a convenience.
+concentration that already exists, and nothing accumulates to create one, so **marching
+forces together is the only way to concentrate** — and because a steady total moves
+nothing, a concentration once built is kept rather than eroded. That makes the transfer
+order a real strategic move rather than a convenience.
 
 Reinforcements cannot feed a same-turn attack. `resolveMilitary` debits every marching
 force from its home province before any transfer lands (§5.6), so funnelling into a hub
 and attacking out of it takes two turns.
 
-Offence remains reachable, but it is bounded by production rather than by history. Nine
+Offence remains reachable, but it is bounded by production rather than by patience. Nine
 provinces funnelling into one hub reach a fixed point in a single turn:
 
 | Weapon production | Hub firepower at equilibrium |
@@ -832,8 +846,8 @@ provinces funnelling into one hub reach a fixed point in a single turn:
 
 Appendix B's threshold is >20 by road against an undefended province, so 33/turn is about
 the floor for offensive capability at nine provinces — and it does not grow with patience.
-Compare the stock model, where the same nation reached 237 total firepower in four turns
-simply by waiting.
+Compare the accumulating model, where the same nation reached 237 total firepower in four
+turns simply by waiting.
 
 ### 5.4 Orders [C]
 
