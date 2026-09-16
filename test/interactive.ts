@@ -7,7 +7,7 @@
  */
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { Game, balanceAllocation, subsistenceAllocation, workersFor } from "../src/game.ts";
+import { Game, balanceAllocation, reallocate, subsistenceAllocation, workersFor } from "../src/game.ts";
 import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 import type { Allocation, CommodityId, Level } from "../src/index.ts";
@@ -54,6 +54,7 @@ const CORE: CommodityId[] = [
 ];
 
 let allocation: Record<CommodityId, number> = { ...subsistenceAllocation() };
+let locked: CommodityId[] = [];
 
 const pad = (s: string | number, n: number) => String(s).padStart(n);
 
@@ -76,7 +77,8 @@ function productionScreen(): void {
     const surplus = c.surplus < -0.5 ? `(${c.surplus.toFixed(0)})` : c.surplus.toFixed(0);
     console.log(
       id.padEnd(13) + pad(c.output.toFixed(0), 9) + pad(surplus, 9) +
-      " " + String(c.limitingFactor).padStart(14) + pad(workers[id] ?? 0, 9),
+      " " + String(c.limitingFactor).padStart(14) + pad(workers[id] ?? 0, 9) +
+      (locked.includes(id) ? "  [locked]" : ""),
     );
   }
   const a = result.agriculture;
@@ -92,7 +94,10 @@ function productionScreen(): void {
     `land: ${land.farmland} farm, ${land.forest} forest, ${land.mountains} mtn, ${land.desert} desert`,
   );
   console.log(`workers: ${used} of ${spare} allocated, ${spare - used} idle   firepower this turn: ${result.firepower.toFixed(0)}`);
-  console.log("\n  set <commodity> <workers>   auto   show   next");
+  console.log(
+    "\n  set <commodity> <workers>   lock <commodity>   unlock <commodity>   auto   show   next",
+  );
+  console.log("  setting one factory takes from the others pro rata; locked ones are left alone");
 }
 
 function ordersScreen(): void {
@@ -130,11 +135,25 @@ async function run(): Promise<void> {
             console.log("  usage: set lumber 40   (any commodity in the production graph)");
             return false;
           }
-          allocation = { ...allocation, [id]: Math.max(0, count) / Math.max(spare, 1) };
+          // Pro rata, as the original's sliders did (§3.6) — the others move too.
+          allocation = { ...reallocate(allocation, id, Math.max(0, count) / Math.max(spare, 1), locked) };
           return false;
         }
         if (verb === "auto") {
-          allocation = { ...balanceAllocation(economy, allocation, { level, land, population }) };
+          allocation = {
+            ...balanceAllocation(economy, allocation, { level, land, population }, 80, locked),
+          };
+          return false;
+        }
+        if (verb === "lock" || verb === "unlock") {
+          const id = args[0] as CommodityId;
+          if (!economy.graph.table.has(id)) {
+            console.log(`  no such commodity: ${id}`);
+            return false;
+          }
+          locked = verb === "lock"
+            ? [...new Set([...locked, id])]
+            : locked.filter((k) => k !== id);
           return false;
         }
         if (verb === "show") return false;

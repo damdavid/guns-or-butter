@@ -58,6 +58,7 @@ export interface GameSnapshot {
   world: World;
   turn: number;
   allocations: Record<number, Allocation>;
+  locked: Record<number, CommodityId[]>;
 }
 
 /**
@@ -74,6 +75,48 @@ export function subsistenceAllocation(): Allocation {
     "pig-iron": 0.2,
     "farm-tools": 0.24,
   };
+}
+
+/**
+ * Move one factory's share of the workforce, taking from or giving to the others
+ * pro rata (§3.6).
+ *
+ * This is the original's slider behaviour, and it is deliberately aggressive: the
+ * manual warns that dumping everyone into one factory "can completely obliterate your
+ * carefully considered worker allocations", and that falls straight out of the
+ * arithmetic here rather than being a special case.
+ *
+ * Locked factories are pinned against the redistribution *and* against the player,
+ * which is what makes the lock worth having — it is the only way to protect an
+ * allocation you have got right while you fiddle with the rest.
+ *
+ * The total is preserved, so an allocation that starts fully committed stays that way.
+ */
+export function reallocate(
+  allocation: Allocation,
+  id: CommodityId,
+  share: number,
+  locked: readonly CommodityId[] = [],
+): Allocation {
+  const pinned = new Set(locked);
+  if (pinned.has(id)) return { ...allocation };
+
+  const entries = Object.entries(allocation);
+  const others = entries.filter(([key]) => key !== id && !pinned.has(key));
+  const othersSum = others.reduce((sum, [, v]) => sum + Math.max(0, v), 0);
+  const current = Math.max(0, allocation[id] ?? 0);
+
+  // Only unpinned labour is available, so a heavily locked economy simply cannot feed
+  // the factory you are dragging — which is the point.
+  const target = Math.min(Math.max(0, share), current + othersSum);
+  const delta = target - current;
+  const next: Record<CommodityId, number> = { ...allocation, [id]: target };
+  if (Math.abs(delta) < 1e-12) return next;
+  if (othersSum <= 0) return next;
+
+  const scale = (othersSum - delta) / othersSum;
+  for (const [key, value] of others) next[key] = Math.max(0, Math.max(0, value) * scale);
+  return next;
 }
 
 /**
@@ -95,7 +138,9 @@ export function balanceAllocation(
   base: Allocation,
   context: { level: Level; land: Land; population: number },
   passes = 80,
+  locked: readonly CommodityId[] = [],
 ): Allocation {
+  const pinned = new Set(locked);
   const ids = Object.keys(base).filter((id) => (base[id] ?? 0) > 0);
   let current: Record<CommodityId, number> = { ...base };
 
@@ -118,13 +163,14 @@ export function balanceAllocation(
         needy = c.limitingFactor;
       }
     }
-    if (!needy) break;
+    // A pinned factory cannot be topped up, so there is no point chasing it.
+    if (!needy || pinned.has(needy)) break;
 
     // Take from whoever has the most going spare and is not itself throttled.
     let donor: CommodityId | null = null;
     let bestSpare = 0;
     for (const id of ids) {
-      if (id === needy) continue;
+      if (id === needy || pinned.has(id)) continue;
       const c = result.commodities[id];
       if (!c || (current[id] ?? 0) <= 0.02) continue;
       const spare = c.surplus;
@@ -171,6 +217,8 @@ export class Game {
   allocations: Record<number, Allocation> = {};
   /** Per province. Anything unset holds. */
   orders: Record<number, MilitaryOrder> = {};
+  /** Per nation: factories pinned against redistribution and against the player (§3.6). */
+  locked: Record<number, CommodityId[]> = {};
 
   private production: Record<number, EconomyResult> = {};
   private transfers: Transfer[] = [];
@@ -222,6 +270,29 @@ export class Game {
     this.allocations[nation] = allocation;
   }
 
+  /**
+   * Move one factory's share, redistributing the difference across the unlocked rest.
+   * This is what a slider does; `setAllocation` replaces the whole split at once.
+   */
+  setWorkerShare(nation: number, id: CommodityId, share: number): void {
+    this.requirePhase("production");
+    const current = this.allocations[nation] ?? subsistenceAllocation();
+    this.allocations[nation] = reallocate(current, id, share, this.locked[nation] ?? []);
+  }
+
+  isLocked(nation: number, id: CommodityId): boolean {
+    return (this.locked[nation] ?? []).includes(id);
+  }
+
+  /** Pin or release a factory's allocation (§3.6). */
+  toggleLock(nation: number, id: CommodityId): boolean {
+    const pinned = new Set(this.locked[nation] ?? []);
+    if (pinned.has(id)) pinned.delete(id);
+    else pinned.add(id);
+    this.locked[nation] = [...pinned];
+    return pinned.has(id);
+  }
+
   setOrder(province: number, order: MilitaryOrder): void {
     this.requirePhase("military-orders");
     this.orders[province] = order;
@@ -258,6 +329,9 @@ export class Game {
     this.world = structuredClone(this.startOfTurn.world);
     this.turn = this.startOfTurn.turn;
     this.allocations = structuredClone(this.startOfTurn.allocations);
+    // Locks deliberately survive an undo. They are a standing instruction about which
+    // allocations to protect, not a move taken this turn, and losing them on undo would
+    // defeat the point of having them.
     this.orders = {};
     this.production = {};
     this.transfers = [];
@@ -270,6 +344,7 @@ export class Game {
       world: this.world,
       turn: this.turn,
       allocations: this.allocations,
+      locked: this.locked,
     });
   }
 
@@ -282,6 +357,7 @@ export class Game {
     const game = new Game(structuredClone(snapshot.world), economy);
     game.turn = snapshot.turn;
     game.allocations = structuredClone(snapshot.allocations);
+    game.locked = structuredClone(snapshot.locked ?? {});
     game.startOfTurn = game.snapshot();
     return game;
   }
@@ -309,11 +385,13 @@ export class Game {
       const { land, population } = nationState(this.world, nation.id);
       const allocation =
         this.allocations[nation.id] ??
-        balanceAllocation(this.economy, subsistenceAllocation(), {
-          level: this.world.level,
-          land,
-          population,
-        });
+        balanceAllocation(
+          this.economy,
+          subsistenceAllocation(),
+          { level: this.world.level, land, population },
+          80,
+          this.locked[nation.id] ?? [],
+        );
       const result = this.economy.resolve({
         level: this.world.level,
         land,
