@@ -6,18 +6,18 @@
   "description": "Reimplementation of the 1990 Chris Crawford design. See docs/MECHANICS-SPEC.md",
   "license": "MIT",
   "engines": {
-    "node": ">=22.6"
+    "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
     "dev": "esbuild web/main.ts --bundle --format=esm --sourcemap --outfile=web/dist/app.js --servedir=web --serve=5173",
     "build": "esbuild web/main.ts --bundle --format=esm --minify --outfile=web/dist/app.js",
-    "fixture": "node --experimental-strip-types test/report-fixture.ts",
-    "validate": "node --experimental-strip-types test/validate-calibration.ts",
-    "map": "node --experimental-strip-types test/render-map.ts",
-    "play": "node --experimental-strip-types test/play.ts",
-    "game": "node --experimental-strip-types test/interactive.ts"
+    "fixture": "node test/report-fixture.ts",
+    "validate": "node test/validate-calibration.ts",
+    "map": "node test/render-map.ts",
+    "play": "node test/play.ts",
+    "game": "node test/interactive.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

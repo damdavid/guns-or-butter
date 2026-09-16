@@ -61,9 +61,15 @@ AI and diplomacy are specified but not yet built. See §10 of the spec.
 The browser app takes `?continent=`, `?level=` and `?nation=` query parameters, so
 `localhost:5173/?continent=Kublai&level=expert` starts a different world.
 
-Requires Node >= 22.6, which runs the TypeScript directly via
-`--experimental-strip-types`. Nothing ships at runtime; the dev dependencies are
-`typescript`, `@types/node`, and `esbuild` for the browser bundle.
+Developed and verified on Node 26.8.2, which `.nvmrc` pins — `nvm use` picks it up.
+Node runs the TypeScript directly, with no build step for anything outside `web/`.
+
+Requires Node >= 22.18, the release that made type stripping the default. Below that
+`node file.ts` fails with `ERR_UNKNOWN_FILE_EXTENSION`; the old
+`--experimental-strip-types` flag is no longer needed and is not used.
+
+Nothing ships at runtime; the dev dependencies are `typescript`, `@types/node`, and
+`esbuild` for the browser bundle.
 
 ## License
 
