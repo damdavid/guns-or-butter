@@ -10,7 +10,9 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
+    "dev": "esbuild web/main.ts --bundle --format=esm --sourcemap --outfile=web/dist/app.js --servedir=web --serve=5173",
+    "build": "esbuild web/main.ts --bundle --format=esm --minify --outfile=web/dist/app.js",
     "fixture": "node --experimental-strip-types test/report-fixture.ts",
     "validate": "node --experimental-strip-types test/validate-calibration.ts",
     "map": "node --experimental-strip-types test/render-map.ts",
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.2"
   }
 }
