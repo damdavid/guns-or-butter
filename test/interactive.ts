@@ -210,21 +210,27 @@ async function run(): Promise<void> {
           return false;
         }
         if (verb === "auto") {
+          const previous = allocation;
           allocation = {
             ...balanceAllocation(economy, allocation, { level, land, population }, 80, locked),
           };
-          notice = "balanced around the locked factories";
+          const moved = Object.keys(allocation).some(
+            (id) => Math.abs((allocation[id] ?? 0) - (previous[id] ?? 0)) > 1e-9,
+          );
+          notice = moved
+            ? "balanced around the locked factories"
+            : "nothing to balance — everything involved is locked";
           return false;
         }
         if (verb === "lock" || verb === "unlock") {
           const which = (args[0] ?? "").toLowerCase();
           if (which === "all") {
-            // Locking all pins what is running, not every row: a zero-worker commodity
-            // stays free so a new industry can still be started.
-            locked = verb === "lock"
-              ? Object.keys(allocation).filter((id) => (allocation[id] ?? 0) > 0)
-              : [];
-            notice = verb === "lock" ? `${locked.length} factories locked` : "all factories unlocked";
+            // Every factory, idle ones included, so that releasing the two you mean to
+            // tune is the whole of what can move.
+            locked = verb === "lock" ? [...economy.graph.table.keys()] : [];
+            notice = verb === "lock"
+              ? `all ${locked.length} factories locked — unlock the ones you want to change`
+              : "all factories unlocked";
             return false;
           }
           const { id, hint } = resolveCommodity(args[0] ?? "");

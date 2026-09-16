@@ -310,13 +310,16 @@ export class Game {
   }
 
   /**
-   * Pin every factory the nation is actually running. Zero-worker commodities are left
-   * unlocked so a new industry can still be started; locking those too would freeze the
-   * economy outright rather than protect it.
+   * Pin every factory, including those standing at zero workers.
+   *
+   * Locking only the staffed ones was tried first, on the reasoning that a new industry
+   * should still be startable. In practice that is the wrong default: it leaves every
+   * unstaffed factory free to be raised, and raising one drains the unlocked economy
+   * behind your back. Locking everything and then releasing the two you mean to tune is
+   * the predictable workflow, and it makes "all" mean all.
    */
   lockAll(nation: number): CommodityId[] {
-    const allocation = this.allocations[nation] ?? subsistenceAllocation();
-    this.locked[nation] = Object.keys(allocation).filter((id) => (allocation[id] ?? 0) > 0);
+    this.locked[nation] = [...this.economy.graph.table.keys()];
     return this.locked[nation]!;
   }
 

@@ -659,10 +659,12 @@ dropping them on undo would defeat the purpose. They are saved with the game.
 `balanceAllocation` honours them too: it will neither top up a pinned factory nor raid
 one, so the auto-balance works around whatever the player has protected.
 
-`lockAll` pins every factory the nation is actually running and leaves zero-worker
-commodities free, so a new industry can still be started — locking those as well would
-freeze the economy rather than protect it. Locking everything running does freeze it,
-correctly: with no unlocked labour there is nothing for a change to draw on.
+`lockAll` pins **every** factory, unstaffed ones included. Pinning only the staffed
+ones was tried first, reasoning that a new industry should stay startable, and it is the
+wrong default: it leaves every idle factory free to be raised, and raising one drains
+the unlocked economy behind the player's back. Locking everything and then releasing the
+two you mean to tune is the predictable workflow, and it makes "all" mean all. With
+nothing unlocked, a change has nothing to draw on and is correctly refused.
 
 Narrowing the pool is the sharp edge. Unlock a single commodity out of an otherwise
 pinned economy and it becomes the sole donor, so a modest change empties it and
