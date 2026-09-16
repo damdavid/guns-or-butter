@@ -55,6 +55,52 @@ const CORE: CommodityId[] = [
 
 let allocation: Record<CommodityId, number> = { ...subsistenceAllocation() };
 let locked: CommodityId[] = [];
+/**
+ * Feedback for the last command, printed under the screen rather than logged straight
+ * away. The loop redraws on every input, so anything written immediately scrolls off
+ * the top before it can be read — which is how a rejected command looked like a
+ * command that had silently done nothing.
+ */
+let notice = "";
+
+/**
+ * Resolve a commodity the player typed. Punctuation and case are ignored, so
+ * `farm-tools`, `farmtools` and `Farm Tools` all land, and a near miss gets a
+ * suggestion rather than a bare usage line.
+ */
+function resolveCommodity(input: string): { id?: CommodityId; hint?: string } {
+  const ids = [...economy.graph.table.keys()];
+  const flatten = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const wanted = flatten(input ?? "");
+  if (!wanted) return { hint: "which factory? e.g. set farm-tools 40" };
+
+  const exact = ids.find((id) => flatten(id) === wanted);
+  if (exact) return { id: exact };
+
+  const distance = (a: string, b: string): number => {
+    const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+      Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+    );
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        d[i]![j] = Math.min(
+          d[i - 1]![j]! + 1,
+          d[i]![j - 1]! + 1,
+          d[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+        );
+      }
+    }
+    return d[a.length]![b.length]!;
+  };
+
+  const [best] = ids
+    .map((id) => ({ id, d: distance(wanted, flatten(id)) }))
+    .sort((x, y) => x.d - y.d);
+  if (best && best.d <= Math.max(2, Math.floor(wanted.length / 3))) {
+    return { hint: `no factory called "${input}" — did you mean ${best.id}?` };
+  }
+  return { hint: `no factory called "${input}"` };
+}
 
 const pad = (s: string | number, n: number) => String(s).padStart(n);
 
@@ -103,6 +149,8 @@ function productionScreen(): void {
       "  lock <commodity|all>   unlock <commodity|all>",
   );
   console.log("  setting one factory takes from the others pro rata; locked ones are left alone");
+  if (notice) console.log(`\n  ${notice}`);
+  notice = "";
 }
 
 function ordersScreen(): void {
@@ -135,19 +183,37 @@ async function run(): Promise<void> {
         const { land, population } = nationState(game.world, you);
         const spare = Math.max(0, population - land.farmland);
         if (verb === "set") {
-          const [id, count] = [args[0] as CommodityId, Number(args[1])];
-          if (!economy.graph.table.has(id) || !Number.isFinite(count)) {
-            console.log("  usage: set lumber 40   (any commodity in the production graph)");
+          const { id, hint } = resolveCommodity(args[0] ?? "");
+          const count = Number(args[1]);
+          if (!id) {
+            notice = hint!;
+            return false;
+          }
+          if (!Number.isFinite(count)) {
+            notice = `how many workers for ${id}? e.g. set ${id} 40`;
+            return false;
+          }
+          if (locked.includes(id)) {
+            notice = `${id} is locked — unlock ${id} first`;
             return false;
           }
           // Pro rata, as the original's sliders did (§3.6) — the others move too.
+          const before = allocation[id] ?? 0;
           allocation = { ...reallocate(allocation, id, Math.max(0, count) / Math.max(spare, 1), locked) };
+          const got = Math.round((allocation[id] ?? 0) * spare);
+          notice = got === count
+            ? `${id}: ${got} workers`
+            : `${id}: ${got} workers — ${count} was more than the idle pool and the unlocked factories could supply`;
+          if (Math.abs((allocation[id] ?? 0) - before) < 1e-12 && got !== count) {
+            notice = `${id} unchanged at ${got} — nothing unlocked to draw on, and no idle labour`;
+          }
           return false;
         }
         if (verb === "auto") {
           allocation = {
             ...balanceAllocation(economy, allocation, { level, land, population }, 80, locked),
           };
+          notice = "balanced around the locked factories";
           return false;
         }
         if (verb === "lock" || verb === "unlock") {
@@ -158,21 +224,22 @@ async function run(): Promise<void> {
             locked = verb === "lock"
               ? Object.keys(allocation).filter((id) => (allocation[id] ?? 0) > 0)
               : [];
-            console.log(`  ${locked.length} factories locked.`);
+            notice = verb === "lock" ? `${locked.length} factories locked` : "all factories unlocked";
             return false;
           }
-          const id = args[0] as CommodityId;
-          if (!economy.graph.table.has(id)) {
-            console.log(`  no such commodity: ${id}   (try: ${verb} all)`);
+          const { id, hint } = resolveCommodity(args[0] ?? "");
+          if (!id) {
+            notice = `${hint}   (or: ${verb} all)`;
             return false;
           }
           locked = verb === "lock"
             ? [...new Set([...locked, id])]
             : locked.filter((k) => k !== id);
+          notice = `${id} ${verb === "lock" ? "locked" : "unlocked"}`;
           return false;
         }
         if (verb === "show") return false;
-        console.log(`  unknown command: ${verb}`);
+        notice = `unknown command "${verb}" — try set, auto, lock, unlock, show or next`;
         return false;
       });
       if (!done) continue;

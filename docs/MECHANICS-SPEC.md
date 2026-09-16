@@ -674,6 +674,15 @@ than one means labour can be left spare, and it must remain reachable. Without t
 player with everything locked and workers standing around is simply refused, which was
 reported from play.
 
+**Feedback has to outlive the redraw.** The terminal game reprints the whole screen on
+every input, so anything logged when a command is handled scrolls off the top before it
+can be read. A rejected command therefore looked exactly like a command that had
+silently done nothing — a mistyped commodity name was reported once and then buried,
+and read as the allocation being stuck. Messages are now held and printed under the
+screen, immediately above the prompt. This is a small instance of Crawford's own
+complaint in §9.3: the economy was opaque, and players could not see why it was not
+doing what they asked.
+
 **Worker counts use largest-remainder rounding.** Flooring each factory independently
 loses up to one worker per factory and reports the dust as idle, which is worse than
 merely inaccurate: the screen offers labour that cannot be spent, because in fraction
