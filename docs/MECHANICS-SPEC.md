@@ -639,6 +639,26 @@ I would keep the pro-rata mechanic but make the redistribution *previewable* bef
 commit. Crawford himself concedes it is "mysterious and confusing"; the confusion is
 mostly a UI failure, not a mechanical one.
 
+#### Implementation notes [F]
+
+`reallocate()` in `src/game.ts`, exercised by `set` and `lock` in `npm run game`.
+
+The trap the manual warns about is not special-cased — it falls straight out of the
+arithmetic. Setting one factory to the whole workforce scales every unlocked other by
+`(othersSum - delta) / othersSum`, which is exactly zero, so they are all wiped at once.
+
+The total is preserved, so an allocation that starts fully committed stays that way.
+Only unlocked labour is available to draw on, which means a heavily locked economy
+simply cannot feed the factory being dragged — that is the point of the lock, and the
+clamp is what makes it real rather than advisory.
+
+**Locks survive an undo**, though the rest of the turn does not. They are a standing
+instruction about which allocations to protect rather than a move taken this turn, and
+dropping them on undo would defeat the purpose. They are saved with the game.
+
+`balanceAllocation` honours them too: it will neither top up a pinned factory nor raid
+one, so the auto-balance works around whatever the player has protected.
+
 ---
 
 ## 4. Agriculture and population

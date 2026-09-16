@@ -3,7 +3,7 @@
  */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { Game, balanceAllocation, subsistenceAllocation, workersFor } from "../src/game.ts";
+import { Game, balanceAllocation, reallocate, subsistenceAllocation, workersFor } from "../src/game.ts";
 import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 
@@ -216,6 +216,95 @@ describe("labour allocation", () => {
     });
     assert.ok(balanced.commodities["farm-tools"]!.output > 0);
     assert.ok(balanced.agriculture.surplus > naive.agriculture.surplus);
+  });
+});
+
+describe("worker redistribution and locks (§3.6)", () => {
+  const sum = (a: Record<string, number>) => Object.values(a).reduce((s, v) => s + v, 0);
+
+  it("takes from the other factories pro rata", () => {
+    const before = { lumber: 0.4, "iron-ore": 0.2, "farm-tools": 0.4 };
+    const after = reallocate(before, "lumber", 0.7);
+    assert.ok(Math.abs(after["lumber"]! - 0.7) < 1e-9);
+    // The two donors had 0.2 and 0.4 and must keep that 1:2 ratio.
+    assert.ok(Math.abs(after["farm-tools"]! / after["iron-ore"]! - 2) < 1e-9);
+  });
+
+  it("gives back pro rata when a factory is cut", () => {
+    const after = reallocate({ lumber: 0.6, "iron-ore": 0.2, "farm-tools": 0.2 }, "lumber", 0.2);
+    assert.ok(after["iron-ore"]! > 0.2 && after["farm-tools"]! > 0.2);
+    assert.ok(Math.abs(after["iron-ore"]! - after["farm-tools"]!) < 1e-9);
+  });
+
+  it("preserves the size of the workforce", () => {
+    const before = { lumber: 0.3, "iron-ore": 0.3, charcoal: 0.2, "farm-tools": 0.2 };
+    for (const share of [0, 0.1, 0.55, 1]) {
+      assert.ok(Math.abs(sum(reallocate(before, "charcoal", share)) - sum(before)) < 1e-9);
+    }
+  });
+
+  it("wipes every other allocation if one factory takes the lot", () => {
+    // The manual calls this out as a trap: "you can completely obliterate your
+    // carefully considered worker allocations by simply putting all of your workers
+    // into a single factory."
+    const after = reallocate({ lumber: 0.3, "iron-ore": 0.3, "farm-tools": 0.4 }, "lumber", 1);
+    assert.ok(Math.abs(after["lumber"]! - 1) < 1e-9);
+    assert.ok(Math.abs(after["iron-ore"]!) < 1e-9);
+    assert.ok(Math.abs(after["farm-tools"]!) < 1e-9);
+  });
+
+  it("leaves a locked factory alone when another is dragged", () => {
+    const after = reallocate(
+      { lumber: 0.3, "iron-ore": 0.3, "farm-tools": 0.4 },
+      "lumber",
+      0.9,
+      ["farm-tools"],
+    );
+    assert.equal(after["farm-tools"], 0.4, "the lock should have held");
+    assert.ok(Math.abs(after["iron-ore"]!) < 1e-9, "the unlocked donor takes the whole hit");
+  });
+
+  it("will not let a locked factory be changed by the player either", () => {
+    const before = { lumber: 0.5, "farm-tools": 0.5 };
+    assert.deepEqual(reallocate(before, "farm-tools", 0.9, ["farm-tools"]), before);
+  });
+
+  it("cannot draw more labour than the unlocked factories hold", () => {
+    const after = reallocate({ lumber: 0.2, "farm-tools": 0.8 }, "lumber", 1, ["farm-tools"]);
+    assert.ok(Math.abs(after["lumber"]! - 0.2) < 1e-9, "nothing unlocked to take from");
+    assert.equal(after["farm-tools"], 0.8);
+  });
+
+  it("keeps the balancer off locked factories", () => {
+    const economy = new Economy();
+    const game = Game.create("Kublai", "intermediate");
+    const { land, population } = nationState(game.world, 0);
+    const base = subsistenceAllocation();
+    const balanced = balanceAllocation(
+      economy, base, { level: "intermediate", land, population }, 80, ["charcoal"],
+    );
+    assert.equal(balanced["charcoal"], base["charcoal"]);
+  });
+
+  it("tracks locks on the game, through undo and a save", () => {
+    const game = Game.create("Kublai", "intermediate");
+    assert.equal(game.isLocked(0, "farm-tools"), false);
+    assert.equal(game.toggleLock(0, "farm-tools"), true);
+    game.setWorkerShare(0, "lumber", 0.9);
+    assert.equal(game.allocations[0]!["farm-tools"], subsistenceAllocation()["farm-tools"]);
+
+    assert.deepEqual(Game.restore(game.snapshot()).locked[0], ["farm-tools"]);
+
+    // Locks are a standing instruction, not a move, so an undo leaves them in place.
+    playTurn(game);
+    game.undoTurn();
+    assert.equal(game.isLocked(0, "farm-tools"), true, "undo should not drop the locks");
+  });
+
+  it("rejects a share change outside the production phase", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.advance();
+    assert.throws(() => game.setWorkerShare(0, "lumber", 0.5), /production/);
   });
 });
 

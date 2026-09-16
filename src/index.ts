@@ -16,6 +16,7 @@ export {
   Game,
   PHASE_ORDER,
   balanceAllocation,
+  reallocate,
   subsistenceAllocation,
   workersFor,
   type Allocation,
