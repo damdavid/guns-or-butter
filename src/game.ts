@@ -104,17 +104,24 @@ export function reallocate(
   const entries = Object.entries(allocation);
   const others = entries.filter(([key]) => key !== id && !pinned.has(key));
   const othersSum = others.reduce((sum, [, v]) => sum + Math.max(0, v), 0);
+  const allocated = entries.reduce((sum, [, v]) => sum + Math.max(0, v), 0);
   const current = Math.max(0, allocation[id] ?? 0);
+  // Labour nobody has been given yet. It is drawn on before any factory is raided,
+  // otherwise it is stranded: with everything else locked there would be no donor, and
+  // a request to grow would be refused while workers stood idle.
+  const idle = Math.max(0, 1 - allocated);
 
-  // Only unpinned labour is available, so a heavily locked economy simply cannot feed
-  // the factory you are dragging — which is the point.
-  const target = Math.min(Math.max(0, share), current + othersSum);
+  const target = Math.min(Math.max(0, share), current + othersSum + idle);
   const delta = target - current;
   const next: Record<CommodityId, number> = { ...allocation, [id]: target };
   if (Math.abs(delta) < 1e-12) return next;
-  if (othersSum <= 0) return next;
 
-  const scale = (othersSum - delta) / othersSum;
+  // Growing: spend the idle pool first, then take the rest from the unlocked factories
+  // pro rata. Shrinking: hand it back to them, or let it fall idle if none are free.
+  const fromOthers = delta > 0 ? delta - Math.min(delta, idle) : delta;
+  if (Math.abs(fromOthers) < 1e-12 || othersSum <= 0) return next;
+
+  const scale = Math.max(0, (othersSum - fromOthers) / othersSum);
   for (const [key, value] of others) next[key] = Math.max(0, Math.max(0, value) * scale);
   return next;
 }
@@ -202,9 +209,27 @@ export function workersFor(
   // anything above 1 is normalised. Without that a player who deliberately holds
   // labour back would find it silently spent anyway.
   const scale = total > 1 ? 1 / total : 1;
+
+  // Largest remainder, not a plain floor per commodity. Flooring each independently
+  // loses up to one worker per factory and reports the dust as idle labour, which is
+  // both wrong and maddening: the screen offers workers that cannot be spent because in
+  // fraction terms the allocation is already fully committed.
+  const target = Math.floor(spare * Math.min(total, 1));
+  const wanted = Object.entries(allocation)
+    .filter(([, fraction]) => fraction > 0)
+    .map(([id, fraction]) => ({ id, exact: fraction * scale * spare }));
+
   const workers: Record<CommodityId, number> = {};
-  for (const [id, fraction] of Object.entries(allocation)) {
-    if (fraction > 0) workers[id] = Math.floor(fraction * scale * spare);
+  let handed = 0;
+  for (const { id, exact } of wanted) {
+    workers[id] = Math.floor(exact);
+    handed += workers[id]!;
+  }
+  const byRemainder = [...wanted].sort(
+    (a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)),
+  );
+  for (let i = 0; handed < target && i < byRemainder.length; i++, handed++) {
+    workers[byRemainder[i]!.id]!++;
   }
   return workers;
 }

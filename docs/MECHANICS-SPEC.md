@@ -668,6 +668,17 @@ Narrowing the pool is the sharp edge. Unlock a single commodity out of an otherw
 pinned economy and it becomes the sole donor, so a modest change empties it and
 cascades into whatever it fed.
 
+**Idle labour is drawn on before any factory is raided.** The original has no idle
+pool — every worker is always somewhere — but allowing an allocation to sum to less
+than one means labour can be left spare, and it must remain reachable. Without this a
+player with everything locked and workers standing around is simply refused, which was
+reported from play.
+
+**Worker counts use largest-remainder rounding.** Flooring each factory independently
+loses up to one worker per factory and reports the dust as idle, which is worse than
+merely inaccurate: the screen offers labour that cannot be spent, because in fraction
+terms the allocation is already fully committed.
+
 ---
 
 ## 4. Agriculture and population
