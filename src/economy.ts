@@ -176,7 +176,7 @@ export class Economy {
       agriculture,
       firepower,
       population: state.population,
-      nextPopulation: nextPopulation(state.population, agriculture.surplus),
+      nextPopulation: nextPopulation(state.population, agriculture.surplus, state.land.farmland),
     };
   }
 
@@ -232,13 +232,22 @@ function nearestParams(id: CommodityId, level: Level) {
 }
 
 /**
- * Growth goes as the square root of food surplus *per head*, so it scales with the
- * population it is feeding; decline is steeper (§4.4). Measured, see §4.4.1.
+ * Population for next turn (§4.4). Linear in surplus but saturating, and floored against
+ * famine at `floorPerAcre * farmland`. Fitted to 29 readings; see §4.4.1.
  */
-export function nextPopulation(population: number, foodSurplus: number): number {
+export function nextPopulation(
+  population: number,
+  foodSurplus: number,
+  farmland: number,
+): number {
   if (population <= 0) return 0;
   if (foodSurplus >= 0) {
-    return population + POPULATION.growth * Math.sqrt(foodSurplus * population);
+    const saturation = POPULATION.saturation * population;
+    return population + (POPULATION.growth * foodSurplus) / (1 + foodSurplus / saturation);
   }
-  return Math.max(0, population - POPULATION.decline * Math.sqrt(-foodSurplus * population));
+  // A nation already under the floor — stripped by conquest, say — is not pushed back up
+  // to it; the floor only stops famine taking it further.
+  const floor = Math.min(POPULATION.floorPerAcre * farmland, population);
+  return Math.max(floor, population - POPULATION.decline * -foodSurplus);
 }
+

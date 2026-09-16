@@ -754,97 +754,85 @@ industries. Appendix B warns the crossover shifts with your terrain mix.
 - Boundary condition used for initial balance [C]: if a nation puts *all* labor into
   tier-1 agriculture, that should produce enough food for roughly **30% growth**.
 
-Form, now measured [C for the reading, I for the shape]:
+Form, now measured from 29 readings (§4.4.1):
 
     surplus = food - population
-    if surplus >= 0: population += 0.2482 * sqrt(surplus * population)
-    else:            population -= 0.3724 * sqrt(-surplus * population)
+    floor   = 1.4933 * farmland
+    if surplus >= 0: population += 0.4727 * surplus / (1 + surplus / (2.0242 * population))
+    else:            population  = max(min(floor, population),
+                                       population - 0.6971 * -surplus)
 
-See §4.4.1 for the measurement and what it does and does not settle.
+**The square root is not what the game does.** Growth is *linear* in surplus; the
+diminishing return the manual insists on comes from the saturating denominator instead.
+Doubling a surplus of 0.34 per head multiplies the gain by 1.75 — less than the 2 Crawford
+wanted to avoid, more than the 1.41 a square root would give. The stated intent is
+honoured; the stated mechanism is not.
 
-#### 4.4.1 The one population reading [C]
+**Famine has a floor.** A nation sitting on `1.4933 * farmland` people loses nobody at
+all, to deficits as deep as 207 tons. That constant is worldgen's measured
+population-to-farmland ratio — which is to say, a nation cannot be starved below where it
+started, unless it loses the farmland itself.
 
-Taken from the DOS build:
+**The 30% boundary condition above does not survive.** Population starts at
+`1.4933 * farmland`, and tier-1 tools cap food at `2 * farmland`, so an all-labour tier-1
+start has a surplus of `0.5067 * farmland` on `1.4933 * farmland` people — which the
+measured response turns into **14.5% growth, not 30%**. Two readings confirm it directly:
+628 people with a 214-ton surplus (food 842, the tier-1 ceiling for 421 acres) grew to
+719. The 30% is design intent the shipped game missed, which puts it alongside §6.3 and
+§9.
 
-| Population | Food | Surplus | Next population | Growth |
-| --- | --- | --- | --- | --- |
-| 628 | 842 | 214 | 719 | +91, or 14.5% |
+#### 4.4.1 The population readings [C]
 
-**This falsified the placeholder outright.** `G = 1.0` on `sqrt(surplus)` predicts
-628 + 14.6 = 643 against an observed 719 — the increment was wrong by a factor of 6.2.
+29 readings from the DOS build, at Beginner and Intermediate, spanning populations 628 to
+1316 and surpluses from -304 to +686. Held in `test/economy.test.ts` as the oracle for
+every constant in `POPULATION`.
 
-**It also appears to contradict the 30% boundary condition above.** Worldgen measures
-population at 1.4933x farmland, which puts 628 people on ~420.5 acres; tier-1 tools cap
-food at 2 x acres = 841.1 tons, against the 842 observed. So this reading looks like
-*exactly* the "all labour into tier-1 agriculture" case the manual says should yield
-roughly 30% growth, and it yielded 14.5%. That conclusion holds whatever functional form
-is chosen, because every candidate is fitted to this same point. Either the manual's 30%
-is design intent the shipped game missed — it would not be the first, see §6.3 and §9 —
-or the nation measured was not quite at the tier-1 ceiling. **Re-measuring a nation known
-to be at the ceiling would settle it.**
+| Parameter | Value | Accuracy against the readings |
+| --- | --- | --- |
+| `growth` | 0.4727 | median 4.7%, worst 9.7% (16 readings) |
+| `saturation` | 2.0242 | fitted, and close enough to 2 to look hand-typed |
+| `decline` | 0.6971 | median 0.0%, worst 6.6% (7 readings) |
+| `floorPerAcre` | 1.4933 | 6 readings sit exactly on it and lose nobody |
 
-##### One point cannot choose the form
+##### How the form was chosen
 
-Four candidates fit the reading exactly, differing only in how growth scales:
+Seven structural candidates were fitted. What the readings rule out:
 
-| Form | Fitted G | pop 628, surplus 50 | pop 300, surplus 214 | pop 1200, surplus 214 |
-| --- | --- | --- | --- | --- |
-| `G*sqrt(surplus)` | 6.2206 | 44.0 | 91.0 | 91.0 |
-| `G*sqrt(surplus*population)` | 0.2482 | 44.0 | 62.9 | 125.8 |
-| `G*surplus` (linear) | 0.4252 | 21.3 | 91.0 | 91.0 |
-| `G*population*sqrt(surplus/population)` | 0.2482 | 44.0 | 62.9 | 125.8 |
+| Form | median | worst | Verdict |
+| --- | --- | --- | --- |
+| `a*surplus/(1+surplus/(2*pop))` | 4.7% | 9.7% | **implemented** — two parameters, best worst case |
+| `a*surplus^b*pop^c` | 4.5% | 16.7% | fitted exponent 0.91, not 0.5 |
+| `a*surplus^b` | 4.7% | 14.5% | population dependence is real, if weak |
+| `a*sqrt(surplus*pop)` | 14.2% | 174.2% | the previous implementation, decisively out |
+| `a*surplus` linear | 8.9% | 28.6% | misses the saturation at large surplus |
 
-The third and fourth are algebraically the second and a linear rule, so there are really
-two questions. `G*sqrt(surplus*population)` is implemented, on two grounds: read as a
-rate it says growth *per head* goes as the square root of surplus *per head*, which is
-the scale-free statement and keeps the manual's explicit diminishing return; and a bare
-`sqrt(surplus)` would have a nation of ten thousand growing by the same 91 people as a
-nation of six hundred. The fitted 0.2482 is also suspiciously close to 1/4, which is the
-sort of number a designer types.
+A four-parameter fit reaches median 2.4% but at a worst case of 19% on 16 points, so it
+was rejected as overfitting. Farmland was tested as the saturation scale and fits slightly
+better, but farmland varies only 421 to 467 across the readings — 11% — so it cannot be
+separated from a constant, whereas population varies 2.1x and its dependence *is*
+identifiable. Growth per head is a function of surplus per head; two readings at the same
+food-per-head but different sizes (1161 with 240, and 1278 with 264) differ by 20% in
+growth rate, which is what forced the population term in.
 
-##### The model now predicts an oscillation, which is a free test
+##### An earlier prediction, now settled
 
-Fitting *any* square root to this reading makes the equilibrium unstable. The square root
-has infinite slope at zero surplus, so even a half-ton surplus on 649 people produces a
-jump of 4.5 — the population cannot settle at food balance, it overshoots and bounces.
-Against a fixed food supply of 650 it converges to a stable 2-cycle:
+Fitting a square root to the first reading alone made the equilibrium unstable: the square
+root has infinite slope at zero surplus, so population converged to a 2-cycle with a 4%
+swing instead of settling at food balance. That was recorded as a falsifiable prediction.
+The full readings settle it — growth is linear near zero, population converges smoothly,
+and the oscillation was an artefact of the wrong functional form rather than a feature of
+the game.
 
-| Form | Behaviour against a fixed food supply of 650 |
-| --- | --- |
-| `G*sqrt(surplus)`, G=6.2206 | 2-cycle, 631.5 <-> 658.2, swing 26.8 |
-| `G*sqrt(surplus*population)`, G=0.2482 | 2-cycle, 630.9 <-> 658.1, swing 27.3 |
-| `G*surplus` linear, G=0.4252 | settles on 650.0 exactly, swing 0 |
+##### What is still open
 
-This follows from the *magnitude* the measurement implies, not from the choice between
-the two square-root variants — both oscillate by about 4%. The old `G = 1.0` placeholder
-oscillated too, but by 0.7 people, which is why it looked convergent.
-
-So there is a discriminating observation that needs no careful measurement at all:
-
-> **Take a nation to roughly food balance in the DOS build and watch its population for
-> a few turns. Does it settle, or does it bounce by a few percent?**
-
-Settling means the response is effectively linear near zero and the manual's "square
-root" is design intent the code did not implement — which would put it alongside the 30%
-boundary condition above. Bouncing confirms the square root. Either answer is worth more
-than another precise reading, and it is the first thing to check.
-
-##### The readings that would settle it
-
-Two measurements, and the model is pinned:
-
-1. **Same population, much smaller surplus** — say 628 people on a surplus near 50. A
-   square-root rule predicts +44; a linear one predicts +21. This separates sqrt from
-   linear, the same question the oscillation test above answers more cheaply.
-2. **Much different population, similar surplus** — say 300 or 1200 people on a surplus
-   near 214. A bare `sqrt(surplus)` predicts +91 either way; the implemented form predicts
-   +63 and +126. This is the more important of the two.
-
-A third reading, of any **deficit**, would give `decline` its first measurement. It is
-currently [F]: 0.3724 carries nothing but the spec's stated intent that famine bite 1.5x
-harder than plenty rewards, at the same scale as growth. It has a large effect — a nation
-of 450 running a 149-ton shortfall now loses 96 people a turn where the old placeholder
-lost 18, so starvation is roughly five times faster than anything seen in play so far.
+- **Whether the floor is farmland or memory.** Every no-decline reading is at the initial
+  population, which is also `1.4933 * farmland`, so "famine stops at 1.4933 acres' worth"
+  and "famine cannot take you below where you started" fit equally well. The experiment:
+  grow a nation, let it *gain* territory, then starve it and see whether it stops at the
+  old starting population or at 1.4933x the new farmland.
+- **Whether decline saturates.** Every measured deficit is shallow — at most 0.23 per head
+  — and linear fits them to 0%. A deficit approaching one ton per head would show whether
+  it curves.
 
 **Population is the workforce.** In the reference state, population 461 against 458
 allocated workers. Population is also the victory metric and the input to economies
@@ -1547,13 +1535,15 @@ presentational matter:
 
 ### What is still unmeasured
 
-Population growth now has **one** measurement (§4.4.1), which was enough to falsify the
-placeholder — it was out by a factor of 6.2 — but not enough to fix the functional form:
-four candidates fit that single point exactly. §4.4.1 names the two further readings that
-would separate them, and a third that would give `POPULATION.decline` its first
-measurement of any kind. Decline is the last wholly unmeasured number in the economy, and
-it is not a small one: it now costs a starving nation roughly five times what the old
-placeholder did.
+The population response is now measured too (§4.4.1): 29 readings from the DOS build fix
+all four constants, growth to a median 4.7% and decline to a median 0.0%. Two of the
+manual's `[C]` claims about it did not survive contact with the data — growth is linear
+with saturation rather than a square root, and an all-labour tier-1 start yields 14.5%
+growth rather than the stated 30%.
+
+Nothing in the economy is now unmeasured. Two smaller questions about population remain
+open and are described in §4.4.1: whether the famine floor tracks farmland or the starting
+population, and whether decline saturates at deficits deeper than any yet measured.
 
 One smaller data gap, not blocking: Petroleum has only seven non-zero readings and is
 the weakest fit in the table — the row to re-measure first.
