@@ -301,6 +301,37 @@ describe("worker redistribution and locks (§3.6)", () => {
     assert.equal(game.isLocked(0, "farm-tools"), true, "undo should not drop the locks");
   });
 
+  it("recruits idle labour before raiding any other factory", () => {
+    // Reported from play: with four factories locked and 16 workers idle, asking farm
+    // tools for more was refused outright, because the only source considered was the
+    // other factories and all of them were pinned.
+    const before = { lumber: 0.22, "iron-ore": 0.22, charcoal: 0.045, "pig-iron": 0.2, "farm-tools": 0.24 };
+    const locked = ["lumber", "iron-ore", "charcoal", "pig-iron"];
+    const after = reallocate(before, "farm-tools", 0.3, locked);
+    assert.ok(Math.abs(after["farm-tools"]! - 0.3) < 1e-9, "should have taken the idle labour");
+    for (const id of locked) assert.equal(after[id], before[id as keyof typeof before], `${id} moved`);
+  });
+
+  it("spends idle labour first, and only then takes from the unlocked", () => {
+    const before = { lumber: 0.3, "farm-tools": 0.5 }; // 0.2 idle
+    const after = reallocate(before, "farm-tools", 0.65);
+    assert.ok(Math.abs(after["farm-tools"]! - 0.65) < 1e-9);
+    assert.equal(after["lumber"], 0.3, "lumber should be untouched while idle remains");
+  });
+
+  it("still refuses to exceed idle plus the unlocked pool", () => {
+    const before = { lumber: 0.2, "farm-tools": 0.7 }; // 0.1 idle
+    const after = reallocate(before, "farm-tools", 0.95, ["lumber"]);
+    assert.ok(Math.abs(after["farm-tools"]! - 0.8) < 1e-9, "idle only, lumber is pinned");
+    assert.equal(after["lumber"], 0.2);
+  });
+
+  it("lets freed labour fall idle when nothing unlocked can take it", () => {
+    const after = reallocate({ lumber: 0.4, "farm-tools": 0.6 }, "farm-tools", 0.3, ["lumber"]);
+    assert.equal(after["lumber"], 0.4);
+    assert.ok(Math.abs(after["farm-tools"]! - 0.3) < 1e-9);
+  });
+
   it("locks every running factory, and leaves idle ones free to start", () => {
     const game = Game.create("Kublai", "intermediate");
     game.setAllocation(0, { lumber: 0.4, "pig-iron": 0.4, "farm-tools": 0.2, sword: 0 });

@@ -93,7 +93,11 @@ function productionScreen(): void {
     `\npopulation ${population} -> ${result.nextPopulation.toFixed(0)} (${trend})   ` +
     `land: ${land.farmland} farm, ${land.forest} forest, ${land.mountains} mtn, ${land.desert} desert`,
   );
-  console.log(`workers: ${used} of ${spare} allocated, ${spare - used} idle   firepower this turn: ${result.firepower.toFixed(0)}`);
+  const idle = spare - used;
+  console.log(
+    `workers: ${used} of ${spare} allocated, ${idle} idle   firepower this turn: ${result.firepower.toFixed(0)}` +
+    (idle > 0 ? "   <- idle labour is free to take; raise a factory to use it" : ""),
+  );
   console.log(
     "\n  set <commodity> <workers>   auto   show   next\n" +
       "  lock <commodity|all>   unlock <commodity|all>",
