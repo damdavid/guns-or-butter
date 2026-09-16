@@ -175,18 +175,47 @@ describe("orders and execution order (§5.4, §5.6)", () => {
 });
 
 describe("weapon distribution (§5.3)", () => {
-  it("follows last turn's concentration", () => {
+  const close = (actual: number, expected: number, what: string) =>
+    assert.ok(Math.abs(actual - expected) < 1e-9, `${what}: got ${actual}, wanted ${expected}`);
+
+  it("gives every province a flat 1, then follows last turn's concentration", () => {
     const world = withFirepower(line([true, true, true]), { 0: 30, 1: 10 });
+    // Two provinces, so 2 of the 40 goes out flat and the remaining 38 splits 3:1.
     const after = distributeWeapons(world, 0, 40);
-    assert.ok(Math.abs(after.provinces[0]!.firepower - 60) < 1e-9, "three quarters to the massed one");
-    assert.ok(Math.abs(after.provinces[1]!.firepower - 20) < 1e-9);
-    assert.equal(nationFirepower(after, 0), 80);
+    close(after.provinces[0]!.firepower, 30 + 1 + 28.5, "the massed province");
+    close(after.provinces[1]!.firepower, 10 + 1 + 9.5, "the thin one");
+    close(nationFirepower(after, 0), 80, "total firepower");
+  });
+
+  it("lifts a stripped province off zero, where the proportional rule never could", () => {
+    // A province holding nothing is owed nothing under a pure proportional split, so it
+    // held nothing for the rest of the game — an absorbing state that left a province
+    // taken bare, or one that spent everything on a failed assault, indefensible.
+    let world = withFirepower(line([true, true, true]), { 0: 100, 1: 0 });
+    for (let turn = 0; turn < 3; turn++) world = distributeWeapons(world, 0, 20);
+    assert.ok(world.provinces[1]!.firepower >= 3, "three turns of garrison should have arrived");
+    // It still concentrates: the province that was already massed gains far more.
+    assert.ok(world.provinces[0]!.firepower - 100 > world.provinces[1]!.firepower * 5);
+  });
+
+  it("splits evenly when there is not enough for one each", () => {
+    const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 90, 1: 10 }), 0, 1);
+    close(after.provinces[0]!.firepower, 90.5, "the massed province");
+    close(after.provinces[1]!.firepower, 10.5, "the thin one");
+    close(nationFirepower(after, 0), 101, "nothing may go missing");
   });
 
   it("spreads evenly when nothing is massed anywhere — the opening turn", () => {
     const after = distributeWeapons(line([true, true, true]), 0, 50);
     assert.equal(after.provinces[0]!.firepower, 25);
     assert.equal(after.provinces[1]!.firepower, 25);
+  });
+
+  it("conserves the firepower it is given", () => {
+    for (const amount of [0.5, 1, 2, 37, 1000]) {
+      const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 7, 1: 0 }), 0, amount);
+      close(nationFirepower(after, 0), 7 + amount, `distributing ${amount}`);
+    }
   });
 
   it("gives the other nation nothing", () => {

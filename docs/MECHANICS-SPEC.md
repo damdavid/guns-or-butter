@@ -791,6 +791,28 @@ provinces in proportion to the previous turn's firepower concentration.** Where 
 massed last turn is where production flows this turn. Simple, and it gives
 concentration a second-order payoff.
 
+#### 5.3.1 Deviation: a flat garrison first [F]
+
+This implementation grants **each province a flat 1 firepower before** the proportional
+split, and distributes only the remainder by concentration. That is a deliberate
+departure from the `[C]` rule above, not a reading of it.
+
+The reason is that the pure proportional rule has an absorbing state at zero. A province
+holding nothing is owed nothing, so once emptied it stays empty for the rest of the game
+however much the nation produces. Two ordinary events empty a province: losing it to an
+enemy who strips it, and spending everything on an assault that fails. Either left a
+province permanently indefensible, which reads as a bug to a player even though it
+follows from the rule.
+
+The flat grant is small enough not to undo what §5.3 is for. Concentration still pays:
+with 100 firepower massed in one province and none in the other, three turns of 20 leave
+the massed province far ahead, because 18 of each 20 still follows the old rule.
+
+Where there is less than one firepower per province to hand out, every province gets the
+same fraction instead. That keeps the split free of ordering bias — no province is
+privileged by its index — and leaves nothing undistributed. `distributeWeapons` conserves
+exactly what it is given, which is asserted over a range of amounts.
+
 ### 5.4 Orders [C]
 
 Exactly two per province:
