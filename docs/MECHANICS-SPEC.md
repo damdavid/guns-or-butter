@@ -659,6 +659,15 @@ dropping them on undo would defeat the purpose. They are saved with the game.
 `balanceAllocation` honours them too: it will neither top up a pinned factory nor raid
 one, so the auto-balance works around whatever the player has protected.
 
+`lockAll` pins every factory the nation is actually running and leaves zero-worker
+commodities free, so a new industry can still be started — locking those as well would
+freeze the economy rather than protect it. Locking everything running does freeze it,
+correctly: with no unlocked labour there is nothing for a change to draw on.
+
+Narrowing the pool is the sharp edge. Unlock a single commodity out of an otherwise
+pinned economy and it becomes the sole donor, so a modest change empties it and
+cascades into whatever it fed.
+
 ---
 
 ## 4. Agriculture and population

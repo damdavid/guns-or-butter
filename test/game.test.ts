@@ -301,6 +301,42 @@ describe("worker redistribution and locks (§3.6)", () => {
     assert.equal(game.isLocked(0, "farm-tools"), true, "undo should not drop the locks");
   });
 
+  it("locks every running factory, and leaves idle ones free to start", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.setAllocation(0, { lumber: 0.4, "pig-iron": 0.4, "farm-tools": 0.2, sword: 0 });
+    const pinned = game.lockAll(0);
+    assert.deepEqual(pinned.sort(), ["farm-tools", "lumber", "pig-iron"]);
+    assert.equal(game.isLocked(0, "sword"), false, "an unstaffed factory stays free");
+  });
+
+  it("locking everything running freezes the economy", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.setAllocation(0, { lumber: 0.5, "pig-iron": 0.3, "farm-tools": 0.2 });
+    game.lockAll(0);
+    const before = { ...game.allocations[0] };
+    game.setWorkerShare(0, "lumber", 1);
+    assert.deepEqual(game.allocations[0], before, "nothing unlocked to draw on");
+  });
+
+  it("releases everything at once", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.setAllocation(0, { lumber: 0.5, "pig-iron": 0.3, "farm-tools": 0.2 });
+    game.lockAll(0);
+    game.unlockAll(0);
+    assert.deepEqual(game.locked[0], []);
+    game.setWorkerShare(0, "lumber", 0.8);
+    assert.ok(Math.abs(game.allocations[0]!["lumber"]! - 0.8) < 1e-9);
+  });
+
+  it("makes a single unlocked factory the sole donor", () => {
+    // Unlocking one commodity out of a locked economy narrows the pool to it alone,
+    // which drains it fast — visible in the terminal game and worth pinning down.
+    const before = { lumber: 0.3, charcoal: 0.3, "farm-tools": 0.4 };
+    const after = reallocate(before, "lumber", 0.6, ["farm-tools"]);
+    assert.equal(after["farm-tools"], 0.4);
+    assert.ok(Math.abs(after["charcoal"]!) < 1e-9, "the lone donor is emptied");
+  });
+
   it("rejects a share change outside the production phase", () => {
     const game = Game.create("Kublai", "intermediate");
     game.advance();

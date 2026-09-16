@@ -95,7 +95,8 @@ function productionScreen(): void {
   );
   console.log(`workers: ${used} of ${spare} allocated, ${spare - used} idle   firepower this turn: ${result.firepower.toFixed(0)}`);
   console.log(
-    "\n  set <commodity> <workers>   lock <commodity>   unlock <commodity>   auto   show   next",
+    "\n  set <commodity> <workers>   auto   show   next\n" +
+      "  lock <commodity|all>   unlock <commodity|all>",
   );
   console.log("  setting one factory takes from the others pro rata; locked ones are left alone");
 }
@@ -146,9 +147,19 @@ async function run(): Promise<void> {
           return false;
         }
         if (verb === "lock" || verb === "unlock") {
+          const which = (args[0] ?? "").toLowerCase();
+          if (which === "all") {
+            // Locking all pins what is running, not every row: a zero-worker commodity
+            // stays free so a new industry can still be started.
+            locked = verb === "lock"
+              ? Object.keys(allocation).filter((id) => (allocation[id] ?? 0) > 0)
+              : [];
+            console.log(`  ${locked.length} factories locked.`);
+            return false;
+          }
           const id = args[0] as CommodityId;
           if (!economy.graph.table.has(id)) {
-            console.log(`  no such commodity: ${id}`);
+            console.log(`  no such commodity: ${id}   (try: ${verb} all)`);
             return false;
           }
           locked = verb === "lock"
