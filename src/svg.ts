@@ -6,7 +6,7 @@
  * the browser does hit testing without the renderer knowing anything about events.
  */
 import { borderSegments } from "./worldgen.ts";
-import type { World } from "./types.ts";
+import type { Point, World } from "./types.ts";
 
 /**
  * Nation fills, deliberately warm and green. An earlier palette included two pale
@@ -32,16 +32,51 @@ export interface MapOptions {
   firepower?: boolean;
   /** Marches ordered this turn, drawn capital to capital. */
   marches?: { from: number; to: number; hostile: boolean }[];
+  /** Region to show, for panning and zooming. Defaults to the whole world. */
+  view?: Rect;
+  /** Forces in transit, drawn wherever the animation has got to. */
+  markers?: { at: Point; label: string; hostile: boolean }[];
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The continent's bounding box, padded by `margin`, clamped to the world.
+ *
+ * Worldgen draws into a fixed 1000x700 field and the land never fills it, so showing the
+ * whole field wastes most of the pane on empty ocean.
+ */
+export function continentBounds(world: World, margin = 40): Rect {
+  const xs = world.outline.map((p) => p.x);
+  const ys = world.outline.map((p) => p.y);
+  if (xs.length === 0) return { x: 0, y: 0, w: world.width, h: world.height };
+  const x = Math.max(0, Math.min(...xs) - margin);
+  const y = Math.max(0, Math.min(...ys) - margin);
+  return {
+    x,
+    y,
+    w: Math.min(world.width - x, Math.max(...xs) + margin - x),
+    h: Math.min(world.height - y, Math.max(...ys) + margin - y),
+  };
 }
 
 const fmt = (n: number) => n.toFixed(1);
 
 export function renderMapSvg(world: World, options: MapOptions = {}): string {
-  const { selected = null, targets, labels = true, firepower = false, marches = [] } = options;
+  const {
+    selected = null, targets, labels = true, firepower = false, marches = [], markers = [],
+  } = options;
   const { width, height } = world;
+  const v = options.view ?? { x: 0, y: 0, w: width, h: height };
   const out: string[] = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" class="map">`,
-    `<rect width="${width}" height="${height}" fill="${OCEAN}"/>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${fmt(v.x)} ${fmt(v.y)} ${fmt(v.w)} ${fmt(v.h)}" class="map">`,
+    // The ocean covers the whole field, not the view, so panning never runs off it.
+    `<rect x="0" y="0" width="${width}" height="${height}" fill="${OCEAN}"/>`,
   ];
 
   // Shallows: the coastline stroked heavily under the land, so the halo follows the
@@ -172,6 +207,16 @@ export function renderMapSvg(world: World, options: MapOptions = {}): string {
         `<text class="fp" x="${fmt(p.capital.x)}" y="${fmt(p.capital.y + 13)}" text-anchor="middle">${p.firepower.toFixed(0)}</text>`,
       );
     }
+  }
+
+  // Forces in transit, drawn last so they ride over everything.
+  for (const m of markers) {
+    const kind = m.hostile ? "hostile" : "friendly";
+    out.push(
+      `<circle class="in-transit ${kind}" cx="${fmt(m.at.x)}" cy="${fmt(m.at.y)}" r="9" pointer-events="none"/>`,
+      `<text class="in-transit-label" x="${fmt(m.at.x)}" y="${fmt(m.at.y + 3.2)}" ` +
+      `text-anchor="middle" pointer-events="none">${m.label}</text>`,
+    );
   }
 
   out.push("</svg>");

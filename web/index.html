@@ -15,11 +15,20 @@
 
     <main>
       <section class="pane map-pane">
+        <div class="map-tools">
+          <button id="zoom-in" type="button" title="Zoom in">+</button>
+          <button id="zoom-out" type="button" title="Zoom out">&minus;</button>
+          <button id="zoom-fit" type="button" title="Fit the continent">Fit</button>
+          <span id="map-hint" class="hint"></span>
+        </div>
         <div id="map"></div>
-        <p id="map-hint" class="hint"></p>
       </section>
 
-      <section id="side" class="pane side"></section>
+      <section class="side">
+        <div id="inspector" class="pane inspect" hidden></div>
+        <div id="panel" class="pane"></div>
+        <div id="nations" class="pane"></div>
+      </section>
     </main>
 
     <footer>

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { generateWorld } from "../src/worldgen.ts";
-import { renderMapSvg } from "../src/svg.ts";
+import { continentBounds, renderMapSvg } from "../src/svg.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const html = read("web/index.html");
@@ -98,4 +98,49 @@ test("terrain marks and nation fills stay inside the drawing", () => {
   assert.ok(!svg.includes("NaN"), "a NaN coordinate would silently drop the shape");
   assert.ok(!svg.includes("undefined"));
   assert.equal(matchAll(svg, /class="road"/g).length > 0, true);
+});
+
+test("the default view frames the continent rather than the empty field", () => {
+  const world = generateWorld("Kittycat", "intermediate");
+  const box = continentBounds(world);
+
+  // Every point of the coastline has to be inside it, or the map clips the land.
+  for (const p of world.outline) {
+    assert.ok(p.x >= box.x && p.x <= box.x + box.w, `x ${p.x} outside ${box.x}..${box.x + box.w}`);
+    assert.ok(p.y >= box.y && p.y <= box.y + box.h, `y ${p.y} outside ${box.y}..${box.y + box.h}`);
+  }
+  // And it has to stay inside the world, so panning never runs off the ocean.
+  assert.ok(box.x >= 0 && box.y >= 0);
+  assert.ok(box.x + box.w <= world.width + 1e-9);
+  assert.ok(box.y + box.h <= world.height + 1e-9);
+  // The point of it: the land does not fill the field, so this is a real crop.
+  assert.ok(box.w * box.h < world.width * world.height * 0.9,
+    `crop is ${((box.w * box.h) / (world.width * world.height) * 100).toFixed(0)}% of the field`);
+});
+
+test("continentBounds falls back to the whole field with no coastline", () => {
+  const world = { ...generateWorld("Kittycat", "beginner"), outline: [] };
+  assert.deepEqual(continentBounds(world), { x: 0, y: 0, w: world.width, h: world.height });
+});
+
+test("the renderer honours a view box and draws forces in transit", () => {
+  const world = generateWorld("Kittycat", "intermediate");
+  const plain = renderMapSvg(world);
+  assert.match(plain, /viewBox="0.0 0.0 1000.0 700.0"/);
+
+  const zoomed = renderMapSvg(world, {
+    view: { x: 100, y: 50, w: 400, h: 280 },
+    markers: [{ at: { x: 123.5, y: 234.5 }, label: "42", hostile: true }],
+  });
+  assert.match(zoomed, /viewBox="100.0 50.0 400.0 280.0"/);
+  assert.match(zoomed, /class="in-transit hostile"/);
+  assert.match(zoomed, /cx="123.5" cy="234.5"/);
+  assert.match(zoomed, />42</);
+  // The ocean covers the field, not the view, so a pan never reveals bare paper.
+  assert.match(zoomed, /<rect x="0" y="0" width="1000" height="700"/);
+  assert.ok(!plain.includes("in-transit"), "no markers unless asked for");
+
+  for (const cls of ["in-transit", "in-transit-label", "highlight.inspected"]) {
+    assert.ok(css.includes(cls), `style.css does not style .${cls}`);
+  }
 });

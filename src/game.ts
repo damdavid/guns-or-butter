@@ -44,6 +44,9 @@ export interface Ranking {
   population: number;
   provinces: number;
   firepower: number;
+  /** Terrain the nation holds, summed over its provinces. */
+  land: Land;
+  acres: number;
 }
 
 export interface TurnReport {
@@ -294,11 +297,14 @@ export class Game {
     return this.world.nations
       .map((n) => {
         const own = this.world.provinces.filter((p) => p.nation === n.id);
+        const land = nationState(this.world, n.id).land;
         return {
           nation: n.id,
           population: own.reduce((s, p) => s + p.population, 0),
           provinces: own.length,
           firepower: own.reduce((s, p) => s + p.firepower, 0),
+          land,
+          acres: land.farmland + land.forest + land.mountains + land.desert,
         };
       })
       .sort((a, b) => b.population - a.population);
