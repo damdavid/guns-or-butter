@@ -178,14 +178,33 @@ describe("weapon distribution (§5.3)", () => {
   const close = (actual: number, expected: number, what: string) =>
     assert.ok(Math.abs(actual - expected) < 1e-9, `${what}: got ${actual}, wanted ${expected}`);
 
-  it("replaces last turn's firepower rather than adding to it", () => {
+  it("hands out an increase flat first, then by concentration", () => {
     const world = withFirepower(line([true, true, true]), { 0: 30, 1: 10 });
-    // Two provinces, so 2 of the 40 goes out flat and the remaining 38 splits 3:1 on
-    // last turn's holdings. The 40 already there is gone, not banked.
+    // Holding 40 and fielding 60: the 20 of new power goes out 1 to each province, and
+    // the remaining 18 splits 3:1 on what they already hold.
+    const after = distributeWeapons(world, 0, 60);
+    close(after.provinces[0]!.firepower, 30 + 1 + 13.5, "the province that was massed");
+    close(after.provinces[1]!.firepower, 10 + 1 + 4.5, "the thin one");
+    close(nationFirepower(after, 0), 60, "the nation fields exactly what it produced");
+  });
+
+  it("draws a fall in national power from each province in proportion", () => {
+    // The rule as specified: 66 and 33 against a national 100, cut to a national 50,
+    // become 33 and 16. Shares are preserved; nothing is cleared and rebuilt.
+    const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 66, 1: 33 }), 0, 50);
+    close(after.provinces[0]!.firepower, 66 * 50 / 99, "province 1");
+    close(after.provinces[1]!.firepower, 33 * 50 / 99, "province 2");
+    assert.equal(after.provinces[0]!.firepower.toFixed(0), "33");
+    assert.equal(Math.floor(after.provinces[1]!.firepower), 16);
+    // The ratio it held is exactly the ratio it keeps.
+    close(after.provinces[0]!.firepower / after.provinces[1]!.firepower, 2, "the 2:1 shape");
+  });
+
+  it("leaves a province alone when national power has not moved", () => {
+    const world = withFirepower(line([true, true, true]), { 0: 30, 1: 10 });
     const after = distributeWeapons(world, 0, 40);
-    close(after.provinces[0]!.firepower, 1 + 28.5, "the province that was massed");
-    close(after.provinces[1]!.firepower, 1 + 9.5, "the thin one");
-    close(nationFirepower(after, 0), 40, "the nation holds exactly what it produced");
+    close(after.provinces[0]!.firepower, 30, "province 0");
+    close(after.provinces[1]!.firepower, 10, "province 1");
   });
 
   it("zeroes every province when nothing is produced", () => {
@@ -198,18 +217,25 @@ describe("weapon distribution (§5.3)", () => {
     assert.equal(nationFirepower(after, 0), 0);
   });
 
-  it("gives a province holding nothing the flat garrison anyway", () => {
+  it("garrisons a province holding nothing out of an increase, not out of a cut", () => {
     // Without the flat grant a province at zero has no weight and would be shut out of
-    // the split entirely.
-    const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 100, 1: 0 }), 0, 20);
-    close(after.provinces[0]!.firepower, 19, "the massed province");
-    close(after.provinces[1]!.firepower, 1, "the empty one");
+    // a rise entirely. It only gets that floor when there is new power to hand out.
+    const stripped = withFirepower(line([true, true, true]), { 0: 100, 1: 0 });
+    const rising = distributeWeapons(stripped, 0, 120);
+    close(rising.provinces[0]!.firepower, 100 + 1 + 18, "the massed province");
+    close(rising.provinces[1]!.firepower, 1, "the empty one gets a garrison");
+
+    // On a cut it stays empty: a province is drawn from in proportion to what it holds,
+    // and it holds nothing.
+    const falling = distributeWeapons(stripped, 0, 20);
+    close(falling.provinces[0]!.firepower, 20, "the massed province takes the whole cut");
+    close(falling.provinces[1]!.firepower, 0, "the empty one has nothing to give");
   });
 
-  it("splits evenly when there is not enough for one each", () => {
+  it("keeps the shape of the deployment through a collapse to almost nothing", () => {
     const after = distributeWeapons(withFirepower(line([true, true, true]), { 0: 90, 1: 10 }), 0, 1);
-    close(after.provinces[0]!.firepower, 0.5, "the massed province");
-    close(after.provinces[1]!.firepower, 0.5, "the thin one");
+    close(after.provinces[0]!.firepower, 0.9, "the massed province");
+    close(after.provinces[1]!.firepower, 0.1, "the thin one");
     close(nationFirepower(after, 0), 1, "nothing may go missing");
   });
 

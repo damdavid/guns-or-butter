@@ -76,45 +76,57 @@ export function firepowerOf(output: Readonly<Record<CommodityId, number>>, tiers
 }
 
 /**
- * Set each province's firepower from this turn's weapon production: a flat 1 to each,
- * then the rest in proportion to what each held last turn (§5.3).
+ * Reconcile a nation's provinces with the military power it can field this turn (§5.3).
  *
- * Firepower is a flow, not a stock (§5.3.1). Each turn's production *replaces* what was
- * there rather than adding to it, so an army is what you are building now and nothing
- * more — stop making weapons and you are defenceless next turn. This matches the
- * economy's own "use it or lose it" rule (§3), where unused output is discarded at end
- * of turn rather than stockpiled.
+ * The nation's total is this turn's weapon production, and the provinces always sum to
+ * it. Which way it moves decides how:
  *
- * The weights are last turn's concentration, read before anything is overwritten, which
- * is what makes marching forces together worth doing: a province you reinforce this turn
- * draws a larger share of next turn's production. Under a flow model that is the *only*
- * way to concentrate, because a uniform distribution reproduces itself forever.
+ * - **Falling**, including to nothing: every province is scaled by the same factor, so
+ *   the shape of the deployment survives the cut and nothing is thrown away. 66 and 33
+ *   against a national 100 become 33 and 16 at a national 50. A province is drawn from in
+ *   proportion to what it holds, and at zero national power every province is zero.
+ * - **Rising**: the increase is handed out, a flat 1 to each province first and the
+ *   remainder in proportion to what each already holds — the original's rule (§5.3),
+ *   which rewards concentrating.
  *
- * The flat 1 comes off the top so that a province holding nothing is not weight-starved
- * out of the split entirely (§5.3.1). Where there is less than one firepower per province
- * to hand out, every province gets the same fraction instead, which keeps the split free
- * of ordering bias and leaves nothing undistributed.
+ * The flat grant applies only to the increase. On a drawdown a province's share simply
+ * *is* what it holds, and granting a floor there would quietly flatten the concentration
+ * the player built up, which is the thing §5.3 exists to reward.
  *
- * With nothing held anywhere — the opening turn — the remainder falls back to an even
- * spread, since the proportional rule has nothing to work from. With nothing produced,
- * every province is set to zero, which is the point of the rule.
+ * Nothing is cleared and rebuilt: a province's firepower is scaled or added to, so what
+ * it held last turn carries through. Note this makes an army a flow rather than a stock
+ * (§5.3.1) — the total tracks production, so you cannot arm once and coast.
+ *
+ * With nothing held anywhere — the opening turn — the increase spreads evenly, since the
+ * proportional rule has nothing to work from.
  */
 export function distributeWeapons(world: World, nation: number, firepower: number): World {
   const own = world.provinces.filter((p) => p.nation === nation);
   if (own.length === 0) return world;
 
-  const total = Math.max(0, firepower);
+  const target = Math.max(0, firepower);
   const held = own.reduce((sum, p) => sum + p.firepower, 0);
-  const flat = Math.min(1, total / own.length);
-  const rest = total - flat * own.length;
-  const share = new Map<number, number>();
-  for (const p of own) {
-    share.set(p.id, flat + (held > 0 ? (p.firepower / held) * rest : rest / own.length));
+  const next = new Map<number, number>();
+
+  if (target <= held) {
+    const scale = held > 0 ? target / held : 0;
+    for (const p of own) next.set(p.id, p.firepower * scale);
+  } else {
+    const increase = target - held;
+    const flat = Math.min(1, increase / own.length);
+    const rest = increase - flat * own.length;
+    for (const p of own) {
+      next.set(
+        p.id,
+        p.firepower + flat + (held > 0 ? (p.firepower / held) * rest : rest / own.length),
+      );
+    }
   }
+
   return {
     ...world,
     provinces: world.provinces.map((p) =>
-      share.has(p.id) ? { ...p, firepower: share.get(p.id)! } : p,
+      next.has(p.id) ? { ...p, firepower: next.get(p.id)! } : p,
     ),
   };
 }
