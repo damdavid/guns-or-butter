@@ -114,12 +114,23 @@ export const AGRICULTURE = {
 export const POPULATION = {
   growth: 0.4727,
   saturation: 2.0242,
-  /** Linear across every measured deficit, which reach 0.23 per head (§4.4.1). */
+  /**
+   * Linear. Every measured deficit is shallow — at most 0.23 per head — and linear fits
+   * those to a median of 0.0%. It is taken as linear beyond them too: the saturation in
+   * the growth term exists to stop a nation buying unbounded growth with food it cannot
+   * otherwise use, and there is no counterpart to that on the way down (§4.4.1).
+   */
   decline: 0.6971,
   /**
    * Famine will not take a nation below this multiple of its farmland. Six readings sat
-   * exactly here and lost nobody at all, to deficits as deep as 207 tons. The constant is
-   * worldgen's measured population-to-farmland ratio, which is where a nation starts.
+   * exactly here and lost nobody at all, to deficits as deep as 207 tons.
+   *
+   * The readings cannot tell this apart from "a nation cannot be starved below the
+   * population it started with", since a nation starts at exactly this ratio. It is
+   * farmland because a turn is a generation and nothing carries over (§3.1.1) — a
+   * remembered starting figure would be the one piece of persistent state in the design.
+   * So gaining farmland raises a nation's own floor, and taking farmland lowers its
+   * victim's.
    */
   floorPerAcre: 1.4933,
 } as const;
