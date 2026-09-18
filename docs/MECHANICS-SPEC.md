@@ -1536,6 +1536,55 @@ caught, because all four were about what a player can see or do:
 - **Populations printed raw**, so a nation that had taken civilian losses read as
   "607.6216175606817 people".
 
+#### 10.1.1 Second pass, from the first round of play notes
+
+The first UI was legible but not usable for long. What the notes asked for, and what each
+change turned out to need:
+
+- **The map was mostly empty ocean.** Worldgen draws into a fixed 1000x700 field and the
+  land never fills it, so `continentBounds()` crops the view to the coastline — about half
+  the field on a typical continent. The renderer now takes a `view` rectangle, which also
+  buys panning and zooming for almost nothing: the wheel and a drag rewrite the `viewBox`
+  attribute directly rather than re-rendering, so it stays smooth. The ocean is drawn over
+  the whole field rather than the view, so a pan never reveals bare page.
+- **Clicking a province shows it**: who rules it, population, military power, and acres by
+  terrain. In the orders phase a click both inspects and orders, which is why the inspected
+  province is outlined differently from the one being ordered — you are often reading about
+  one while ordering another.
+- **The nation list** is built from `rankings()`, which now carries `land` and `acres` for
+  the purpose. Clicking a nation gives its strength, population, provinces and territory.
+  **Food output is withheld for every nation but your own**, as a national secret; it is
+  the one number that would tell you exactly when a rival is about to grow.
+- **Execution replays the turn.** Each march travels from capital to capital and the map
+  updates as it lands, because the ordering rules are invisible otherwise — that marching
+  forces leave home before anything resolves (§5.6), and that waves on one province
+  resolve in sequence. The replay is driven from the `TurnReport`, so it shows what
+  actually happened rather than a re-simulation. A quiet turn skips it entirely.
+- **The production panel expands to the full window.** It is the screen with the most
+  numbers on it and the one a player spends longest in.
+- **Resources are shown rounded down, never up** — a factory holding 16.7 tons has 16
+  whole tons to give anyone. Applied to negatives too, so a 16.7-ton shortfall reads as
+  -17: the whole tons you would have to find to cover it.
+- **Both sliders got a number box, a pair of nudge buttons, and more width.** A slider
+  alone was hopeless for fine work; in the narrow pane each pixel was several workers. The
+  number box is now the precise instrument and the slider the coarse one, and the orders
+  slider counts firepower rather than a percentage, so "send 14 of 26" is stated rather
+  than inferred.
+
+Four more defects surfaced while building it, all of them in the new controls:
+
+- **The nudge buttons moved the allocation but not the display.** `refreshNumbers` skipped
+  whichever control had focus, to avoid fighting someone mid-keystroke, and a nudge left
+  focus in the number box. It now skips only the control actually being typed into.
+- **A number box would keep a value the game had rejected.** `max` on a number input does
+  not stop anyone typing past it, so typing 7 into a box capped at 5 showed 7 while the
+  order was correctly 5. Values are clamped back on commit.
+- **The replay announced the wrong phase.** `advance()` moves to rankings before the
+  replay runs, so the panel read "a quiet turn — nothing marched" over the top of a
+  battle. The shell now follows the replay rather than the phase while one is running.
+- **A turn with no marches still paused.** The replay entered its animation state for a
+  quarter second with nothing to show, disabling the advance button for no reason.
+
 ### 10.2 Limits of `balanceAllocation`
 
 Auto-balance is scaffolding, not the AI, and playing it exposed how far it is from one.

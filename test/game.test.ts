@@ -332,6 +332,22 @@ describe("worker redistribution and locks (§3.6)", () => {
     assert.equal(balanced["charcoal"], base["charcoal"]);
   });
 
+  it("reports each nation's land alongside its standing", () => {
+    // The nation list in the UI is built straight from rankings, and it shows terrain.
+    const game = Game.create("Kublai", "intermediate");
+    for (const r of game.rankings()) {
+      const { land } = nationState(game.world, r.nation);
+      assert.deepEqual(r.land, land, `nation ${r.nation} land`);
+      assert.equal(r.acres, land.farmland + land.forest + land.mountains + land.desert);
+      assert.ok(r.acres > 0, `nation ${r.nation} holds no land`);
+    }
+    // Every acre of the map belongs to exactly one nation.
+    const total = game.rankings().reduce((s, r) => s + r.acres, 0);
+    const mapped = game.world.provinces.reduce(
+      (s, p) => s + p.land.farmland + p.land.forest + p.land.mountains + p.land.desert, 0);
+    assert.ok(Math.abs(total - mapped) < 1e-9, `${total} vs ${mapped}`);
+  });
+
   it("tracks locks on the game, through undo and a save", () => {
     const game = Game.create("Kublai", "intermediate");
     assert.equal(game.isLocked(0, "farm-tools"), false);
