@@ -60,6 +60,11 @@ the original warned players in the same terms: *"don't ever select Next Phase un
 you're certain that you've finished your work in that phase."* `Undo Turn` restores a
 snapshot taken at the start of the turn, and is available only at Rankings.
 
+**Combat resolves on the way *into* the execution phase**, not out of it, and
+`advance()` returns the turn report there. Execution is then a phase with nothing left
+to decide, which is the point: it exists so the marches can be watched. A UI has the
+whole report in hand for its entire duration.
+
 **The Economic Union phase is absent**, because diplomacy is specified but not built.
 It belongs before production, at Expert only.
 
@@ -1584,6 +1589,58 @@ Four more defects surfaced while building it, all of them in the new controls:
   battle. The shell now follows the replay rather than the phase while one is running.
 - **A turn with no marches still paused.** The replay entered its animation state for a
   quarter second with nothing to show, disabling the advance button for no reason.
+
+#### 10.1.2 Third pass, and two bug reports that were not what they looked like
+
+The reports first. Both turned out to be about the *screen* rather than the model, which
+is the pattern §10.1 keeps repeating.
+
+- **"I add a worker to musket and the gunpowder surplus goes up."** Two causes, one real.
+  The legitimate one is the model working: taking workers for muskets thins every other
+  factory pro rata, so the consumers of a shared input want less of it and that input's
+  surplus genuinely rises. The artefact was worker counts coming from a largest-remainder
+  split of the whole workforce — asking for a share of `n / spare` did not reliably yield
+  `n` workers, and when it missed, the spare worker landed on some unrelated factory. So
+  pressing `+` on muskets could leave muskets unchanged and hand lumber a worker.
+  `setWorkers` now nudges the share until the count asked for is the count given.
+- **"Food surplus doesn't change with farm tools."** Food is wired to tool tonnage
+  correctly — 0 workers gives 427 tons from bare land, 60 gives 656 — but `refreshNumbers`
+  updated the factory rows and the totals and *not the `<tfoot>`*, so the food figures
+  were frozen until something forced a full re-render. The food rows are now refreshed
+  with everything else, and they show their composition: so much from the land, so much
+  from so many tons of tools, against a cap of one ton per acre.
+
+The rest of the pass:
+
+- **Marches replay during the execution phase**, between *Execute orders* and *See
+  rankings*, which needed the phase change described in §1.2.1. They run at half the
+  first pass's speed: 840ms to cross, 560ms between.
+- **A start screen** takes the continent, the player's nation name and the difficulty. The
+  continent's name is still the seed, so the same name makes the same world.
+- **Nations have names** — `Nation.name`, drawn from polities that existed before 600 BCE,
+  seeded per continent so the opposition is stable, and with the player's own choice held
+  out of the draw. The draw runs off its own seed (`<continent>/nations`), so naming a
+  nation cannot reshape the land.
+- **Commodities are labelled** as a player would read them: `iron-ore` shows as Iron Ore.
+- **Production shows Size beside Output** — what a factory's workers could make against
+  what it actually made. The gap is the input shortage, named in the next column.
+- **Idle labour is a row in the table** rather than a note under it, which is where a
+  player looks for it.
+- **Conquest ends the game with a splash** naming the victor, and the end offers a new
+  game or the door rather than another turn.
+- The nudge buttons sit against the box they nudge; the slider gives way to the number
+  box when the pane is narrow, because the slider is the control that needs width.
+
+##### A balance finding, from trying to play a conquest
+
+Scripted play to reach the victory screen instead found that **winning may not currently
+be reachable**. A nation that takes three provinces sees its total firepower collapse from
+300 to 49 and never recover: scorched earth (§5.5) guts the population of what it
+captures, the survivors are the workforce, and firepower is a flow that has to be paid for
+again every turn (§5.3.1). Forty turns of trying left the same twelve provinces of
+sixteen. The two brakes on a runaway leader are each defensible, but together they may be
+strong enough to stop anyone winning at all. Worth a decision before the AI is built,
+since an AI will run into the same wall.
 
 ### 10.2 Limits of `balanceAllocation`
 

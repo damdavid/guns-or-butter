@@ -11,9 +11,9 @@ import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 
 const playTurn = (game: Game) => {
-  game.advance(); // production
-  game.advance(); // orders frozen
-  const report = game.advance(); // execution
+  game.advance(); // production resolves
+  const report = game.advance(); // orders resolve, and execution begins with the report
+  game.advance(); // execution -> rankings
   return report!;
 };
 
@@ -23,12 +23,16 @@ describe("phase sequence (§1.2)", () => {
     assert.equal(game.phase, "production");
     game.advance();
     assert.equal(game.phase, "military-orders");
-    game.advance();
-    assert.equal(game.phase, "military-execution");
+
+    // Combat resolves on the way into execution, so the report is in hand for the whole
+    // of the phase the player watches it in (§1.2.1).
     const report = game.advance();
-    assert.equal(game.phase, "rankings");
-    assert.ok(report, "execution should produce a turn report");
+    assert.equal(game.phase, "military-execution");
+    assert.ok(report, "entering execution should produce a turn report");
     assert.equal(report.turn, 1);
+
+    assert.equal(game.advance(), null, "leaving execution resolves nothing further");
+    assert.equal(game.phase, "rankings");
     game.advance();
     assert.equal(game.phase, "production");
     assert.equal(game.turn, 2);
@@ -143,8 +147,7 @@ describe("couplings between the subsystems", () => {
     };
     const populationBefore = game.world.provinces[target]!.population;
     game.setOrder(attacker.id, { marchFraction: 1, target });
-    game.advance();
-    const report = game.advance()!;
+    const report = game.advance()!; // orders resolve on the way into execution
     assert.ok(report.battles.length > 0);
     assert.ok(
       game.world.provinces[target]!.population < populationBefore,

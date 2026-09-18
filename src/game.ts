@@ -373,13 +373,15 @@ export class Game {
         this.phase = "military-orders";
         return null;
       case "military-orders":
-        // Orders freeze here; execution is a separate phase so a UI can animate it.
-        this.phase = "military-execution";
-        return null;
-      case "military-execution":
+        // Combat resolves on the way *into* execution, not out of it, so that the
+        // execution phase is the one the player watches it happen in. A UI that animates
+        // the marches has the whole report in hand for the length of that phase (§1.2.1).
         this.resolveMilitaryPhase();
-        this.phase = "rankings";
+        this.phase = "military-execution";
         return this.report();
+      case "military-execution":
+        this.phase = "rankings";
+        return null;
       case "rankings":
         this.beginTurn();
         return null;

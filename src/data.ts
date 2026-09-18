@@ -78,6 +78,13 @@ export function commodityTable(
 /** Tier n yields 2^(n-1), for both food per ton of tool and firepower per ton (§4.3, §5.2). */
 export const tierYield = (tier: number): number => 2 ** (tier - 1);
 
+/**
+ * Display name for a commodity. The ids are the lowercase, hyphenated names lifted from
+ * the binary (§3.2); this is the same name as a player would read it.
+ */
+export const commodityLabel = (id: CommodityId): string =>
+  id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
 export const PLAYERS: Record<Level, number> = {
   beginner: 2,
   intermediate: 4,

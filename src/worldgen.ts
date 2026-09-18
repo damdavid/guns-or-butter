@@ -7,7 +7,7 @@
  * terrain, and starting population at a strikingly tight 1.4933x farmland.
  */
 import { clipToRect, dualPolygons, edgeKey, edges, polygonArea, ringOfGhosts, triangulate } from "./delaunay.ts";
-import { uniqueNames } from "./names.ts";
+import { nationNames, uniqueNames } from "./names.ts";
 import { makeRng, type Rng } from "./rng.ts";
 import { PLAYERS } from "./data.ts";
 import type { Land, Level, Point, Province, Terrain, TerrainFeature, World } from "./types.ts";
@@ -430,6 +430,8 @@ function graphDistance(adjacency: number[][], from: number, to: number): number 
 export interface WorldgenOptions {
   /** Overrides the province count derived from the level. */
   provinces?: number;
+  /** What the player calls their nation. Nation 0, and kept out of the AI draw. */
+  playerNation?: string;
 }
 
 export function generateWorld(
@@ -605,10 +607,17 @@ export function generateWorld(
     outline,
     terrain,
     provinces,
-    nations: Array.from({ length: players }, (_, id) => ({
-      id,
-      provinces: provinces.filter((p) => p.nation === id).map((p) => p.id),
-    })),
+    nations: (() => {
+      const player = options.playerNation?.trim();
+      // A separate stream from the one that shaped the land, so naming the nations does
+      // not change the map a given continent name produces.
+      const names = nationNames(makeRng(`${name}/nations`), players, player ? [player] : []);
+      return Array.from({ length: players }, (_, id) => ({
+        id,
+        name: id === 0 && player ? player : names[id]!,
+        provinces: provinces.filter((p) => p.nation === id).map((p) => p.id),
+      }));
+    })(),
   };
 }
 

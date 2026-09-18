@@ -50,6 +50,7 @@ function line(roads: boolean[], nations: number[] = [0, 0, 1, 1]): World {
     provinces,
     nations: [0, 1].map((id) => ({
       id,
+      name: `N${id}`,
       provinces: provinces.filter((p) => p.nation === id).map((p) => p.id),
     })),
   };

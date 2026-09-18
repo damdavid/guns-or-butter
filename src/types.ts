@@ -123,6 +123,8 @@ export interface TerrainFeature {
 
 export interface Nation {
   id: number;
+  /** A polity from before 600 BCE, or whatever the player called themselves. */
+  name: string;
   provinces: number[];
 }
 

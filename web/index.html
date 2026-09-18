@@ -7,6 +7,42 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div id="start" class="overlay">
+      <form id="start-form" class="card">
+        <h1>The Global Dilemma<span>Guns or Butter</span></h1>
+        <p class="blurb">A reconstruction of Chris Crawford's 1990 design. You rule one
+          nation on a continent of rivals. Every worker you put into weapons is a worker
+          not growing food, and you are scored on people, not territory.</p>
+        <label for="f-nation">Your nation</label>
+        <input id="f-nation" name="nation" type="text" maxlength="24" value="Babylon"
+          autocomplete="off" required />
+        <label for="f-continent">Continent</label>
+        <input id="f-continent" name="continent" type="text" maxlength="24" value="Kittycat"
+          autocomplete="off" required />
+        <p class="hint">The continent's name is its seed: the same name always makes the
+          same world.</p>
+        <label for="f-level">Difficulty</label>
+        <select id="f-level" name="level">
+          <option value="beginner">Beginner &mdash; 2 nations</option>
+          <option value="intermediate" selected>Intermediate &mdash; 4 nations</option>
+          <option value="expert">Expert &mdash; 8 nations</option>
+        </select>
+        <button type="submit" class="primary">Begin</button>
+      </form>
+    </div>
+
+    <div id="splash" class="overlay" hidden>
+      <div class="card">
+        <h1 id="splash-title"></h1>
+        <p id="splash-body"></p>
+        <dl id="splash-rank" class="rank"></dl>
+        <div class="controls">
+          <button id="again" type="button" class="primary">Start new game</button>
+          <button id="exit" type="button">Exit</button>
+        </div>
+      </div>
+    </div>
+
     <header>
       <h1>The Global Dilemma<span>Guns or Butter</span></h1>
       <div id="phases" class="phases"></div>

@@ -204,7 +204,8 @@ export function renderMapSvg(world: World, options: MapOptions = {}): string {
     }
     if (firepower && p.firepower >= 1) {
       out.push(
-        `<text class="fp" x="${fmt(p.capital.x)}" y="${fmt(p.capital.y + 13)}" text-anchor="middle">${p.firepower.toFixed(0)}</text>`,
+        `<text class="fp" data-province="${p.id}" x="${fmt(p.capital.x)}" y="${fmt(p.capital.y + 13)}" ` +
+        `text-anchor="middle">${p.firepower.toFixed(0)}</text>`,
       );
     }
   }
