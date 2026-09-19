@@ -13,27 +13,37 @@ describe("compact numbers", () => {
     assert.equal(compact(20_000_000), "20m");
   });
 
-  it("carries two decimals for firepower, but never a run of zeros", () => {
+  it("puts decimals on the unit change and nowhere else", () => {
+    // Every quantity in the game is a whole number of things, so the digits in 10.43k
+    // are thousands rather than fractions of anything.
     const power = (n: number) => compact(n, 2);
     assert.equal(power(10_432.7), "10.43k", "the digits the unit change would have lost");
     assert.equal(power(268_510.8), "268.51k");
     assert.equal(power(456_123), "456.12k");
-    assert.equal(power(12.87), "12.87");
-    assert.equal(power(999.4), "999.4", "one useful digit, not two");
-    // A whole number stays whole.
-    assert.equal(power(26), "26");
-    assert.equal(power(999), "999");
+    for (const n of [0, 4.2, 12.87, 26, 165.53, 999.4, 9999.7]) {
+      assert.equal(power(n), String(Math.floor(n)), `${n} is below the unit change`);
+    }
+    // And a whole number of units keeps no zeros.
     assert.equal(power(10_000), "10k");
     assert.equal(power(2_000_000), "2000k");
     assert.equal(power(20_000_000), "20m");
+  });
+
+  it("never shows a fraction of a thing, at any magnitude", () => {
+    for (let n = 0; n < 12_000; n += 7.3) {
+      const shown = compact(n, 2);
+      if (!shown.endsWith("k")) {
+        assert.ok(/^\d+$/.test(shown), `${n} rendered as ${shown}`);
+      }
+    }
   });
 
   it("truncates the decimals rather than rounding them up", () => {
     // Everything on screen rounds down, so a nation never appears to hold more than it
     // does. toFixed alone would turn 456,999 into 457.00k.
     assert.equal(compact(456_999, 2), "456.99k");
-    assert.equal(compact(9.999, 2), "9.99");
     assert.equal(compact(19_999, 2), "19.99k");
+    assert.equal(compact(9.999, 2), "9", "below the unit change it is a whole thing");
   });
 
   it("stays exact below five digits", () => {

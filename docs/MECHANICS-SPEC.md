@@ -1872,12 +1872,20 @@ reachable on a big expert economy — and the map has no room for that under a c
 `compact()` in `src/format.ts` changes unit only when the mantissa would reach five
 digits: 9999, then 10k, 2000k, 20m, 10b, 10t.
 
-Firepower carries **two decimals, with no run of zeros**: `10.43k`, `268.51k`, `12.87`,
-`999.4`, but `26` and `10k` and `20m`. The decimals earn their place exactly where the
-unit change would otherwise throw digits away — 10,432 was `10k` and is now `10.43k` —
-and a whole number stays whole rather than gaining a meaningless `.00`. They are
-truncated rather than rounded, like everything else on screen, so 456,999 reads
-`456.99k` and never `457k`.
+**Every quantity on screen is a whole number of things, rounded down.** Tons, people,
+acres, workers and firepower are all counts, so none of them shows a fraction: 12.87
+tons of iron is 12, and 4.2 firepower is 4.
+
+The compact form is the one exception, and only because its digits are not fractions:
+`10.43k` is ten thousand four hundred whole things, written in thousands. So firepower
+carries up to two decimals *at and above the unit change* and none below it — `10.43k`,
+`268.51k`, `456.99k`, but `26`, `999`, `9999`, and `10k`, `2000k`, `20m` where the
+decimals would only be zeros. They are truncated rather than rounded, like everything
+else, so 456,999 never reads `457k`.
+
+The affinity panel is not an exception to this: `liking`, `trust` and `W` are positions
+on a [−1, 1] scale (§6.4), not counts of anything, and recipe coefficients like
+`0.246 per ton` are ratios. Neither is a quantity a nation holds.
 
 `Intl.NumberFormat`'s compact notation is the more standard choice and was rejected on
 purpose: it renders 1200 and 1249 both as "1.2K", and the difference between two armies

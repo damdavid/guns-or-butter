@@ -22,11 +22,15 @@ export function compact(n: number, decimals = 0): string {
     value /= 1000;
     unit++;
   }
+  // Decimals belong to the unit change and nowhere else. Every quantity in the game is
+  // a whole number of things, so 12 tons of iron is 12 and not 12.87; the digits in
+  // 10.43k are thousands, not fractions of a ton.
+  const places = unit === 0 ? 0 : decimals;
   // Truncated, not rounded: 456,999 is 456.99k, never 457.00k. Everything on screen
   // rounds down, so that a number never claims more than the nation actually has.
-  const scale = 10 ** decimals;
+  const scale = 10 ** places;
   const shown = (Math.floor(value * scale) / scale)
-    .toFixed(decimals)
+    .toFixed(places)
     // No decimal point on a whole number: 26, not 26.00, and 999.4, not 999.40. The
     // digits are there to carry information, and a run of zeros carries none.
     .replace(/(\.\d*?)0+$/, "$1")
