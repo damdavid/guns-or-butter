@@ -58,7 +58,7 @@ and economic unions are specified but not yet built. See §10 of the spec.
 ## Commands
 
     npm run dev       # play it in a browser on localhost:5173
-    npm test          # 288 tests, including the 1990 manual's p.12 reference state
+    npm test          # 294 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
     npm run build     # bundle the browser app to web/dist/
     npm run validate  # score the sim against all 644 measurements

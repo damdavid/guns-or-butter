@@ -1881,6 +1881,11 @@ Firepower only. Tons and workers stay exact, because balancing an economy needs 
 difference between 1200 and 1249 and a battle does not, and the number inputs stay plain
 numeric so they remain editable.
 
+**Population is grouped instead of compacted** — 18,500, not 18k. It is the victory
+metric (§1.3), and the standings are read by comparing them: 2,412,077 against 2,412,340
+is a different fact from both of them reading "2412k". Commas explicitly rather than
+`toLocaleString`, which would put full stops in for half the world.
+
 #### A factory's recipe, on the factory
 
 Clicking a factory's name opens what it needs and where its output goes: each input with

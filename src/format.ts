@@ -24,3 +24,17 @@ export function compact(n: number): string {
   }
   return `${sign}${value}${units[unit]}`;
 }
+
+/**
+ * Whole people, grouped in thousands: 18500 reads 18,500.
+ *
+ * Grouped rather than compacted, because population is the victory metric (§1.3) and
+ * the standings are read by comparing them — "2,412,077" against "2,411,962" is a
+ * different fact from both of them reading "2412k". Commas explicitly rather than
+ * `toLocaleString`, which would put full stops in for half the world.
+ */
+export function grouped(n: number): string {
+  const sign = n < 0 ? "-" : "";
+  const whole = String(Math.floor(Math.abs(n)));
+  return sign + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}

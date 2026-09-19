@@ -22,7 +22,7 @@ import {
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
-import { compact } from "../src/format.ts";
+import { compact, grouped } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
 import { generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
@@ -69,6 +69,9 @@ const whole = (n: number) => String(Math.floor(n));
  * the difference between 1200 and 1249 and a battle does not.
  */
 const power = compact;
+
+/** People, grouped in thousands. The standings are read by comparing them. */
+const people = grouped;
 
 const nationName = (id: number) => game.world.nations[id]?.name ?? `Nation ${id}`;
 
@@ -438,7 +441,7 @@ function inspectorHtml(): string {
     return `<h2>${p.name}<span class="right"><button type="button" data-act="close">Close</button></span></h2>
       <dl>
         <dt>Ruled by</dt><dd>${nationName(p.nation)}${p.nation === you ? " (you)" : ""}</dd>
-        <dt>Population</dt><dd>${whole(p.population)}</dd>
+        <dt>Population</dt><dd>${people(p.population)}</dd>
         <dt>Military power</dt><dd>${power(p.firepower)}</dd>
         ${terrainRows(p.land)}
         <dt>Coast</dt><dd>${p.coastal ? "yes" : "inland"}</dd>
@@ -453,7 +456,7 @@ function inspectorHtml(): string {
       <span class="right"><button type="button" data-act="close">Close</button></span></h2>
     <dl>
       <dt>Military strength</dt><dd>${power(r.firepower)}</dd>
-      <dt>Population</dt><dd>${whole(r.population)}</dd>
+      <dt>Population</dt><dd>${people(r.population)}</dd>
       <dt>Provinces</dt><dd>${r.provinces}</dd>
       ${terrainRows(r.land)}
       <dt>Food output</dt>
@@ -525,7 +528,7 @@ function nationsHtml(): string {
     }" data-nation="${r.nation}">
       <span class="swatch" style="background:${fill(r.nation)}"></span>
       ${nationName(r.nation)}${r.nation === you ? " (you)" : ""}
-      <span class="num">${whole(r.population)} people &middot; ${r.provinces} prov</span>
+      <span class="num">${people(r.population)} people &middot; ${r.provinces} prov</span>
     </li>`)
     .join("");
   return `<h2>Nations <small>standing by population</small></h2>
@@ -632,8 +635,8 @@ function foodHtml(result: EconomyResult): string {
 
 function totalsHtml(result: EconomyResult, land: Land): string {
   const growing = result.nextPopulation >= result.population;
-  return `<b>Population:</b> ${whole(result.population)} &rarr;
-      <span class="${growing ? "growing" : "starving"}">${whole(result.nextPopulation)}</span><br />
+  return `<b>Population:</b> ${people(result.population)} &rarr;
+      <span class="${growing ? "growing" : "starving"}">${people(result.nextPopulation)}</span><br />
     <b>Firepower:</b> ${power(result.firepower)} this turn<br />
     <span class="spare"><b>Land:</b> ${whole(land.farmland)} farm, ${whole(land.forest)} forest,
       ${whole(land.mountains)} mountain, ${whole(land.desert)} desert</span>`;
@@ -778,7 +781,7 @@ function rankingsPanel(): string {
       inspect?.kind === "nation" && inspect.id === r.nation ? "open" : ""
     }" data-nation="${r.nation}">
       <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
-      <dd>${whole(r.population)} people &middot; ${r.provinces} provinces
+      <dd>${people(r.population)} people &middot; ${r.provinces} provinces
         &middot; ${power(r.firepower)} firepower</dd>
     </div>`)
     .join("");
@@ -829,7 +832,7 @@ function replaySteps(before: World, report: TurnReport): Step[] {
     if (b.civilianLoss > 0) {
       steps.push({
         from: b.target, to: b.target, force: 0, hostile: true, taken: b.captured,
-        text: `${name(b.target)} loses ${whole(b.civilianLoss)} civilians to the fighting`,
+        text: `${name(b.target)} loses ${people(b.civilianLoss)} civilians to the fighting`,
         apply: (w) => {
           const target = w.provinces[b.target]!;
           target.population = Math.max(0, target.population - b.civilianLoss);
@@ -915,7 +918,7 @@ function render(): void {
 
   const mine = game.rankings().find((r) => r.nation === you);
   el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}
-       &middot; you are <b>${nationName(you)}</b> &middot; ${whole(mine?.population ?? 0)} people,
+       &middot; you are <b>${nationName(you)}</b> &middot; ${people(mine?.population ?? 0)} people,
        ${mine?.provinces ?? 0} provinces`;
 
   document.body.classList.toggle("expanded", expanded && game.phase === "production");
@@ -962,7 +965,7 @@ function showSplash(winner: number): void {
     .rankings()
     .map((r) => `<div class="${r.nation === you ? "you" : ""}">
       <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
-      <dd>${whole(r.population)} people &middot; ${r.provinces} provinces</dd>
+      <dd>${people(r.population)} people &middot; ${r.provinces} provinces</dd>
     </div>`)
     .join("");
   el("splash").hidden = false;

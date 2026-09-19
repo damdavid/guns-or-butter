@@ -4,7 +4,7 @@
  */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { compact } from "../src/format.ts";
+import { compact, grouped } from "../src/format.ts";
 
 describe("compact numbers", () => {
   it("matches the three cases the rule was written from", () => {
@@ -58,5 +58,39 @@ describe("compact numbers", () => {
         );
       }
     }
+  });
+});
+
+describe("grouped numbers", () => {
+  it("puts a comma at every thousand", () => {
+    assert.equal(grouped(18_500), "18,500");
+    assert.equal(grouped(1_234_567), "1,234,567");
+    assert.equal(grouped(1_000), "1,000");
+  });
+
+  it("leaves anything under a thousand alone", () => {
+    for (const n of [0, 1, 42, 638, 999]) assert.equal(grouped(n), String(n));
+  });
+
+  it("rounds down, like every other quantity on screen", () => {
+    assert.equal(grouped(18_500.9), "18,500");
+    assert.equal(grouped(999.99), "999");
+  });
+
+  it("does not depend on the machine's locale", () => {
+    // `toLocaleString` would put full stops in for half the world.
+    assert.ok(!grouped(1_234_567).includes("."));
+    assert.equal(grouped(1_234_567).split(",").length, 3);
+  });
+
+  it("keeps the whole number, where compact would not", () => {
+    // Population is the victory metric (§1.3) and the standings are read by comparing
+    // them, so two nations a hundred people apart must not print the same.
+    assert.notEqual(grouped(2_412_077), grouped(2_412_340));
+    assert.equal(compact(2_412_077), compact(2_412_340), "compact collapses them to 2412k");
+  });
+
+  it("handles negatives, which a population should never be", () => {
+    assert.equal(grouped(-1_234), "-1,234");
   });
 });
