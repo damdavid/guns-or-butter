@@ -7,7 +7,7 @@
  * terrain, and starting population at a strikingly tight 1.4933x farmland.
  */
 import { clipToRect, dualPolygons, edgeKey, edges, polygonArea, ringOfGhosts, triangulate } from "./delaunay.ts";
-import { uniqueNames } from "./names.ts";
+import { nationNames, uniqueNames } from "./names.ts";
 import { makeRng, type Rng } from "./rng.ts";
 import { PLAYERS } from "./data.ts";
 import type { Land, Level, Point, Province, Terrain, TerrainFeature, World } from "./types.ts";
@@ -25,6 +25,12 @@ export const WORLDGEN = {
   coastWobble: 0.22,
   /** Fraction of spokes that are roads. The dialogue says "oh, only half". */
   roadFraction: 0.5,
+  /**
+   * At most this share of a nation's frontier may be road. A road is the difference
+   * between needing 20 firepower to take a province and needing 50 (§5.5), so a frontier
+   * that is mostly road is a frontier that cannot be held.
+   */
+  maxBorderRoadFraction: 0.66,
   /** Mean farmland acres per province; observed 34-58. */
   farmlandPerProvince: 42,
   farmlandSpread: 0.28,
@@ -430,6 +436,8 @@ function graphDistance(adjacency: number[][], from: number, to: number): number 
 export interface WorldgenOptions {
   /** Overrides the province count derived from the level. */
   provinces?: number;
+  /** What the player calls their nation. Nation 0, and kept out of the AI draw. */
+  playerNation?: string;
 }
 
 export function generateWorld(
@@ -474,12 +482,19 @@ export function generateWorld(
   // movement was cut from the original, so an unreachable province is unplayable.
   connectStragglers(capitals, adjacency, spokes);
 
+  // Nations are settled before the roads, because the roads have to know where the
+  // frontiers are. Its own stream, so the layout does not shift the terrain that
+  // follows it.
+  const owner = assignNations(adjacency, players, makeRng(`${name}/owners`));
+
   // 5. Roads: about half the spokes. The remainder are the borders that carry the
   // terrain penalty in combat (§5.5).
+  const shuffled = rng.shuffle(spokes);
   const roads = new Set<string>();
-  for (const [u, v] of rng.shuffle(spokes).slice(0, Math.round(spokes.length * WORLDGEN.roadFraction))) {
+  for (const [u, v] of shuffled.slice(0, Math.round(spokes.length * WORLDGEN.roadFraction))) {
     roads.add(edgeKey(u, v));
   }
+  capBorderRoads(shuffled, roads, owner);
 
   // 6. Terrain sits on the road-less borders, and straddles them — so both provinces
   // share the acreage. Types come from regional seeds rather than per-edge coin flips,
@@ -550,7 +565,6 @@ export function generateWorld(
     for (const t of TERRAIN_TYPES) l[t] = Math.round(l[t]);
   });
 
-  const owner = assignNations(adjacency, players, rng);
   const names = uniqueNames(rng, count);
 
   // Which polygon edges are shared with another province, and which face the sea.
@@ -605,10 +619,17 @@ export function generateWorld(
     outline,
     terrain,
     provinces,
-    nations: Array.from({ length: players }, (_, id) => ({
-      id,
-      provinces: provinces.filter((p) => p.nation === id).map((p) => p.id),
-    })),
+    nations: (() => {
+      const player = options.playerNation?.trim();
+      // A separate stream from the one that shaped the land, so naming the nations does
+      // not change the map a given continent name produces.
+      const names = nationNames(makeRng(`${name}/nations`), players, player ? [player] : []);
+      return Array.from({ length: players }, (_, id) => ({
+        id,
+        name: id === 0 && player ? player : names[id]!,
+        provinces: provinces.filter((p) => p.nation === id).map((p) => p.id),
+      }));
+    })(),
   };
 }
 
@@ -706,6 +727,79 @@ export function borderSegments(world: World): BorderSegment[] {
 }
 
 /** A nation's economy inputs, summed over the provinces it holds (§2.1, §3.1). */
+/**
+ * Hold every nation's frontier below `maxBorderRoadFraction` road, trading each demoted
+ * border road for an interior one so the continent keeps its half-of-everything.
+ *
+ * Two measures, because they are not the same thing and only the second is what a player
+ * sees. The first bounds the share of *frontier spokes* that are paved. The second bounds
+ * the share of each nation's *border provinces* that have any road out at all — a nation
+ * can sit under the spoke cap and still have a road on six of its seven border
+ * provinces, which is the case that prompted the rule.
+ *
+ * A road is the difference between a 20-firepower threshold and a 50-firepower one
+ * (§5.5), so a province with a road out is a province an enemy can take cheaply. At least
+ * a third of every nation's frontier is now approachable only cross-country.
+ */
+function capBorderRoads(
+  shuffled: readonly [number, number][],
+  roads: Set<string>,
+  owner: readonly number[],
+): void {
+  const key = (e: readonly [number, number]) => edgeKey(e[0], e[1]);
+  const isFrontier = (e: readonly [number, number]) => owner[e[0]] !== owner[e[1]];
+  const frontier = shuffled.filter(isFrontier);
+  if (frontier.length === 0) return;
+
+  // Promote interior spokes in the same shuffled order, so the swap stays seeded.
+  const interior = shuffled.filter((e) => !isFrontier(e) && !roads.has(key(e)));
+  let promoted = 0;
+  const demote = (e: readonly [number, number]) => {
+    roads.delete(key(e));
+    const swap = interior[promoted++];
+    if (swap) roads.add(key(swap));
+  };
+
+  // 1. At most two thirds of the frontier's spokes.
+  const allowedSpokes = Math.floor(frontier.length * WORLDGEN.maxBorderRoadFraction);
+  let paved = frontier.filter((e) => roads.has(key(e))).length;
+  for (const e of frontier) {
+    if (paved <= allowedSpokes) break;
+    if (!roads.has(key(e))) continue;
+    demote(e);
+    paved--;
+  }
+
+  // 2. At most two thirds of any one nation's border provinces may have a road out.
+  const facing = new Map<number, [number, number][]>();
+  for (const e of frontier) {
+    for (const province of e) {
+      const list = facing.get(province);
+      if (list) list.push([e[0], e[1]]);
+      else facing.set(province, [[e[0], e[1]]]);
+    }
+  }
+  const hasRoadOut = (province: number) =>
+    (facing.get(province) ?? []).some((e) => roads.has(key(e)));
+
+  for (const nation of [...new Set(owner)].sort((a, b) => a - b)) {
+    const border = [...facing.keys()].filter((q) => owner[q] === nation).sort((a, b) => a - b);
+    const allowed = Math.floor(border.length * WORLDGEN.maxBorderRoadFraction);
+    // Strip the cheapest province each time — the one with fewest roads to take away —
+    // so the continent loses as few roads as the rule allows.
+    for (let guard = 0; guard < border.length; guard++) {
+      const roaded = border.filter(hasRoadOut);
+      if (roaded.length <= allowed) break;
+      const victim = roaded.sort(
+        (a, b) =>
+          facing.get(a)!.filter((e) => roads.has(key(e))).length -
+            facing.get(b)!.filter((e) => roads.has(key(e))).length || a - b,
+      )[0]!;
+      for (const e of facing.get(victim)!) if (roads.has(key(e))) demote(e);
+    }
+  }
+}
+
 export function nationState(world: World, nation: number): { land: Land; population: number } {
   const own = world.provinces.filter((p) => p.nation === nation);
   const land: Land = { farmland: 0, forest: 0, mountains: 0, desert: 0 };

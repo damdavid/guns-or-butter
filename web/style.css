@@ -9,7 +9,7 @@
   --warn: #9a3412;
   --good: #3f6b34;
   --accent: #7a5c2e;
-  --side: 33rem;
+  --side: 38rem;
 }
 
 * { box-sizing: border-box; }
@@ -85,7 +85,27 @@ svg.map.panning { cursor: grabbing; }
    the screen with the most numbers on it and the one the player spends longest in. */
 body.expanded main { grid-template-columns: minmax(0, 1fr); }
 body.expanded .map-pane { display: none; }
-body.expanded #panel { flex: 0 1 auto; }
+body.expanded #nations { display: none; }
+
+/* Expanded, the side column becomes the whole window: production takes what is left
+   after the inspector, and the inspector only takes a column when it has something in
+   it. Reading a factory's recipe while setting its workers is the point. */
+body.expanded .side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+}
+body.expanded #panel { grid-row: 1; grid-column: 1; min-height: 0; overflow-y: auto; }
+body.expanded #inspector { display: none; }
+body.expanded.inspecting .side { grid-template-columns: minmax(0, 1fr) 26rem; }
+body.expanded.inspecting #inspector {
+  display: block;
+  grid-row: 1;
+  grid-column: 2;
+  min-height: 0;
+  overflow-y: auto;
+}
 body.expanded table { font-size: 0.95rem; }
 body.expanded td { padding: 0.2rem 0.4rem; }
 body.expanded input[type="number"] { width: 5rem; font-size: 0.95rem; }
@@ -99,6 +119,7 @@ svg.map .highlight.selected { stroke: #b4531a; stroke-width: 5; }
 svg.map .highlight.target-road { stroke: #1d5e18; stroke-width: 4; }
 svg.map .highlight.target-rough { stroke: #1d5e18; stroke-width: 4; stroke-dasharray: 9 6; }
 svg.map .highlight.inspected { stroke: #1b4f78; stroke-width: 4; stroke-dasharray: 3 3; }
+svg.map .highlight.held { stroke: #fff; stroke-width: 3.2; stroke-linejoin: round; }
 
 svg.map .march { stroke-width: 3.2; }
 svg.map .march.hostile { stroke: #9a2212; }
@@ -126,9 +147,13 @@ th {
   font-size: 0.74rem;
   white-space: nowrap;
 }
-th:first-child { text-align: left; }
+th:first-child, th.name { text-align: left; }
+th.lock, td.lock { text-align: center; }
 td { padding: 0.12rem 0.25rem; text-align: right; border-top: 1px solid #ece5d6; white-space: nowrap; }
-td:first-child { text-align: left; }
+/* The one cell that is a sentence rather than a number; left to wrap it would otherwise
+   set the table's minimum width all by itself. */
+td.wrap { white-space: normal; text-align: left; line-height: 1.35; padding-top: 0.3rem; }
+td:first-child, td.name { text-align: left; }
 tr.idle td { color: #a49a88; }
 tr.limited td.lim { color: var(--warn); }
 .short { color: var(--warn); }
@@ -137,7 +162,26 @@ tr.limited td.lim { color: var(--warn); }
 /* Fine control matters more than compactness here: a drag across a short slider moves
    several workers at a time, so the number box is the precise instrument and the slider
    is the coarse one. */
-td.slider { width: auto; min-width: 3.5rem; }
+/* The number box is the precise control and the slider the coarse one, so when the pane
+   is narrow the slider is what gives way — it is the one that needs width to be useful. */
+td.slider, th.slider { width: auto; min-width: 3.5rem; }
+body:not(.expanded) td.slider, body:not(.expanded) th.slider,
+body:not(.expanded) col.c-slider { display: none; }
+
+/* Column widths are declared rather than inferred from content. Left to itself the
+   browser spread the numeric columns across the whole width when expanded, and shifted
+   the factory names every time a lock redrew the table. The slider column takes the
+   slack, so the numbers stay together on the left however wide the pane gets. */
+table.production, table.orders { table-layout: fixed; }
+col.c-name { width: 8.5rem; }
+col.c-num { width: 3.6rem; }
+col.c-short { width: 6.5rem; }
+col.c-order { width: 10rem; }
+col.c-tune { width: 8.4rem; }
+col.c-lock { width: 2rem; }
+col.c-slider { width: auto; }
+body:not(.expanded) col.c-name { width: 7.5rem; }
+td.name { overflow: hidden; text-overflow: ellipsis; }
 input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); vertical-align: middle; }
 input[type="number"] {
   width: 3.6rem;
@@ -215,3 +259,128 @@ ul.nations .num { margin-left: auto; color: var(--ink-soft); font-weight: normal
 .inspect dt { color: var(--ink-soft); }
 .inspect dd { margin: 0; text-align: right; }
 .inspect .secret { color: var(--ink-soft); font-style: italic; }
+
+/* Start screen and the conquest splash. Both sit over the board rather than replacing
+   it, so the map is still there behind the announcement. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(36, 31, 26, 0.55);
+}
+.overlay[hidden] { display: none; }
+.overlay .card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 8px 40px rgba(36, 31, 26, 0.35);
+  padding: 1.6rem 1.9rem;
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.overlay h1 { font-size: 1.3rem; margin: 0 0 0.3rem; }
+.overlay h1 span { font-size: 0.9rem; }
+.overlay .blurb { margin: 0 0 0.7rem; font-size: 0.86rem; color: var(--ink-soft); }
+.overlay label { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
+.overlay input[type="text"], .overlay select {
+  font: inherit;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--ink);
+  margin-bottom: 0.45rem;
+}
+.overlay .hint { margin: -0.3rem 0 0.6rem; }
+.overlay button { padding: 0.45rem 1.1rem; font-size: 0.95rem; }
+.overlay .controls { margin-top: 0.9rem; }
+#splash .card { text-align: center; }
+#splash .controls { justify-content: center; }
+#splash dl.rank { text-align: left; margin-top: 0.4rem; }
+
+dl.rank { margin: 0; font-size: 0.85rem; }
+dl.rank div { display: flex; gap: 0.5rem; padding: 0.2rem 0; border-top: 1px solid #ece5d6; }
+dl.rank dt { width: 9rem; }
+dl.rank dd { margin: 0; color: var(--ink-soft); }
+dl.rank div.you dt { font-weight: bold; }
+dl.rank div { cursor: pointer; }
+dl.rank div:hover { background: #f6efdf; }
+dl.rank div.open { background: #efe6d2; }
+
+/* The nudge buttons belong against the box they nudge, not spread across the row. */
+td.tune { white-space: nowrap; text-align: right; width: 1%; padding-right: 0.6rem; }
+td.tune input[type="number"] { margin: 0 0.15rem; }
+td.tune button { padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.35; min-width: 1.4rem; }
+
+tr.idle-row td { color: var(--accent); font-style: italic; border-top: 1px solid var(--rule); }
+
+/* A factory that cannot meet the demand on it is the thing a player most needs to spot,
+   so it gets a band and a marked edge rather than one red number. */
+tr.deficit td { background: #f7e7e0; }
+tr.deficit td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+tr.deficit td.lim, tr.deficit .short { color: var(--warn); font-weight: bold; }
+tr.idle.deficit td { color: var(--ink-soft); }
+tr.total td { border-top: 1px solid var(--rule); }
+.capacity { color: var(--ink-soft); }
+
+/* Exit sits at the far right of the footer, as far from the button pressed every turn
+   as the bar allows. The game autosaves, so leaving costs nothing. */
+.quit { margin-left: auto; }
+
+/* The march control rides on the map beside the province it is ordering, so the number
+   being set is next to the thing being ordered rather than in a table across the page. */
+.map-pane { position: relative; }
+.march-control {
+  position: absolute;
+  z-index: 5;
+  right: 0.7rem;
+  bottom: 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  box-shadow: 0 3px 12px rgba(36, 31, 26, 0.3);
+  padding: 0.3rem 0.45rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.march-control[hidden] { display: none; }
+.march-control b { color: var(--warn); }
+.march-control input[type="range"] { width: 7rem; }
+.march-control input[type="number"] { width: 3.6rem; }
+.march-control button { padding: 0 0.35rem; min-width: 1.4rem; }
+.march-control .who { margin-right: 0.2rem; }
+.march-control .dismiss { margin-left: 0.3rem; font-size: 1rem; line-height: 1; padding: 0 0.3rem; }
+
+/* Affinity, in the nation inspector. */
+h3 { font-size: 0.78rem; margin: 0.8rem 0 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+table.affinity { table-layout: auto; font-size: 0.8rem; }
+table.affinity td.name, table.affinity th.name { text-align: left; }
+table.affinity .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border: 1px solid var(--ink); vertical-align: -1px; margin-right: 0.2rem; }
+table.affinity .warm { color: var(--good); }
+table.affinity .cool { color: var(--warn); }
+
+/* A factory name is a way into its recipe, so it reads as one without becoming a
+   button-shaped thing in every row. */
+button.link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted var(--rule);
+  text-underline-offset: 2px;
+}
+button.link:hover { background: none; color: var(--accent); text-decoration-color: var(--accent); }
+tr.idle button.link { color: inherit; }

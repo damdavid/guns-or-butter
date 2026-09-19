@@ -14,6 +14,7 @@ import {
   type Orders,
 } from "../src/military.ts";
 import { generateWorld } from "../src/worldgen.ts";
+import { makeRng } from "../src/rng.ts";
 import type { World } from "../src/types.ts";
 
 /**
@@ -50,6 +51,7 @@ function line(roads: boolean[], nations: number[] = [0, 0, 1, 1]): World {
     provinces,
     nations: [0, 1].map((id) => ({
       id,
+      name: `N${id}`,
       provinces: provinces.filter((p) => p.nation === id).map((p) => p.id),
     })),
   };
@@ -159,11 +161,43 @@ describe("orders and execution order (§5.4, §5.6)", () => {
     assert.deepEqual(r.world.nations[1]!.provinces, [3]);
   });
 
-  it("charges the civilian cost of the power brought to bear", () => {
+  it("leaves a captured province the people its own farmland can feed", () => {
     const world = withFirepower(line([true, true, true]), { 1: 100, 2: 20 });
+    const acres = world.provinces[2]!.land.farmland;
+    assert.ok(world.provinces[2]!.population > acres, "the premise is a province above subsistence");
+    const r = resolveMilitary(world, { 1: { marchFraction: 1, target: 2 } });
+    assert.equal(r.battles[0]!.captured, true);
+    assert.equal(r.world.provinces[2]!.population, acres);
+    assert.equal(r.battles[0]!.civilianLoss, 150 - acres);
+  });
+
+  it("does not depend on how much force was brought, only that it fell", () => {
+    // §5.5 charges the whole force brought to bear, which made a heavy conquest cost
+    // more than the province could ever return (§10.1.4). The cost is now the province.
+    const light = withFirepower(line([true, true, true]), { 1: 40, 2: 0 });
+    const heavy = withFirepower(line([true, true, true]), { 1: 400, 2: 0 });
+    const pop = (w: typeof light) =>
+      resolveMilitary(w, { 1: { marchFraction: 1, target: 2 } }).world.provinces[2]!.population;
+    assert.equal(pop(light), pop(heavy));
+  });
+
+  it("costs the defender nothing when the assault is repulsed", () => {
+    const world = withFirepower(line([true, true, true]), { 1: 25, 2: 60 });
     const before = world.provinces[2]!.population;
     const r = resolveMilitary(world, { 1: { marchFraction: 1, target: 2 } });
-    assert.equal(r.world.provinces[2]!.population, before - 100);
+    assert.equal(r.battles[0]!.captured, false);
+    assert.equal(r.world.provinces[2]!.population, before);
+    assert.equal(r.battles[0]!.civilianLoss, 0);
+  });
+
+  it("leaves a province already at or below subsistence alone", () => {
+    const world = {
+      ...withFirepower(line([true, true, true]), { 1: 100, 2: 0 }),
+    };
+    world.provinces = world.provinces.map((p) => (p.id === 2 ? { ...p, population: 40 } : p));
+    const r = resolveMilitary(world, { 1: { marchFraction: 1, target: 2 } });
+    assert.equal(r.world.provinces[2]!.population, 40, "nothing left to take");
+    assert.equal(r.battles[0]!.civilianLoss, 0);
   });
 
   it("costs a province more to take across country than by road", () => {
@@ -171,6 +205,69 @@ describe("orders and execution order (§5.4, §5.6)", () => {
     const rough = withFirepower(line([true, false, true]), { 1: 60, 2: 10 });
     assert.equal(resolveMilitary(roaded, { 1: { marchFraction: 1, target: 2 } }).battles[0]!.captured, true);
     assert.equal(resolveMilitary(rough, { 1: { marchFraction: 1, target: 2 } }).battles[0]!.captured, false);
+  });
+});
+
+describe("attack order (§5.6.1)", () => {
+  /** A hub every attacker borders, so several armies can converge on one province. */
+  const hub = (fp: Record<number, number>): World => ({
+    name: "Hub", level: "beginner", width: 600, height: 200, outline: [], terrain: [],
+    provinces: [0, 1, 2, 3, 4].map((id) => ({
+      id,
+      name: `P${id}`,
+      // 4 is the defender; the rest alternate between two attacking nations.
+      nation: id === 4 ? 2 : id % 2,
+      capital: { x: 60 + id * 100, y: 100 },
+      border: [],
+      neighbours: id === 4
+        ? [0, 1, 2, 3].map((q) => ({ province: q, road: true }))
+        : [{ province: 4, road: true }],
+      land: { farmland: 100, forest: 0, mountains: 0, desert: 0 },
+      population: 400,
+      firepower: fp[id] ?? 0,
+      coastal: false,
+    })),
+    nations: [0, 1, 2].map((id) => ({ id, name: `N${id}`, provinces: [] })),
+  });
+  const all: Orders = Object.fromEntries(
+    [0, 1, 2, 3].map((id) => [id, { marchFraction: 1, target: 4 }]),
+  );
+  const order = (r: ReturnType<typeof resolveMilitary>) => r.battles[0]!.waves.map((w) => w.from);
+
+  it("sends the smallest army first, whoever it belongs to", () => {
+    // P0=60 and P2=45 are one nation, P1=20 and P3=30 the other. Nation must not matter.
+    const world = hub({ 0: 60, 1: 20, 2: 45, 3: 30, 4: 200 });
+    assert.deepEqual(order(resolveMilitary(world, all)), [1, 3, 2, 0]);
+  });
+
+  it("so the first wave is the cheapest and the last lands on a softened defender", () => {
+    const world = hub({ 0: 60, 1: 20, 2: 45, 3: 30, 4: 200 });
+    const waves = resolveMilitary(world, all).battles[0]!.waves;
+    for (let i = 1; i < waves.length; i++) {
+      assert.ok(waves[i]!.committed >= waves[i - 1]!.committed, "armies must arrive in size order");
+      assert.ok(waves[i]!.defenceBefore < waves[i - 1]!.defenceBefore, "each wave should soften it");
+    }
+  });
+
+  it("draws at random between equal armies, and the same round draws the same way", () => {
+    const world = hub({ 0: 40, 1: 40, 2: 40, 3: 40, 4: 300 });
+    const drawn = new Set<string>();
+    for (let turn = 1; turn <= 12; turn++) {
+      drawn.add(order(resolveMilitary(world, all, makeRng(`Hub/battle/${turn}`))).join(""));
+    }
+    assert.ok(drawn.size > 1, `ties should not always fall the same way, got ${[...drawn]}`);
+
+    const once = order(resolveMilitary(world, all, makeRng("Hub/battle/7")));
+    const twice = order(resolveMilitary(world, all, makeRng("Hub/battle/7")));
+    assert.deepEqual(once, twice, "a turn must replay identically, or Undo Turn would cheat");
+  });
+
+  it("does not let the order orders were given decide anything", () => {
+    const world = hub({ 0: 60, 1: 20, 2: 45, 3: 30, 4: 200 });
+    const reversed: Orders = Object.fromEntries(
+      [3, 2, 1, 0].map((id) => [id, { marchFraction: 1, target: 4 }]),
+    );
+    assert.deepEqual(order(resolveMilitary(world, all)), order(resolveMilitary(world, reversed)));
   });
 });
 

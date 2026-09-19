@@ -40,21 +40,25 @@ spokes, terrain on the rest, and contiguous nations — feeding straight into th
 transfers-before-battles, and a phase loop that ties the three subsystems together —
 production, orders, execution, rankings, undo.
 
-**Browser UI.** `npm run dev`. Worker allocation that *previews* the pro-rata
-redistribution before it is committed, with a number box and nudge buttons for fine work;
-a pannable, zoomable map cropped to the continent; province and nation inspectors, with
-food output withheld as a national secret; military orders given by clicking province to
-province; and an execution phase that replays each march across the map rather than
-cutting to the result. Deliberately built before the AI: the UI is where the original
-lost, and it is the only subsystem whose defects are invisible to tests — playing it has
-found eight so far that the unit tests did not. See §10.1.
+**Browser UI.** `npm run dev`. A start screen for the continent, your nation's name and
+the difficulty; worker allocation that *previews* the pro-rata redistribution before it is
+committed, with a number box and nudge buttons for fine work; a pannable, zoomable map
+cropped to the continent; province and nation inspectors, with food output withheld as a
+national secret; military orders given by clicking province to province; and an execution
+phase that replays each march across the map rather than cutting to the result.
+Deliberately built before the AI: the UI is where the original lost, and it is the only
+subsystem whose defects are invisible to tests — playing it has found thirteen so far that the
+unit tests did not. See §10.1.
 
-AI and diplomacy are specified but not yet built. See §10 of the spec.
+**Affinity built, unions not.** `src/affinity.ts` implements §6.4: two decaying
+channels, saturating updates, founding-neighbour ties, and live penalties for leading on
+population or on firepower. Clicking a nation shows how it regards the others. The AI
+and economic unions are specified but not yet built. See §10 of the spec.
 
 ## Commands
 
     npm run dev       # play it in a browser on localhost:5173
-    npm test          # 226 tests, including the 1990 manual's p.12 reference state
+    npm test          # 297 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
     npm run build     # bundle the browser app to web/dist/
     npm run validate  # score the sim against all 644 measurements

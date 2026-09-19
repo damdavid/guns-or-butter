@@ -36,6 +36,25 @@ numeric calibration below is derived from it.
 | Intermediate | 4 | larger | extended; terrain matters |
 | Expert | 8 | largest, up to 64 provinces | full set; adds Economic Union phase |
 
+#### Which commodities, measured [C]
+
+The manual says how many but not which. The readings do: `docs/*.csv` leave a cell blank
+wherever a commodity could not be produced at that level, so the blanks name the sets.
+`LEVEL_COMMODITIES` in `src/data.ts` holds the result.
+
+| Level | Count | Adds |
+|---|---|---|
+| Beginner | **12** | Lumber, Sulfur, Iron Ore, Coal, Charcoal, Pig Iron, Gunpowder, Iron, Farm Tools, Iron Plow, Sword, Musket |
+| Intermediate | 19 | Light Metal, Nitrate, Low-Grade Steel, Explosives, Steam Engine, Combine, Rifle |
+| Expert | 33 | Heavy Metal, Petroleum, High-Grade Steel, High Explosives, Wire, Pipe, Electrics, Ball Bearing, Diesel Engine, Instruments, Irrigation, Tractor, Cannon, Tank |
+
+**Beginner measures 12, where §1.1 says 13.** Either the manual's count is off by one
+against what the binary offers, or it counts food among the commodities. The readings are
+the better evidence, so 12 is what is implemented.
+
+Each level's set is closed under inputs — every factory it offers can be fed from within
+the same level — which is asserted in `test/names.test.ts`.
+
 ### 1.2 Turn phases [C]
 
 Strictly sequential; **no going back** once a phase is advanced.
@@ -59,6 +78,11 @@ Phases advance one way only, and input is refused if it belongs to another phase
 the original warned players in the same terms: *"don't ever select Next Phase until
 you're certain that you've finished your work in that phase."* `Undo Turn` restores a
 snapshot taken at the start of the turn, and is available only at Rankings.
+
+**Combat resolves on the way *into* the execution phase**, not out of it, and
+`advance()` returns the turn report there. Execution is then a phase with nothing left
+to decide, which is the point: it exists so the marches can be watched. A UI has the
+whole report in hand for its entire duration.
 
 **The Economic Union phase is absent**, because diplomacy is specified but not built.
 It belongs before production, at Expert only.
@@ -983,7 +1007,8 @@ force after victory, and Appendix B specifies the difference for that.
 - These thresholds are confirmed by Appendix B: taking an *undefended* province needs
   **≥20 firepower by road, ≥50 cross-country**. Both fall out of the formula exactly.
 - **Civilian cost**: the defending province's population is reduced by the military
-  power brought against it. Scorched earth — a big conquest guts the prize.
+  power brought against it. Scorched earth — a big conquest guts the prize. *Deviation:
+  this implementation bounds it instead, see §5.5.1.*
 
 ### 5.5.1 Implementation notes [F]
 
@@ -1005,6 +1030,23 @@ carries its owning nation from the moment orders are given.
 **A later wave whose nation already took the province reinforces it** rather than
 assaulting it, which matters when several provinces converge on one target.
 
+**Deviation — the civilian cost is bounded by the land [F].** §5.5 charges the defending
+province the whole military power brought against it, win or lose. A captured province
+is now instead left with **the people its own farmland can feed**, and a province that
+holds loses nobody.
+
+Charging the force brought to bear made conquest cost more than it could ever return:
+scorched earth gutted the population, that population is the workforce, and firepower is
+a flow that has to be paid for again every turn (§5.3.1). Scripted play could take three
+provinces and then watched its firepower collapse from 300 to 49 with no way back — forty
+turns left the same twelve provinces of sixteen (§10.1.4).
+
+Under the bounded rule the same scripted play conquers a continent in eight turns on one
+map and reaches thirteen to fifteen provinces of sixteen on four others, with population
+*rising* through the conquests rather than collapsing. The cost no longer depends on how
+hard you hit, only on the province falling, which also removes the perverse case where a
+heavier assault destroyed more of the prize.
+
 ### 5.6 Execution order [C]
 
 1. All friendly transfers resolve **first** — so defensive reshuffling beats incoming
@@ -1016,6 +1058,35 @@ This ordering is what generates the game's best tactics: attacking from several
 directions; counter-attacking the enemy's stripped jumping-off province; screening
 that counter-attack with reserves. It is cheap to implement and should be preserved
 exactly.
+
+#### 5.6.1 Which army leads [F]
+
+§5.6 fixes that waves resolve in sequence but says nothing about *who goes first*, and
+the answer matters: the leading wave spends itself on the defender's full strength and
+the last one walks into whatever is left.
+
+**The smallest army strikes first, across every battle and regardless of whose it is.
+Equal armies are drawn at random.**
+
+This replaces resolving them in province order, which is what the implementation did by
+accident — the index came from the order worldgen happened to place capitals, so an
+invisible number decided which of your provinces was sacrificed to soften a target for
+another. Nothing in the manual suggests the original did better, but nothing suggests it
+did this either, so it is `[F]`.
+
+Two consequences worth knowing:
+
+- A small force sent alongside a large one is a **screen**: it arrives first, absorbs the
+  defender's strength, and the large one lands on what remains. That is a real tactic
+  rather than a lottery, and it is symmetrical — the same is true of the enemy's forces,
+  and the ordering is global, so a rival's small army can soften a province for *your*
+  large one if you both attack the same place in the same turn.
+- You cannot choose to lead with your strongest. If that turns out to matter, the lever
+  is an explicit order-of-attack control rather than a different automatic rule.
+
+The draw is seeded per world and turn (`<continent>/battle/<turn>`), so a round replays
+identically. A tie-break that moved under `Undo Turn` would let a player re-roll a battle
+by undoing it, which is worse than an arbitrary order rather than better.
 
 ---
 
@@ -1504,7 +1575,13 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
 6. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
    union-declaration rule in §6.1. `balanceAllocation` is a starting point for the
    economic half of it, with the limits recorded in §10.2.
-7. **Diplomacy**, with §6.4 in from the start rather than §6.2.
+7. **Diplomacy** — **affinity done, unions not.** `src/affinity.ts` implements §6.4
+   whole: both channels, the decay, the saturating updates, the founding-neighbour seed,
+   the live terms and the underdog dividend, with the decision variable `W` exposed as
+   `Game.willingnessFrom`. War and the standings drive it today. The union events are
+   specified and implemented but nothing calls them, because unions themselves are the
+   part still missing — as is the acceptance test in §6.4, which measures unions per
+   turn and so cannot run yet.
 
 Three oracles are available while you build: the DOS build under emulation, the §8.1
 fixture, and the measurement CSVs via `npm run validate`.
@@ -1584,6 +1661,275 @@ Four more defects surfaced while building it, all of them in the new controls:
   battle. The shell now follows the replay rather than the phase while one is running.
 - **A turn with no marches still paused.** The replay entered its animation state for a
   quarter second with nothing to show, disabling the advance button for no reason.
+
+#### 10.1.2 Third pass, and two bug reports that were not what they looked like
+
+The reports first. Both turned out to be about the *screen* rather than the model, which
+is the pattern §10.1 keeps repeating.
+
+- **"I add a worker to musket and the gunpowder surplus goes up."** Two causes, one real.
+  The legitimate one is the model working: taking workers for muskets thins every other
+  factory pro rata, so the consumers of a shared input want less of it and that input's
+  surplus genuinely rises. The artefact was worker counts coming from a largest-remainder
+  split of the whole workforce — asking for a share of `n / spare` did not reliably yield
+  `n` workers, and when it missed, the spare worker landed on some unrelated factory. So
+  pressing `+` on muskets could leave muskets unchanged and hand lumber a worker.
+  `setWorkers` now nudges the share until the count asked for is the count given.
+- **"Food surplus doesn't change with farm tools."** Food is wired to tool tonnage
+  correctly — 0 workers gives 427 tons from bare land, 60 gives 656 — but `refreshNumbers`
+  updated the factory rows and the totals and *not the `<tfoot>`*, so the food figures
+  were frozen until something forced a full re-render. The food rows are now refreshed
+  with everything else, and they show their composition: so much from the land, so much
+  from so many tons of tools, against a cap of one ton per acre.
+
+The rest of the pass:
+
+- **Marches replay during the execution phase**, between *Execute orders* and *See
+  rankings*, which needed the phase change described in §1.2.1. They run at half the
+  first pass's speed: 840ms to cross, 560ms between.
+- **A start screen** takes the continent, the player's nation name and the difficulty. The
+  continent's name is still the seed, so the same name makes the same world.
+- **Nations have names** — `Nation.name`, drawn from polities that existed before 600 BCE,
+  seeded per continent so the opposition is stable, and with the player's own choice held
+  out of the draw. The draw runs off its own seed (`<continent>/nations`), so naming a
+  nation cannot reshape the land.
+- **Commodities are labelled** as a player would read them: `iron-ore` shows as Iron Ore.
+- **Production shows Size beside Output** — what a factory's workers could make against
+  what it actually made. The gap is the input shortage, named in the next column.
+- **Idle labour is a row in the table** rather than a note under it, which is where a
+  player looks for it.
+- **Conquest ends the game with a splash** naming the victor, and the end offers a new
+  game or the door rather than another turn.
+- The nudge buttons sit against the box they nudge; the slider gives way to the number
+  box when the pane is narrow, because the slider is the control that needs width.
+
+##### A balance finding, from trying to play a conquest
+
+Scripted play to reach the victory screen instead found that **winning may not currently
+be reachable**. A nation that takes three provinces sees its total firepower collapse from
+300 to 49 and never recover: scorched earth (§5.5) guts the population of what it
+captures, the survivors are the workforce, and firepower is a flow that has to be paid for
+again every turn (§5.3.1). Forty turns of trying left the same twelve provinces of
+sixteen. The two brakes on a runaway leader are each defensible, but together they may be
+strong enough to stop anyone winning at all. Worth a decision before the AI is built,
+since an AI will run into the same wall.
+
+#### 10.1.3 Fourth pass
+
+One report worth recording, and one that the levels answered.
+
+- **"Lowering Sulfur by one also lowered Charcoal by one."** True, and the same root as
+  the musket report in §10.1.2. The model stores labour as fractions (§1.2.1), so setting
+  a share and rounding it back into whole workers could take a worker off a factory the
+  player had not touched. The UI now moves **whole workers**: `moveWorkers` in
+  `src/game.ts` gives the difference to, or takes it from, the other unlocked factories
+  pro rata by largest remainder. Raising a factory lowers exactly one other; lowering it
+  raises exactly one other; nothing else moves and the workforce is conserved. Shares are
+  still what gets committed, and the round trip through `workersFor` is exact.
+- **"Intermediate is missing Combine and Rifle; Expert is missing its components."** The
+  production panel had a hardcoded list of twelve commodities and showed it at every
+  level. It now shows the level's own set — see §1.1, which the readings turned out to
+  settle.
+
+The rest of the pass is presentational: the numeric columns are declared rather than
+sized from content, so they stay together when the panel is expanded and the factory
+names no longer jump when a lock redraws the table; the totals read `Population:`,
+`Firepower:` and `Land:` on their own lines with the worker count dropped, since idle
+labour is a row in the table now; Rankings shows only the standings; and selecting a
+nation outlines everything it holds.
+
+#### 10.1.4 Fifth pass
+
+- **"Workers that moved to unspent labour cannot be allocated."** Real, and a return of
+  something already fixed once in the terminal game. `moveWorkers` conserved whatever
+  total it was handed, so the idle pool was never a source. With every other factory
+  locked there is nobody to give released workers to, so lowering a factory stranded them
+  — and nothing could draw them back. The function now takes the workforce as a budget:
+  the target is capped by what the locked factories are *not* holding, so idle labour is
+  spendable by whichever factory asks for it. Locked factories still cannot be raided.
+- A highlighted nation is outlined in **white**, which is the one colour no nation fill
+  or terrain mark uses. A single inspected province keeps its blue dashed outline, so the
+  two readings of the map stay distinct.
+
+#### 10.1.5 Sixth pass, and the economies of scale checked against the readings
+
+**"Economies of scale seem too soft — can we verify against the original game data?"**
+Checked, and the exponents are right. `test/calibration.test.ts` refits the committed
+CSVs independently of `docs/calibrate.py` and compares the exponent — the one number §3.4
+calls the foundation of the design — across 64 commodity/level pairs:
+
+| | |
+| --- | --- |
+| mean error | 0.006 |
+| median error | 0.000 |
+| worst | 0.102, on Nitrate at intermediate |
+| systematic bias | −0.006, i.e. none worth the name |
+
+Doubling labour multiplies capacity by 2.18x for Lumber, 3.13x for Iron, 3.31x for
+Combine and 5.11x for Tractor. The manual's promise holds.
+
+So why does it *feel* soft? Because a tier-1 raw is soft, by measurement: Lumber's
+exponent is 1.127, so going from 5 workers to 200 — forty times the labour — raises
+output per worker only from 10.6 tons to 16.9. The steep exponents live at the top of the
+tree (Tractor 2.35, Diesel Engine 2.53), and those only exist at expert and only pay at
+populations you have to grow into. **The payoff for scale is meant to come from climbing
+the tree, not from piling labour into lumber**, which is §3.4's stated purpose: tech
+progression tied to population without a research tree. It is faithful, not soft.
+
+The rest of the pass:
+
+- **The conquest cost is bounded by the land**, §5.5.1 — the change that made winning
+  reachable at all. Measured before and after in §5.5.1.
+- Rounding is whole-number throughout: the allocatable workforce is floored in
+  `workersFor`, so a fractional remainder can no longer appear as unspendable idle
+  labour, and nothing in the production panel shows a fraction.
+- The lock sits to the left of the factory it locks; a factory in deficit gets a banded
+  row and a marked edge rather than one red number; the Skip button moved into the
+  execution heading so it is reachable before the log rather than after it.
+
+#### 10.1.6 Seventh pass
+
+**A frontier is now at most two thirds road [F].** Roads were drawn without regard to
+nations, so a national border could come out almost entirely paved — and since a road is
+the difference between a 20-firepower threshold and a 50-firepower one (§5.5), such a
+border is indefensible by construction. Nations are therefore settled before the roads
+are laid, and each demoted frontier road is traded for an interior one so the continent
+keeps the dialogue's "oh, only half".
+
+**Two measures, because they are not the same thing.** The cap started as a bound on the
+share of *frontier spokes* that are paved, which is the natural way to write it and the
+wrong way to read it. A nation can sit comfortably under that and still have a road on
+almost every border province, because one province can carry several frontier spokes:
+Saturday/expert had Corinth at 6 of 7 border provinces with a road out while the
+continent's frontier spokes were only 51% paved. What a player counts is provinces, so
+both are bounded now, the second **per nation** rather than across the map.
+
+Measured across 36 worlds and 168 nations: worst border-province share 62.5%, worst
+frontier-spoke share 45.5%, overall road share unchanged at 50.0-51.6%.
+
+Two consequences worth knowing. A nation with one or two border provinces can end up with
+**no road out at all**, since two thirds of one province rounds down to none — it happened
+to 2 of the 168, and it makes such a nation costly to attack and costly to attack from.
+And internal road connectivity is untouched by all this: frontier spokes lie between
+nations by definition, and moving troops between your own provinces is a transfer, which
+§5.5 does not apply the road multiplier to.
+
+**The + button and the slider could stop moving a factory while typing still worked.**
+Not rare at all once looked for: 14 of 19 commodities at intermediate, 33 of 33 at
+expert. The UI holds whole workers and stores them back as fractions of the workforce,
+and those fractions re-add to 0.9999999999 often enough that the floor in `workersFor`
+swallowed a worker. Largest remainder then decided *which* factory lost it, which is what
+made the stall look random. An epsilon on that floor fixes it; 0 of 33 stall now.
+
+The rest:
+
+- **The game autosaves**, so a refresh resumes instead of starting over, and the start
+  screen offers the save. `GameSnapshot` carries the world, turn and allocations but not
+  the phase or the orders, so a resume lands at the start of the saved turn — half a turn
+  of orders is not a state the game has a name for.
+- **Exit sits at the far right of the footer**, as far from the button pressed every turn
+  as the bar allows. It saves and returns to the start screen; with the autosave behind
+  it, leaving costs nothing.
+- **Victory waits for the marches to finish.** `advance()` resolves combat on the way
+  into execution (§1.2.1), so the winner is known before the replay has drawn a single
+  arrow — the splash was appearing over the top of the battle that won the game.
+- **The march control is docked in the corner of the map**, naming both ends of the
+  march, with a Done button. It first sat on the province it was ordering, which put it
+  over the ground the player was trying to read and, on a small continent, over the
+  target as well.
+
+  **Placing an order ends the selection.** Keeping the province selected afterwards made
+  the next click ambiguous: on a neighbour it quietly retargeted the march, anywhere else
+  it started a new one, and nothing on screen said which. Now choosing a target finishes
+  the order, and the map returns to its resting state — the next click on any armed
+  province begins a fresh one. The control stays open on the order just placed so its
+  size can still be set, and the hint says so in as many words. Done only puts the
+  control away; the order stands and its arrow stays on the map. Retargeting is
+  selecting the province again and picking a different neighbour, and cancelling is
+  selecting it and clicking it a second time.
+- Clicking a nation in the Rankings highlights its territory, as the nations list does.
+
+#### 10.1.7 Affinity arrives early, because the UI asked for it
+
+Showing a nation's affinity meant building §6.4, so diplomacy's first half landed ahead
+of the AI. The model is implemented to the spec's own numbers and tested against them:
+the four-profile table at N=8 reproduces to within 0.005, the underdog dividend settles
+at the predicted 0.335 liking and 0.307 trust, and the tuning constraint holds — a
+runaway leader's live penalty outweighs a 15-turn-old betrayal by more than 3x.
+
+Played out, it behaves as designed. On Thule/expert at turn 1, Ur's founding neighbours
+sit at +0.62 and the nations it does not touch at 0. By turn 11 Ur leads on population,
+and Kuru's regard for it has fallen from +0.34 to +0.14 with nothing having *happened*
+between them — that is live term 1 working. Meanwhile Kuru, Carthage and Tartessos have
+slipped into the bottom half, and Kuru's liking for the other two has *risen* from 0.30
+to 0.35 while every other tie decayed. Warmth fades, the leader is resented, the poor
+draw together.
+
+#### Firepower gets a compact form
+
+Armies are the one quantity that can run past five digits — 268,510 in a turn is
+reachable on a big expert economy — and the map has no room for that under a capital.
+`compact()` in `src/format.ts` changes unit only when the mantissa would reach five
+digits: 9999, then 10k, 2000k, 20m, 10b, 10t.
+
+**Every quantity on screen is a whole number of things, rounded down.** Tons, people,
+acres, workers and firepower are all counts, so none of them shows a fraction: 12.87
+tons of iron is 12, and 4.2 firepower is 4.
+
+The compact form is the one exception, and only because its digits are not fractions:
+`10.43k` is ten thousand four hundred whole things, written in thousands. So firepower
+carries up to two decimals *at and above the unit change* and none below it — `10.43k`,
+`268.51k`, `456.99k`, but `26`, `999`, `9999`, and `10k`, `2000k`, `20m` where the
+decimals would only be zeros. They are truncated rather than rounded, like everything
+else, so 456,999 never reads `457k`.
+
+The affinity panel is not an exception to this: `liking`, `trust` and `W` are positions
+on a [−1, 1] scale (§6.4), not counts of anything, and recipe coefficients like
+`0.246 per ton` are ratios. Neither is a quantity a nation holds.
+
+`Intl.NumberFormat`'s compact notation is the more standard choice and was rejected on
+purpose: it renders 1200 and 1249 both as "1.2K", and the difference between two armies
+that size decides the battle between them. Four significant figures is the least this
+game can carry.
+
+Firepower only. Tons and workers stay exact, because balancing an economy needs the
+difference between 1200 and 1249 and a battle does not, and the number inputs stay plain
+numeric so they remain editable.
+
+**Population is grouped instead of compacted** — 18,500, not 18k. It is the victory
+metric (§1.3), and the standings are read by comparing them: 2,412,077 against 2,412,340
+is a different fact from both of them reading "2412k". Commas explicitly rather than
+`toLocaleString`, which would put full stops in for half the world.
+
+#### A factory's recipe, on the factory
+
+Clicking a factory's name opens what it needs and where its output goes: each input with
+its coefficient, how much the factory *wanted* at this labour and how much actually
+arrived, then each consumer with how much it wants and how much it takes.
+
+This is the first place §3.5 is legible rather than merely documented. Lumber on a
+typical opening reads: Charcoal wants 115 and takes 84, Farm Tools wants 92 and **takes
+0**. The production table could only say that farm tools were short of lumber; this says
+that charcoal drank the lot before farm tools were asked, which is the whole of the
+priority rule in two lines of a table.
+
+Raws name the terrain they draw on and its acreage; tools and weapons name what a ton is
+worth in food or firepower.
+
+**Expanded production keeps it on screen.** Expanding once hid the inspector along with
+everything else, which put the recipe and the worker box that answers it on opposite
+sides of a click. The inspector now takes a column of its own when it has something in
+it, and production takes the rest — 1138px against 416px at 1600 wide — so a factory's
+shortage and its slider are readable together. With nothing inspected, production still
+gets the whole window.
+
+**One question left open: should another nation's affinity be visible at all?** It is
+shown for every nation at the moment. Most of it is inferable anyway, since the live
+terms are computed from the public standings — but the stored channels are history, and
+they say who has been attacked by whom and who has been poor together. Food output is
+already a national secret on the same panel, and there is a case for this being one too,
+or for showing rivals only the word and not the numbers. Worth settling when unions
+arrive and the information is actually worth something.
 
 ### 10.2 Limits of `balanceAllocation`
 

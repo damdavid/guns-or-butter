@@ -25,8 +25,19 @@ test("every element the app looks up exists in the page or in its own markup", (
     assert.ok(defined.has(id), `main.ts reads #${id}, which nothing defines`);
   }
   assert.ok(looked.size >= 6, "expected the app to drive the shell's panels");
+
+  // An id also earns its place by being what a <label for> points at, which is why the
+  // start form's fields are not looked up by id — they are read by name from FormData.
+  const labelled = new Set(matchAll(html, /<label for="([^"]+)"/g));
   for (const id of shell) {
-    assert.ok(looked.has(id), `index.html defines #${id}, which the app never touches`);
+    assert.ok(
+      looked.has(id) || labelled.has(id),
+      `index.html defines #${id}, which the app never touches and no label points at`,
+    );
+  }
+  assert.ok(labelled.size > 0, "expected the start form's fields to be labelled");
+  for (const id of labelled) {
+    assert.ok(shell.has(id), `a label points at #${id}, which does not exist`);
   }
 });
 
@@ -140,7 +151,7 @@ test("the renderer honours a view box and draws forces in transit", () => {
   assert.match(zoomed, /<rect x="0" y="0" width="1000" height="700"/);
   assert.ok(!plain.includes("in-transit"), "no markers unless asked for");
 
-  for (const cls of ["in-transit", "in-transit-label", "highlight.inspected"]) {
+  for (const cls of ["in-transit", "in-transit-label", "highlight.inspected", "highlight.held"]) {
     assert.ok(css.includes(cls), `style.css does not style .${cls}`);
   }
 });

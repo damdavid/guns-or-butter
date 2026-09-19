@@ -45,3 +45,39 @@ export function uniqueNames(rng: Rng, count: number): string[] {
   while (out.length < count) out.push(`Province ${out.length + 1}`);
   return out;
 }
+
+/**
+ * Polities that existed before 600 BCE, for the nations the player is not.
+ *
+ * The period is the setting's own: the tech tree starts at charcoal and swords, and
+ * Crawford's tiers run out around the steam engine, so the opposition should read as
+ * bronze and early iron age rather than as modern states.
+ */
+export const ANCIENT_NATIONS: readonly string[] = [
+  "Akkad", "Assyria", "Babylon", "Sumer", "Elam", "Ur", "Larsa", "Mari", "Ebla",
+  "Hatti", "Mitanni", "Urartu", "Phrygia", "Lydia", "Arzawa", "Luwia", "Troy",
+  "Egypt", "Kush", "Kerma", "Nubia", "Punt", "Saba", "Dilmun", "Magan",
+  "Phoenicia", "Tyre", "Sidon", "Byblos", "Ugarit", "Carthage", "Aram", "Moab",
+  "Edom", "Israel", "Judah", "Philistia", "Amurru", "Qatna", "Alalakh",
+  "Mycenae", "Minoa", "Sparta", "Athens", "Argos", "Thebes", "Corinth", "Miletus",
+  "Media", "Parsua", "Scythia", "Cimmeria", "Colchis", "Bactria", "Sogdia",
+  "Shang", "Zhou", "Chu", "Qi", "Jin", "Yan", "Wu", "Yue",
+  "Kuru", "Panchala", "Magadha", "Kosala", "Videha", "Gandhara", "Avanti",
+  "Olmec", "Chavin", "Nok", "Tartessos", "Nuragic", "Villanova", "Etruria",
+];
+
+/**
+ * Pick names for the nations, seeded so a continent always has the same opposition.
+ *
+ * `taken` is the player's own choice, kept out of the draw: two nations answering to the
+ * same name would make the standings unreadable.
+ */
+export function nationNames(
+  rng: Rng,
+  count: number,
+  taken: readonly string[] = [],
+): string[] {
+  const claimed = new Set(taken.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  const pool = rng.shuffle(ANCIENT_NATIONS.filter((n) => !claimed.has(n.toLowerCase())));
+  return Array.from({ length: count }, (_, i) => pool[i % pool.length] ?? `Nation ${i}`);
+}
