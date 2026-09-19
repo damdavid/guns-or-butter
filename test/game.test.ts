@@ -470,7 +470,7 @@ describe("worker redistribution and locks (§3.6)", () => {
     const { land, population } = nationState(game.world, 0);
     const base = subsistenceAllocation();
     const balanced = balanceAllocation(
-      economy, base, { level: "intermediate", land, population }, 80, ["charcoal"],
+      economy, base, { level: "intermediate", land, population }, ["charcoal"],
     );
     assert.equal(balanced["charcoal"], base["charcoal"]);
   });

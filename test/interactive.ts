@@ -212,7 +212,7 @@ async function run(): Promise<void> {
         if (verb === "auto") {
           const previous = allocation;
           allocation = {
-            ...balanceAllocation(economy, allocation, { level, land, population }, 80, locked),
+            ...balanceAllocation(economy, allocation, { level, land, population }, locked),
           };
           const moved = Object.keys(allocation).some(
             (id) => Math.abs((allocation[id] ?? 0) - (previous[id] ?? 0)) > 1e-9,

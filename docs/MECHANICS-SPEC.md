@@ -1940,8 +1940,11 @@ victory metric (§1.3), so people are the unit of account and firepower is value
 what it protects and takes.
 
 **The economy is a utility AI.** Candidate allocations are scored by a weighted sum —
-garrison, food, growth, parity with whoever is massed against you — and the best
-improving move is taken, coarse steps first. The weights encode the same intent a
+garrison, food, growth, parity with whoever is massed against you, and the force to
+carry the cheapest crossing on your own frontier — and the best improving move is taken,
+coarse steps first. A move may be a single worker, or a whole input tree bought at once
+and proportioned the way the recipes need (§10.2), which is the only kind of move that
+can open a cold chain. The weights encode the same intent a
 priority list would, but they trade off rather than strictly outrank. Only improving
 moves are accepted, which is the difference from `balanceAllocation` (§10.2): that one
 chases the largest shortfall and can walk past a better allocation.
@@ -1977,26 +1980,36 @@ wave. Each repulsed wave takes its strength off the defence, so only one bonus i
 paid. Getting that wrong made the AI *worse* than not coordinating at all — 9 games
 decided of 24 against 11 — and fixing it brought 12.
 
+A fifth appeared only after the economy was fixed, and is the most instructive of them.
+Both military terms — garrison and parity — are *met* at one firepower per province. An
+AI that could not feed itself never reached that ceiling, so the gap went unnoticed; an
+AI that could feed itself hit both ceilings cheaply and poured everything else into food.
+Two efficient neighbours then sat on exactly enough to defend, neither could ever afford
+an attack, and the board did not move for sixty turns. The utility had no term for
+*offence*. It now scores the force that would carry the cheapest crossing on its frontier
+(`Position.opening`), weighted by militarism so a peaceable nation still declines to use
+it. The term rises as the neighbour arms, which is the arms race the game is named for.
+
 #### Where it stands
 
-Across 24 games with every nation on the AI: **12 decided within 80 turns, mean 30**.
-Militarism predicts the winner but does not determine it, which is the intent. Beginner
-and intermediate play out; some games end in a stalemate neither side can break, which
-is the main thing left to improve.
+Across 24 games with every nation on the AI: **23 decided within 80 turns**, and the
+board moved in all 24. Median 17 turns at beginner, 40 at intermediate. Before the
+planner and the offence term it was 12 of 24. Militarism predicts the winner but does not
+determine it, which is the intent.
 
 #### Expert cannot feed itself, and that is not the AI's fault
 
 Worldgen starts every nation at 1.4933 people per acre of farmland at all three levels
 (§2), but the measured productivity parameters differ by level, and expert's tier-1
 coefficients are far lower — 100 workers make 610 tons of farm tools at intermediate and
-386 at expert (§3.4: advanced settings are "less efficient at smaller scales"). Hill
-climbing on food alone, from a working allocation, the best any nation can reach:
+386 at expert (§3.4: advanced settings are "less efficient at smaller scales"). Solving
+the staffing exactly (§10.2), the best any nation can reach alone:
 
 | Level | Worst nation's best possible food surplus |
 | --- | --- |
 | Beginner | +127 |
-| Intermediate | +11 |
-| Expert | **-125** |
+| Intermediate | +43 |
+| Expert | **-74** |
 
 Higher tiers do not rescue it — at a starting nation's size iron plows and combines are
 *worse* than farm tools, which is §3.4 working exactly as designed. So an expert nation
@@ -2014,27 +2027,53 @@ efficiency gain. This is the whole point."*
 
 At expert it is not an efficiency gain, it is survival. Pooling does not change the
 population-to-farmland ratio, but the productivity exponent is above 1, so a bigger pool
-feeds itself better at the same ratio — about 7-9 points of surplus per doubling. Best
-achievable food surplus for a union of the poorest *n* nations, climbing on food alone:
+feeds itself better at the same ratio.
 
-| Members | Thule | Kublai |
-| --- | --- | --- |
-| 1 (alone) | −115 | −111 |
-| 2 | −49 | −136 |
-| 3 | −54 | −3 |
-| 4 | −55 | **+18** |
-| 6 | −37 | **+436** |
-| 8 | **+13** | **+720** |
+**How much better was measured wrong, and the error was ours.** A first pass hill-climbed
+the allocation and concluded that break-even took four to eight members — "two is not
+enough" was stated here as a finding. It was a property of the search, not of the
+economy. A cold chain yields nothing at any stage until every stage is staffed at once,
+so no single-worker move improves anything and the climb stopped short of the chains that
+mattered. With staffing solved exactly instead (§3.5, `src/planner.ts`) and every figure
+verified back through `economy.resolve`, the food surplus a union of the *n* poorest
+nations reaches is:
 
-**Two is not enough.** A pair roughly halves the deficit and no more. Breaking even takes
-four to eight members, which is most or all of the world — and the deeper you go past
-break-even the more dramatic the return, because every doubling compounds.
+| Members | Thule | Kublai | Vashti | Nineveh |
+| --- | --- | --- | --- | --- |
+| 1 (alone) | −19 | −55 | −10 | −18 |
+| 2 | −13 | −83 | **+22** | **+6** |
+| 3 | **+2** | **+54** | **+225** | **+44** |
+| 4 | **+21** | **+109** | **+371** | **+98** |
 
-So expert is not mis-tuned; it is **incomplete**. It cannot be judged until unions exist,
-and the sequencing matters: §6.1's rule that *the weakest player declares the union* is
-exactly what a level where the weak cannot survive alone would need. Whether affinity
-(§6.4) will actually produce unions of four or more is the open question, and it cannot
-be answered until step 7 is built.
+**Two is enough on ground that suits it; three is enough everywhere.** Which tool does it
+is a property of the ground rather than the level: forest makes the farm-tools chain
+cheap through lumber and charcoal, while mountains and coal favour iron plows, whose
+tier-2 ton is worth two of food. Both were the right answer on two of the four continents
+above, which is why the planner chooses per nation and not once.
+
+Two structural facts fell out of chasing this, and both are worth keeping:
+
+- **The starting population ratio is not a balance lever.** `baseYield`, `workersPerAcre`
+  and `foodPerPerson` are all 1.0 (§4.1–§4.4), so the food a nation must buy with tools,
+  `population − farmland`, is the *same number* as its spare workforce. Break-even is
+  therefore exactly one ton of tier-1 food per spare worker, at every level and every
+  nation size, and `populationPerFarmland` cancels out of it entirely. A sweep of that
+  constant returned 0.00% growth at every value, which is what tipped it off.
+- **An expert nation stagnates; it does not starve.** `POPULATION.floorPerAcre` and
+  `WORLDGEN.populationPerFarmland` are the same measured 1.4933, so a nation's famine
+  floor *is* its starting population. Even a 250-ton deficit costs one person and then
+  holds forever. Expert is the tier where farming cannot grow you and only ground can —
+  which is the Global Dilemma stated as cleanly as the design ever states it. (§4.4.1
+  lists "does the floor track farmland or the starting population" as open; at the
+  starting ratio the two coincide, so this does not settle it.)
+
+So expert is not mis-tuned, and it is less incomplete than this section first claimed:
+the human player and the AI can both reach growth by pooling two nations on half the
+continents and three anywhere. Unions remain the missing piece for judging the level as a
+whole, and the sequencing still matters — §6.1's rule that *the weakest player declares
+the union* is exactly what a level where the weak cannot survive alone would need.
+Whether affinity (§6.4) actually produces unions of two or three is the open question,
+and it cannot be answered until step 7 is built.
 
 Two caveats worth carrying into that work. There are no expert population readings in
 §4.4.1 — all 29 are from Beginner and Intermediate — so the response is unverified at
@@ -2055,17 +2094,39 @@ Two flaws were fixed because the UI exposes the function directly to the player:
   the player had just asked for**, taking swords from 0.35 down to 0.07 and output from a
   peak of 59 tons to 35.
 
-What remains wrong is left for step 6, because fixing it is the AI's job and not a
-presentational matter:
+Two deeper flaws were left for step 6 and then turned out to be the more expensive ones:
 
-- The search is greedy on a single largest shortfall and follows the limiting factor
-  exactly one step, so it cannot feed a cold chain with more than one missing input.
+- The search was greedy on a single largest shortfall and followed the limiting factor
+  exactly one step, so it could not feed a cold chain with more than one missing input.
   Muskets need iron *and* gunpowder; iron needs coal; gunpowder needs sulfur. The whole
-  chain has to open at once and the heuristic opens one link at a time.
-- It is not monotone. Sword output over eighty passes goes 47 → 58 → 70 → 45: it walks
-  past a better allocation and keeps going, because it optimises "surplus near zero"
-  per §3.5's advice rather than any stated objective. A real AI needs an objective
-  function, which is exactly the §6 decision about what a nation is trying to do.
+  chain has to open at once and the heuristic opened one link at a time.
+- It was not monotone. Sword output over eighty passes went 47 → 58 → 70 → 45: it walked
+  past a better allocation and kept going, because it optimised "surplus near zero"
+  per §3.5's advice rather than any stated objective.
+
+**Both are now gone, because the split is solved rather than searched.** Output is
+`k * workers^a` per factory and recipes are fixed ratios, so the labour any target
+tonnage costs can be computed outright, and it rises monotonically with the target: one
+binary search gives the most a workforce can make (`src/planner.ts`). Auto-balance reads
+the finished goods the player has staffed as the goods they want, divides the workforce
+between them in proportion, and staffs each one's whole input tree to the largest tonnage
+its share can pay for. Locked factories keep their labour and their output is credited
+against what the chains need, so locking a working mine now helps the chains above it.
+
+The measured difference at expert, on a two-nation union's food surplus:
+
+| Continent | Nudging | Solved |
+| --- | --- | --- |
+| Thule | −73 | −13 |
+| Kublai | −154 | −83 |
+| Vashti | −77 | **+22** |
+| Nineveh | −77 | **+6** |
+
+A third flaw only showed up once the first two were fixed: seeded with a finished good on
+its own, the nudge could not start **at all**. Nothing consumes a sword, so with only
+swords staffed no factory had a surplus to donate and it gave up on the first pass. The
+solver has no such state — a finished good on its own is the clearest possible statement
+of what the player wants.
 
 ### What is still unmeasured
 

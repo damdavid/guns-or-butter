@@ -186,7 +186,45 @@ describe("orders", () => {
   });
 });
 
+describe("reading the position", () => {
+  it("reports the cheapest crossing on the frontier", () => {
+    const world = generateWorld("Kublai", "intermediate");
+    const position = positionOf(world, 0);
+    assert.ok(position.opening > 0, "a nation with neighbours has somewhere to attack");
+    const own = world.provinces.filter((p) => p.nation === 0);
+    const cheapest = Math.min(...own.flatMap((p) =>
+      p.neighbours.filter((n) => world.provinces[n.province]!.nation !== 0)
+        .map((n) => forceNeeded(world, p.id, n.province))));
+    assert.equal(position.opening, cheapest);
+  });
+
+  it("reports no opening for a nation that owns everything", () => {
+    const world = generateWorld("Kublai", "intermediate");
+    for (const p of world.provinces) if (p.nation !== null) p.nation = 0;
+    assert.equal(positionOf(world, 0).opening, 0);
+  });
+});
+
 describe("production planning", () => {
+  it("arms past a bare garrison when there is a neighbour to answer", () => {
+    // Both saturating military terms are met at one firepower per province. With the
+    // economy solved efficiently, two neighbours each sat on exactly a garrison, neither
+    // could ever afford an attack, and the board did not move for sixty turns.
+    const world = generateWorld("Nineveh", "beginner");
+    const { land, population } = nationState(world, 0);
+    const state = { level: "beginner" as const, land, population };
+    const seed = workersFor(
+      balanceAllocation(economy, subsistenceAllocation(), state), population, land.farmland,
+    );
+    const planned = planProduction(economy, world, 0, seed);
+    const result = economy.resolve({ ...state, workers: planned });
+    const garrison = positionOf(world, 0).provinces.length;
+    assert.ok(result.firepower > garrison * 2,
+      `${result.firepower.toFixed(1)} firepower is barely a garrison for ${garrison} provinces`);
+    assert.ok(result.agriculture.surplus > 0, "and it should not have starved itself to do it");
+  });
+
+
   it("beats the scaffolding it replaces", () => {
     // balanceAllocation is explicitly not the AI (§10.2); the AI has to do better than it.
     for (const [name, level] of [["Thule", "intermediate"], ["Kublai", "intermediate"]] as const) {

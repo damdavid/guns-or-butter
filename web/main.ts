@@ -1074,7 +1074,7 @@ document.addEventListener("click", (event) => {
       return;
     case "auto": {
       const before = draft;
-      draft = balanceAllocation(economy, draft, context(), 80, game.locked[you] ?? []);
+      draft = balanceAllocation(economy, draft, context(), game.locked[you] ?? []);
       notice = Object.keys(draft).some((id) => Math.abs((draft[id] ?? 0) - (before[id] ?? 0)) > 1e-9)
         ? "Balanced around the locked factories."
         : "Nothing to balance — everything involved is locked.";

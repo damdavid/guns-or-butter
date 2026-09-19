@@ -22,6 +22,7 @@ import {
 } from "./military.ts";
 import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type Standing }
   from "./affinity.ts";
+import { affordableTons, bestFoodChain, staffChain } from "./planner.ts";
 import { planOrders, planProduction } from "./ai.ts";
 import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
@@ -136,85 +137,99 @@ export function reallocate(
 }
 
 /**
- * Nudge a labour split toward one that actually produces, by following the game's own
- * advice: "when you see a factory that has too little or too much output, just change
- * the worker allocation until the surplus is close to zero."
+ * Rebuild a labour split so that what the player has asked for is actually produced.
  *
- * This is scaffolding for the loop and a building block for the AI, not the AI itself.
- * It is needed because an unbalanced split does not merely produce less — it can
- * produce nothing at all. A plausible-looking opening allocation left farm tools at
- * zero output for fifteen straight turns: charcoal is shallower in the graph, so under
- * the priority rule (§3.5) it took every ton of lumber and starved the tools completely.
+ * The game's own advice is "when you see a factory that has too little or too much
+ * output, just change the worker allocation until the surplus is close to zero", and an
+ * earlier version did exactly that, one small nudge at a time. It could not cross a
+ * valley: a cold chain yields nothing at any stage until every stage is staffed at once,
+ * so no single nudge improved anything and the search stopped where it began. Worse, it
+ * could not start at all from a finished good on its own — nothing consumes a sword, so
+ * with only swords staffed there was no factory with a surplus to move labour from, and
+ * it gave up on the first pass. On an expert two-nation union that cost 60 to 200 tons
+ * of food, and the gap widened as the economy grew.
  *
- * Each pass moves a little labour from an industry that is running at capacity with
- * output to spare, to whichever input is throttling something else. The receiving
- * factory may be one nobody is staffing yet: a chain often stalls on an input at zero,
- * and refusing to open it would leave, say, swords at no output however much labour
- * went into them.
+ * So the split is solved rather than searched (see `src/planner.ts`). The finished goods
+ * the player has put labour on are read as the goods they want; the workforce is divided
+ * between them in proportion to that labour; and each one's whole input tree is staffed
+ * to the largest tonnage its share can pay for.
+ *
+ * Locked factories are left exactly as they are, and their output is credited against
+ * what the chains need, so locking a working iron mine helps the chains above it instead
+ * of being ignored.
  */
 export function balanceAllocation(
   economy: Economy,
   base: Allocation,
   context: { level: Level; land: Land; population: number },
-  passes = 80,
   locked: readonly CommodityId[] = [],
 ): Allocation {
+  const spare = Math.floor(
+    Math.max(0, context.population - context.land.farmland * AGRICULTURE.workersPerAcre),
+  );
+  if (spare <= 0) return base;
+
   const pinned = new Set(locked);
-  // Donors have to be running to have anything to give; recipients need not be.
-  const staffed = () => Object.keys(current).filter((id) => (current[id] ?? 0) > 0);
-  let current: Record<CommodityId, number> = { ...base };
+  const current = workersFor(base, context.population, context.land.farmland);
+  const heldBack = [...pinned].reduce((sum, id) => sum + (current[id] ?? 0), 0);
+  const budget = Math.max(0, spare - heldBack);
+  if (budget <= 0) return base;
 
-  for (let pass = 0; pass < passes; pass++) {
-    const result = economy.resolve({
-      ...context,
-      workers: workersFor(current, context.population, context.land.farmland),
-    });
-
-    // Who is starving, and on what? Follow the limiting factor, exactly as a player
-    // would click through from the throttled factory to its missing input.
-    let needy: CommodityId | null = null;
-    let worstGap = 0;
-    for (const id of staffed()) {
-      const c = result.commodities[id];
-      if (!c || c.limitingFactor === "Labor") continue;
-      const gap = c.capacity - c.output;
-      if (gap > worstGap && economy.graph.table.has(c.limitingFactor)) {
-        worstGap = gap;
-        needy = c.limitingFactor;
-      }
-    }
-    // A pinned factory cannot be topped up, so there is no point chasing it.
-    if (!needy || pinned.has(needy)) break;
-
-    // Take from whoever has the most going spare and is not itself throttled.
-    //
-    // Nothing consumes a finished good, so its whole output reads as surplus and it
-    // would always look like the richest donor — the balancer used to drain the very
-    // factory the player had just asked for (swords 0.35 down to 0.07). Raid those only
-    // when there is no intermediate left to take from, which is the case when someone
-    // has put everything into one weapon and its chain has to come from somewhere.
-    const findDonor = (terminal: boolean): CommodityId | null => {
-      let best: CommodityId | null = null;
-      let bestSpare = 0;
-      for (const id of staffed()) {
-        if (id === needy || pinned.has(id)) continue;
-        if ((economy.graph.consumers.get(id)?.length ?? 0) === 0 !== terminal) continue;
-        const c = result.commodities[id];
-        if (!c || (current[id] ?? 0) <= 0.02) continue;
-        if (c.surplus > bestSpare) {
-          bestSpare = c.surplus;
-          best = id;
-        }
-      }
-      return best;
-    };
-    const donor = findDonor(false) ?? findDonor(true);
-    if (!donor) break;
-
-    const step = Math.min(0.02, (current[donor] ?? 0) / 2);
-    current = { ...current, [donor]: current[donor]! - step, [needy]: (current[needy] ?? 0) + step };
+  // A pinned factory keeps running, so its tonnage is supply the chains need not buy.
+  const already = new Map<CommodityId, number>();
+  if (pinned.size > 0) {
+    const fixed = economy.resolve({ ...context, workers: current });
+    for (const id of pinned) already.set(id, fixed.commodities[id]?.output ?? 0);
   }
-  return current;
+
+  // Nothing consumes a finished good, so those are the ends the player is working
+  // toward; everything else is only ever a means to one of them.
+  const goals = Object.keys(current).filter(
+    (id) =>
+      !pinned.has(id) &&
+      (current[id] ?? 0) > 0 &&
+      (economy.graph.consumers.get(id)?.length ?? 0) === 0,
+  );
+
+  const planned: Record<CommodityId, number> = {};
+  const spend = (good: CommodityId, workers: number): number => {
+    const tons = affordableTons(economy, { ...context }, good, workers, already);
+    if (tons <= 0) return 0;
+    const staff = staffChain(economy, { ...context }, good, tons, already);
+    let used = 0;
+    for (const [id, count] of Object.entries(staff)) {
+      if (pinned.has(id)) continue;
+      planned[id] = (planned[id] ?? 0) + count;
+      used += count;
+    }
+    return used;
+  };
+
+  if (goals.length === 0) {
+    // Nobody has asked for anything makeable, so feed people: that is the one goal a
+    // nation always has, and the manual's opening advice besides.
+    const plan = bestFoodChain(economy, { ...context }, budget, undefined, already);
+    if (!plan) return base;
+    for (const [id, count] of Object.entries(plan.workers)) {
+      if (!pinned.has(id)) planned[id] = count;
+    }
+  } else {
+    const weight = goals.reduce((sum, id) => sum + (current[id] ?? 0), 0);
+    let left = budget;
+    for (const good of goals) left -= spend(good, (budget * (current[good] ?? 0)) / weight);
+    // A chain that could not be afforded at all leaves its share unspent; hand the
+    // remainder to the others rather than let people stand idle.
+    if (left > 1) for (const good of goals) left -= spend(good, left);
+  }
+
+  // Staffing rounds every stage up, so the plan can overshoot by a worker per factory.
+  const total = Object.values(planned).reduce((sum, count) => sum + count, 0);
+  const scale = total > budget ? budget / total : 1;
+
+  const next: Record<CommodityId, number> = {};
+  for (const id of pinned) if ((base[id] ?? 0) > 0) next[id] = base[id]!;
+  for (const [id, count] of Object.entries(planned)) next[id] = (count * scale) / spare;
+  return next;
 }
 
 /**
@@ -564,7 +579,6 @@ export class Game {
             this.economy,
             subsistenceAllocation(),
             { level: this.world.level, land, population },
-            80,
             this.locked[nation.id] ?? [],
           );
       } else {

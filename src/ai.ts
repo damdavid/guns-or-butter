@@ -18,6 +18,7 @@
  * unit of account and firepower is valued for what it protects and takes.
  */
 import { POPULATION, commoditiesFor } from "./data.ts";
+import { affordableTons, staffChain, type PlanContext } from "./planner.ts";
 import type { Economy } from "./economy.ts";
 import { COMBAT, type MilitaryOrder } from "./military.ts";
 import { makeRng } from "./rng.ts";
@@ -35,8 +36,12 @@ export const AI = {
   decay: 0.55,
   /** A neighbour is worth answering once it is this much of your own strength. */
   matchAt: 1.25,
+  /** Weight on being able to take something, over and above holding what you have. */
+  conquest: 1.2,
   /** Hill-climbing step sizes, coarse first. */
   steps: [16, 8, 4, 2, 1],
+  /** Shares of the workforce offered to a whole chain at once, largest first. */
+  invest: [0.5, 0.25, 0.12],
   /** Give up rather than spin; each pass is a full economy resolve per commodity. */
   maxMoves: 90,
 } as const;
@@ -78,6 +83,14 @@ export interface Position {
   population: number;
   /** Enemy firepower in provinces bordering this nation. */
   pressure: number;
+  /**
+   * Force that would carry the cheapest crossing on the frontier, or 0 if there is no
+   * frontier. Without this the utility has no reason to arm past a garrison: both
+   * saturating military terms are met at one firepower per province, so two efficient
+   * neighbours each sat on exactly enough to defend, neither could ever attack, and the
+   * board did not move for sixty turns.
+   */
+  opening: number;
 }
 
 export function positionOf(world: World, nation: number): Position {
@@ -88,11 +101,20 @@ export function positionOf(world: World, nation: number): Position {
       if (world.provinces[n.province]!.nation !== nation) bordering.add(n.province);
     }
   }
+  let opening = Infinity;
+  for (const p of provinces) {
+    for (const n of p.neighbours) {
+      if (world.provinces[n.province]!.nation === nation) continue;
+      opening = Math.min(opening, forceNeeded(world, p.id, n.province));
+    }
+  }
+
   return {
     nation,
     provinces: provinces.map((p) => p.id),
     population: provinces.reduce((s, p) => s + p.population, 0),
     pressure: [...bordering].reduce((s, id) => s + world.provinces[id]!.firepower, 0),
+    opening: Number.isFinite(opening) ? opening : 0,
   };
 }
 
@@ -130,11 +152,17 @@ export function score(
     ? (result.nextPopulation - state.population) / state.population
     : 0;
 
+  // Enough to garrison every province *and* mass the cheapest crossing. Both other
+  // military terms are met by a bare garrison, so this is the only one that pays for an
+  // army big enough to attack with, and it rises as the neighbour arms.
+  const conquestNeed = garrisonNeed + position.opening;
+
   return (
     AI.garrison * met(firepower, garrisonNeed) +
     AI.food * met(surplus, foodNeed) +
     growth +
-    temperament.militarism * AI.parity * met(firepower, matchNeed)
+    temperament.militarism * AI.parity * met(firepower, matchNeed) +
+    temperament.militarism * AI.conquest * met(firepower, conquestNeed)
   );
 }
 
@@ -170,6 +198,9 @@ export function planProduction(
   // intermediate nation pour workers into tractors it cannot build.
   const ids = commoditiesFor(world.level, economy.graph.table.keys());
   const allowed = new Set(ids);
+  // Only finished goods are worth buying a whole chain for; an intermediate is only ever
+  // wanted for what sits above it, and that chain includes it already.
+  const terminal = new Set(ids.filter((id) => (economy.graph.consumers.get(id)?.length ?? 0) === 0));
   let best: Record<CommodityId, number> = {};
   for (const id of ids) best[id] = start[id] ?? 0;
   let bestScore = score(economy, state, best, position, temperament);
@@ -186,6 +217,13 @@ export function planProduction(
           // And the same move made to the whole chain behind it, which is the only way
           // a cold chain ever opens.
           warmChain(economy, best, id, step, spare, allowed),
+          // Wholesale: a properly proportioned chain bought with a share of everybody.
+          // Single steps cannot get here from an allocation that is already solved for
+          // one goal, because the first worker moved makes things worse.
+          ...(terminal.has(id)
+            ? AI.invest.map((share) =>
+                investInChain(economy, state, best, id, Math.floor(spare * share), spare, allowed))
+            : []),
         ]) {
           if (!candidate) continue;
           const s = score(economy, state, candidate, position, temperament);
@@ -201,6 +239,43 @@ export function planProduction(
     }
   }
   return best;
+}
+
+/**
+ * Hand `workers` people to `id`'s whole chain, proportioned the way the recipes need,
+ * taking them from everyone else pro rata.
+ *
+ * `warmChain` puts the same flat number of people into every link, which is not how a
+ * chain runs: a ton of muskets wants a particular tonnage of iron behind it and no more,
+ * so a flat split starves one stage while another idles. Solving the proportions is what
+ * lets the climb open a cold chain that actually produces — without it, an allocation
+ * already solved for food had no improving move left and the nation built no weapons at
+ * all for sixty turns.
+ */
+function investInChain(
+  economy: Economy,
+  state: PlanContext,
+  current: Readonly<Record<CommodityId, number>>,
+  id: CommodityId,
+  workers: number,
+  spare: number,
+  allowed: ReadonlySet<CommodityId>,
+): Record<CommodityId, number> | null {
+  if (workers < 1) return null;
+  const tons = affordableTons(economy, state, id, workers);
+  if (tons <= 0) return null;
+  const staff = staffChain(economy, state, id, tons);
+  if (Object.keys(staff).some((c) => !allowed.has(c))) return null;
+
+  const cost = Object.values(staff).reduce((sum, n) => sum + n, 0);
+  const used = Object.values(current).reduce((sum, n) => sum + Math.max(0, n), 0);
+  const fromOthers = Math.max(0, cost - Math.max(0, spare - used));
+  const scale = used > 0 ? Math.max(0, (used - fromOthers) / used) : 0;
+
+  const next: Record<CommodityId, number> = {};
+  for (const [c, n] of Object.entries(current)) next[c] = Math.floor(Math.max(0, n) * scale);
+  for (const [c, n] of Object.entries(staff)) next[c] = (next[c] ?? 0) + n;
+  return next;
 }
 
 /**
