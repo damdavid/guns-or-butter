@@ -60,7 +60,7 @@ function context() {
 
 const spareWorkers = () => {
   const { land, population } = nationState(game.world, you);
-  return Math.max(0, population - land.farmland);
+  return Math.floor(Math.max(0, population - land.farmland));
 };
 
 const resolveDraft = (allocation: Allocation): EconomyResult => {
@@ -350,8 +350,12 @@ function productionPanel(): string {
       const w = workers[id] ?? 0;
       const locked = game.isLocked(you, id);
       const limited = c.limitingFactor !== "Labor";
-      return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""}" data-row="${id}">
-        <td>${commodityLabel(id)}</td>
+      return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""} ${
+        c.surplus < -0.5 ? "deficit" : ""
+      }" data-row="${id}">
+        <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
+          title="Lock this factory against redistribution" /></td>
+        <td class="name">${commodityLabel(id)}</td>
         <td data-cell="cap" class="capacity">${whole(c.capacity)}</td>
         <td data-cell="out">${whole(c.output)}</td>
         <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
@@ -364,8 +368,6 @@ function productionPanel(): string {
         </td>
         <td class="slider"><input type="range" min="0" max="${spare}" value="${w}"
           data-slider="${id}" ${locked ? "disabled" : ""} /></td>
-        <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
-          title="Lock this factory against redistribution" /></td>
       </tr>`;
     })
     .join("");
@@ -375,19 +377,20 @@ function productionPanel(): string {
     </h2>
     <table class="production">
       <colgroup>
-        <col class="c-name" /><col class="c-num" /><col class="c-num" /><col class="c-num" />
-        <col class="c-short" /><col class="c-tune" /><col class="c-slider" /><col class="c-lock" />
+        <col class="c-lock" /><col class="c-name" /><col class="c-num" /><col class="c-num" />
+        <col class="c-num" /><col class="c-short" /><col class="c-tune" /><col class="c-slider" />
       </colgroup>
       <thead><tr>
-        <th>Factory</th><th title="What its workers could make">Size</th>
+        <th class="lock">&#128274;</th><th class="name">Factory</th>
+        <th title="What its workers could make">Size</th>
         <th title="What it actually made">Output</th><th>Surplus</th><th>Short of</th>
-        <th>Workers</th><th class="slider"></th><th>&#128274;</th>
+        <th>Workers</th><th class="slider"></th>
       </tr></thead>
       <tbody>${body}
         <tr class="idle-row" data-row="__idle">
-          <td>Idle</td><td></td><td></td><td></td>
+          <td></td><td class="name">Idle</td><td></td><td></td><td></td>
           <td class="lim">${idle > 0 ? "unspent labour" : "&mdash;"}</td>
-          <td class="tune" data-cell="idle">${idle}</td><td class="slider"></td><td></td>
+          <td class="tune" data-cell="idle">${whole(idle)}</td><td class="slider"></td>
         </tr>
       </tbody>
       <tfoot id="food">${foodHtml(result)}</tfoot>
@@ -409,11 +412,12 @@ function foodHtml(result: EconomyResult): string {
   const a = result.agriculture;
   const toolTons = Object.values(a.toolsUsed).reduce((s, v) => s + v, 0);
   const fromTools = a.food - a.acres;
-  return `<tr class="total">
-      <td>Food</td><td class="capacity">${whole(a.acres)} ac</td><td>${whole(a.food)}</td>
+  return `<tr class="total ${a.surplus < 0 ? "deficit" : ""}">
+      <td></td><td class="name">Food</td><td class="capacity">${whole(a.acres)} ac</td>
+      <td>${whole(a.food)}</td>
       <td class="${a.surplus < 0 ? "short" : "spare"}">${whole(a.surplus)}</td>
       <td class="lim">needs ${whole(a.required)}</td>
-      <td>${a.workers} farming</td><td class="slider"></td><td></td>
+      <td>${whole(a.workers)} farming</td><td class="slider"></td>
     </tr>
     <tr>
       <td colspan="8" class="spare wrap">
@@ -461,6 +465,7 @@ function refreshNumbers(editing?: Element | null): void {
     row.querySelector<HTMLElement>('[data-cell="lim"]')!.textContent =
       c.limitingFactor === "Labor" ? "—" : commodityLabel(c.limitingFactor);
     row.classList.toggle("limited", c.limitingFactor !== "Labor");
+    row.classList.toggle("deficit", c.surplus < -0.5);
     row.classList.toggle("idle", w === 0);
     for (const input of row.querySelectorAll<HTMLInputElement>("[data-slider], [data-workers]")) {
       if (input !== editing) input.value = String(w);
@@ -552,15 +557,16 @@ function ordersPanel(): string {
 }
 
 function executionPanel(): string {
-  return `<h2>Execution <small>turn ${game.turn}</small></h2>
+  return `<h2>Execution <small>turn ${game.turn}</small>
+      ${replaying ? '<span class="right"><button type="button" data-act="skip">Skip</button></span>' : ""}
+    </h2>
     ${replayLog.length === 0
       ? `<p class="spare">${replaying ? "Marching&hellip;" : "A quiet turn &mdash; nothing marched."}</p>`
       : `<ul class="log">${replayLog
           .map((l, i) => `<li class="${l.taken ? "taken" : ""} ${
             i === replayLog.length - 1 && replaying ? "now" : ""
           }">${l.text}</li>`)
-          .join("")}</ul>`}
-    ${replaying ? '<div class="controls"><button type="button" data-act="skip">Skip</button></div>' : ""}`;
+          .join("")}</ul>`}`;
 }
 
 function rankingsPanel(): string {

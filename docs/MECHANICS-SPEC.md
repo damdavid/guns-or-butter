@@ -1007,7 +1007,8 @@ force after victory, and Appendix B specifies the difference for that.
 - These thresholds are confirmed by Appendix B: taking an *undefended* province needs
   **≥20 firepower by road, ≥50 cross-country**. Both fall out of the formula exactly.
 - **Civilian cost**: the defending province's population is reduced by the military
-  power brought against it. Scorched earth — a big conquest guts the prize.
+  power brought against it. Scorched earth — a big conquest guts the prize. *Deviation:
+  this implementation bounds it instead, see §5.5.1.*
 
 ### 5.5.1 Implementation notes [F]
 
@@ -1028,6 +1029,23 @@ carries its owning nation from the moment orders are given.
 
 **A later wave whose nation already took the province reinforces it** rather than
 assaulting it, which matters when several provinces converge on one target.
+
+**Deviation — the civilian cost is bounded by the land [F].** §5.5 charges the defending
+province the whole military power brought against it, win or lose. A captured province
+is now instead left with **the people its own farmland can feed**, and a province that
+holds loses nobody.
+
+Charging the force brought to bear made conquest cost more than it could ever return:
+scorched earth gutted the population, that population is the workforce, and firepower is
+a flow that has to be paid for again every turn (§5.3.1). Scripted play could take three
+provinces and then watched its firepower collapse from 300 to 49 with no way back — forty
+turns left the same twelve provinces of sixteen (§10.1.4).
+
+Under the bounded rule the same scripted play conquers a continent in eight turns on one
+map and reaches thirteen to fifteen provinces of sixteen on four others, with population
+*rising* through the conquests rather than collapsing. The cost no longer depends on how
+hard you hit, only on the province falling, which also removes the perverse case where a
+heavier assault destroyed more of the prize.
 
 ### 5.6 Execution order [C]
 
@@ -1726,6 +1744,42 @@ nation outlines everything it holds.
 - A highlighted nation is outlined in **white**, which is the one colour no nation fill
   or terrain mark uses. A single inspected province keeps its blue dashed outline, so the
   two readings of the map stay distinct.
+
+#### 10.1.5 Sixth pass, and the economies of scale checked against the readings
+
+**"Economies of scale seem too soft — can we verify against the original game data?"**
+Checked, and the exponents are right. `test/calibration.test.ts` refits the committed
+CSVs independently of `docs/calibrate.py` and compares the exponent — the one number §3.4
+calls the foundation of the design — across 64 commodity/level pairs:
+
+| | |
+| --- | --- |
+| mean error | 0.006 |
+| median error | 0.000 |
+| worst | 0.102, on Nitrate at intermediate |
+| systematic bias | −0.006, i.e. none worth the name |
+
+Doubling labour multiplies capacity by 2.18x for Lumber, 3.13x for Iron, 3.31x for
+Combine and 5.11x for Tractor. The manual's promise holds.
+
+So why does it *feel* soft? Because a tier-1 raw is soft, by measurement: Lumber's
+exponent is 1.127, so going from 5 workers to 200 — forty times the labour — raises
+output per worker only from 10.6 tons to 16.9. The steep exponents live at the top of the
+tree (Tractor 2.35, Diesel Engine 2.53), and those only exist at expert and only pay at
+populations you have to grow into. **The payoff for scale is meant to come from climbing
+the tree, not from piling labour into lumber**, which is §3.4's stated purpose: tech
+progression tied to population without a research tree. It is faithful, not soft.
+
+The rest of the pass:
+
+- **The conquest cost is bounded by the land**, §5.5.1 — the change that made winning
+  reachable at all. Measured before and after in §5.5.1.
+- Rounding is whole-number throughout: the allocatable workforce is floored in
+  `workersFor`, so a fractional remainder can no longer appear as unspendable idle
+  labour, and nothing in the production panel shows a fraction.
+- The lock sits to the left of the factory it locks; a factory in deficit gets a banded
+  row and a marked edge rather than one red number; the Skip button moved into the
+  execution heading so it is reachable before the log rather than after it.
 
 ### 10.2 Limits of `balanceAllocation`
 

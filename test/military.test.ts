@@ -161,11 +161,43 @@ describe("orders and execution order (§5.4, §5.6)", () => {
     assert.deepEqual(r.world.nations[1]!.provinces, [3]);
   });
 
-  it("charges the civilian cost of the power brought to bear", () => {
+  it("leaves a captured province the people its own farmland can feed", () => {
     const world = withFirepower(line([true, true, true]), { 1: 100, 2: 20 });
+    const acres = world.provinces[2]!.land.farmland;
+    assert.ok(world.provinces[2]!.population > acres, "the premise is a province above subsistence");
+    const r = resolveMilitary(world, { 1: { marchFraction: 1, target: 2 } });
+    assert.equal(r.battles[0]!.captured, true);
+    assert.equal(r.world.provinces[2]!.population, acres);
+    assert.equal(r.battles[0]!.civilianLoss, 150 - acres);
+  });
+
+  it("does not depend on how much force was brought, only that it fell", () => {
+    // §5.5 charges the whole force brought to bear, which made a heavy conquest cost
+    // more than the province could ever return (§10.1.4). The cost is now the province.
+    const light = withFirepower(line([true, true, true]), { 1: 40, 2: 0 });
+    const heavy = withFirepower(line([true, true, true]), { 1: 400, 2: 0 });
+    const pop = (w: typeof light) =>
+      resolveMilitary(w, { 1: { marchFraction: 1, target: 2 } }).world.provinces[2]!.population;
+    assert.equal(pop(light), pop(heavy));
+  });
+
+  it("costs the defender nothing when the assault is repulsed", () => {
+    const world = withFirepower(line([true, true, true]), { 1: 25, 2: 60 });
     const before = world.provinces[2]!.population;
     const r = resolveMilitary(world, { 1: { marchFraction: 1, target: 2 } });
-    assert.equal(r.world.provinces[2]!.population, before - 100);
+    assert.equal(r.battles[0]!.captured, false);
+    assert.equal(r.world.provinces[2]!.population, before);
+    assert.equal(r.battles[0]!.civilianLoss, 0);
+  });
+
+  it("leaves a province already at or below subsistence alone", () => {
+    const world = {
+      ...withFirepower(line([true, true, true]), { 1: 100, 2: 0 }),
+    };
+    world.provinces = world.provinces.map((p) => (p.id === 2 ? { ...p, population: 40 } : p));
+    const r = resolveMilitary(world, { 1: { marchFraction: 1, target: 2 } });
+    assert.equal(r.world.provinces[2]!.population, 40, "nothing left to take");
+    assert.equal(r.battles[0]!.civilianLoss, 0);
   });
 
   it("costs a province more to take across country than by road", () => {

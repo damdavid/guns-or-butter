@@ -278,8 +278,19 @@ export function resolveMilitary(
         firepower.set(target, outcome.defenceAfter);
       }
     }
-    // Scorched earth: a big conquest guts the prize it was fought over (§5.5).
-    population.set(target, Math.max(0, population.get(target)! - battle.civilianLoss));
+    // Scorched earth, but bounded: a province that falls is left with the people its own
+    // farmland can feed, and one that holds loses nobody (§5.5.1). Charging the whole
+    // force brought to bear, as §5.5 has it, made conquest cost more than it could ever
+    // return — see §10.1.4.
+    const before = population.get(target)!;
+    if (battle.captured) {
+      const acres = world.provinces[target]!.land.farmland;
+      const after = Math.max(0, Math.min(before, acres));
+      battle.civilianLoss = before - after;
+      population.set(target, after);
+    } else {
+      battle.civilianLoss = 0;
+    }
     battles.push(battle);
   }
 

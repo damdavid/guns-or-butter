@@ -279,7 +279,9 @@ export function workersFor(
 ): Record<CommodityId, number> {
   // Agricultural labour is locked at one worker per acre and is not the player's to
   // spend (§4.1), so only the remainder can be allocated.
-  const spare = Math.max(0, population - farmland * AGRICULTURE.workersPerAcre);
+  // Whole people. Population is continuous (§4.4) but a fraction of a worker cannot be
+  // put in a factory, and a fractional remainder showed up as unspendable idle labour.
+  const spare = Math.floor(Math.max(0, population - farmland * AGRICULTURE.workersPerAcre));
   const total = Object.values(allocation).reduce((s, v) => s + Math.max(0, v), 0);
   if (total <= 0 || spare <= 0) return {};
   // Fractions summing to 1 or less are taken literally, leaving the remainder idle;

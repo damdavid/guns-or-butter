@@ -127,12 +127,13 @@ th {
   font-size: 0.74rem;
   white-space: nowrap;
 }
-th:first-child { text-align: left; }
+th:first-child, th.name { text-align: left; }
+th.lock, td.lock { text-align: center; }
 td { padding: 0.12rem 0.25rem; text-align: right; border-top: 1px solid #ece5d6; white-space: nowrap; }
 /* The one cell that is a sentence rather than a number; left to wrap it would otherwise
    set the table's minimum width all by itself. */
 td.wrap { white-space: normal; text-align: left; line-height: 1.35; padding-top: 0.3rem; }
-td:first-child { text-align: left; }
+td:first-child, td.name { text-align: left; }
 tr.idle td { color: #a49a88; }
 tr.limited td.lim { color: var(--warn); }
 .short { color: var(--warn); }
@@ -160,7 +161,7 @@ col.c-tune { width: 8.4rem; }
 col.c-lock { width: 2rem; }
 col.c-slider { width: auto; }
 body:not(.expanded) col.c-name { width: 7.5rem; }
-td:first-child { overflow: hidden; text-overflow: ellipsis; }
+td.name { overflow: hidden; text-overflow: ellipsis; }
 input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); vertical-align: middle; }
 input[type="number"] {
   width: 3.6rem;
@@ -296,5 +297,12 @@ td.tune input[type="number"] { margin: 0 0.15rem; }
 td.tune button { padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.35; min-width: 1.4rem; }
 
 tr.idle-row td { color: var(--accent); font-style: italic; border-top: 1px solid var(--rule); }
+
+/* A factory that cannot meet the demand on it is the thing a player most needs to spot,
+   so it gets a band and a marked edge rather than one red number. */
+tr.deficit td { background: #f7e7e0; }
+tr.deficit td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+tr.deficit td.lim, tr.deficit .short { color: var(--warn); font-weight: bold; }
+tr.idle.deficit td { color: var(--ink-soft); }
 tr.total td { border-top: 1px solid var(--rule); }
 .capacity { color: var(--ink-soft); }
