@@ -306,6 +306,40 @@ describe("moving whole workers (§3.6)", () => {
     assert.equal(current["sulfur"], 2);
   });
 
+  it("lets labour stranded as idle be spent again", () => {
+    // Reported from play. With every other factory locked there is nobody to give the
+    // workers to, so lowering one stranded them as unspent labour — and the idle pool
+    // was not a source, so nothing could draw them back out.
+    const workforce = 149;
+    const locked = ["lumber", "iron-ore", "charcoal", "pig-iron", "farm-tools"];
+    const lowered = moveWorkers(start, "sulfur", 8, locked, workforce);
+    assert.equal(lowered["sulfur"], 8);
+    assert.equal(workforce - total(lowered), 4, "four should be sitting idle");
+
+    const restored = moveWorkers(lowered, "sulfur", 12, locked, workforce);
+    assert.equal(restored["sulfur"], 12, "the idle four must be spendable again");
+    assert.equal(workforce - total(restored), 0);
+  });
+
+  it("spends idle labour on whichever factory asks for it", () => {
+    const workforce = 149;
+    const stranded = { ...start, sulfur: 2 };  // ten workers idle
+    assert.equal(workforce - total(stranded), 10);
+    for (const [id, want] of [["charcoal", 28], ["sulfur", 12], ["lumber", 43]] as const) {
+      const after = moveWorkers(stranded, id, want, [], workforce);
+      assert.equal(after[id], want, `${id} should have reached ${want}`);
+      assert.equal(workforce - total(after), 0, `${id} should have absorbed the idle ten`);
+    }
+  });
+
+  it("cannot spend labour the locked factories are already holding", () => {
+    const workforce = 149;
+    const locked = ["lumber", "iron-ore", "charcoal", "pig-iron", "farm-tools"];
+    const held = locked.reduce((s, k) => s + start[k as keyof typeof start], 0);
+    const after = moveWorkers(start, "sulfur", 9999, locked, workforce);
+    assert.equal(after["sulfur"], workforce - held, "only the unlocked remainder is available");
+  });
+
   it("leaves locked factories exactly where they are", () => {
     const after = moveWorkers(start, "sulfur", 0, ["lumber", "charcoal"]);
     assert.equal(after["lumber"], start.lumber);

@@ -9,7 +9,7 @@
   --warn: #9a3412;
   --good: #3f6b34;
   --accent: #7a5c2e;
-  --side: 34rem;
+  --side: 38rem;
 }
 
 * { box-sizing: border-box; }
@@ -99,6 +99,7 @@ svg.map .highlight.selected { stroke: #b4531a; stroke-width: 5; }
 svg.map .highlight.target-road { stroke: #1d5e18; stroke-width: 4; }
 svg.map .highlight.target-rough { stroke: #1d5e18; stroke-width: 4; stroke-dasharray: 9 6; }
 svg.map .highlight.inspected { stroke: #1b4f78; stroke-width: 4; stroke-dasharray: 3 3; }
+svg.map .highlight.held { stroke: #fff; stroke-width: 3.2; stroke-linejoin: round; }
 
 svg.map .march { stroke-width: 3.2; }
 svg.map .march.hostile { stroke: #9a2212; }

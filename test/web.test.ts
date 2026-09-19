@@ -151,7 +151,7 @@ test("the renderer honours a view box and draws forces in transit", () => {
   assert.match(zoomed, /<rect x="0" y="0" width="1000" height="700"/);
   assert.ok(!plain.includes("in-transit"), "no markers unless asked for");
 
-  for (const cls of ["in-transit", "in-transit-label", "highlight.inspected"]) {
+  for (const cls of ["in-transit", "in-transit-label", "highlight.inspected", "highlight.held"]) {
     assert.ok(css.includes(cls), `style.css does not style .${cls}`);
   }
 });

@@ -221,25 +221,36 @@ export function balanceAllocation(
  * lower charcoal by one as well. Working in integers makes the rule visible: raising a
  * factory lowers exactly one other, and lowering it raises exactly one other.
  *
- * The workforce total is preserved, so labour deliberately left idle stays idle.
+ * `workforce` is the labour available to spend. Pass it and the idle pool is a
+ * participant: labour stranded as unspent can be drawn back out, which is the only way a
+ * factory can grow when every other factory is locked. Leave it out and the function
+ * merely conserves whatever it was given.
  */
 export function moveWorkers(
   current: Readonly<Record<CommodityId, number>>,
   id: CommodityId,
   want: number,
   locked: readonly CommodityId[] = [],
+  workforce?: number,
 ): Record<CommodityId, number> {
   const pinned = new Set(locked);
   if (pinned.has(id)) return { ...current };
 
-  const others = Object.keys(current).filter((k) => k !== id && !pinned.has(k));
-  const othersTotal = others.reduce((s, k) => s + (current[k] ?? 0), 0);
-  const target = Math.max(0, Math.min(Math.round(want), (current[id] ?? 0) + othersTotal));
-  const pool = othersTotal - (target - (current[id] ?? 0));
+  const keys = Object.keys(current);
+  const others = keys.filter((k) => k !== id && !pinned.has(k));
+  const lockedTotal = keys.filter((k) => pinned.has(k)).reduce((s, k) => s + (current[k] ?? 0), 0);
+  const total = keys.reduce((s, k) => s + (current[k] ?? 0), 0);
+
+  // Everything the unlocked factories and the idle pool have between them.
+  const available = Math.max(0, (workforce ?? total) - lockedTotal);
+  const target = Math.max(0, Math.min(Math.round(want), available));
+  const pool = available - target;
 
   const next: Record<CommodityId, number> = { ...current, [id]: target };
+  // Nowhere to put the remainder but the idle pool, which `target` can draw back out.
   if (others.length === 0) return next;
 
+  const othersTotal = others.reduce((s, k) => s + (current[k] ?? 0), 0);
   // Largest remainder, so the pool is handed out whole and in proportion.
   const share = others.map((k) => ({
     k,

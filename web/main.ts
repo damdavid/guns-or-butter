@@ -135,8 +135,11 @@ function drawMap(): void {
         ? world.provinces.filter((p) => p.nation === inspect!.id)
         : [];
   if (looking.length > 0) {
+    // A whole nation is outlined in white: at eight provinces the outline is most of the
+    // map, and white is the one colour no nation fill or terrain mark uses.
+    const kind = inspect!.kind === "nation" ? "held" : "inspected";
     svg.insertAdjacentHTML("beforeend", looking
-      .map((p) => `<polygon class="highlight inspected" fill="none" pointer-events="none" points="${
+      .map((p) => `<polygon class="highlight ${kind}" fill="none" pointer-events="none" points="${
         p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ")}"/>`)
       .join(""));
   }
@@ -482,7 +485,7 @@ function refreshNumbers(editing?: Element | null): void {
 function setWorkers(id: CommodityId, count: number): void {
   const spare = spareWorkers();
   if (spare <= 0) return;
-  const next = moveWorkers(currentWorkers(), id, count, game.locked[you] ?? []);
+  const next = moveWorkers(currentWorkers(), id, count, game.locked[you] ?? [], spare);
   const shares: Record<CommodityId, number> = {};
   for (const [k, v] of Object.entries(next)) shares[k] = v / spare;
   draft = shares;

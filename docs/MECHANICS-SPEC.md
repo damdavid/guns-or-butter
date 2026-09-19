@@ -1685,6 +1685,19 @@ names no longer jump when a lock redraws the table; the totals read `Population:
 labour is a row in the table now; Rankings shows only the standings; and selecting a
 nation outlines everything it holds.
 
+#### 10.1.4 Fifth pass
+
+- **"Workers that moved to unspent labour cannot be allocated."** Real, and a return of
+  something already fixed once in the terminal game. `moveWorkers` conserved whatever
+  total it was handed, so the idle pool was never a source. With every other factory
+  locked there is nobody to give released workers to, so lowering a factory stranded them
+  — and nothing could draw them back. The function now takes the workforce as a budget:
+  the target is capped by what the locked factories are *not* holding, so idle labour is
+  spendable by whichever factory asks for it. Locked factories still cannot be raided.
+- A highlighted nation is outlined in **white**, which is the one colour no nation fill
+  or terrain mark uses. A single inspected province keeps its blue dashed outline, so the
+  two readings of the map stay distinct.
+
 ### 10.2 Limits of `balanceAllocation`
 
 Auto-balance is scaffolding, not the AI, and playing it exposed how far it is from one.
