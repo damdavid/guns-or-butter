@@ -615,6 +615,9 @@ describe("playing on", () => {
 
   it("lets a nation grow when its economy is balanced", () => {
     const game = Game.create("Kublai", "intermediate");
+    // About the economy, so the other nations are left inert: with the AI running they
+    // arm and invade, and this would be measuring the war instead.
+    game.ai = false;
     const before = nationState(game.world, 0).population;
     for (let turn = 0; turn < 10; turn++) {
       playTurn(game);

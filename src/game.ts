@@ -22,6 +22,7 @@ import {
 } from "./military.ts";
 import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type Standing }
   from "./affinity.ts";
+import { planOrders, planProduction } from "./ai.ts";
 import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, World } from "./types.ts";
@@ -334,6 +335,10 @@ export class Game {
   locked: Record<number, CommodityId[]> = {};
   /** How the nations regard each other (§6.4). */
   affinity: Affinity;
+  /** The nation a person is playing. Every other one is run by the AI (§10 step 6). */
+  human = 0;
+  /** Set false to leave the other nations inert, which isolates the economy in a test. */
+  ai = true;
 
   private production: Record<number, EconomyResult> = {};
   private transfers: Transfer[] = [];
@@ -466,6 +471,7 @@ export class Game {
         // Combat resolves on the way *into* execution, not out of it, so that the
         // execution phase is the one the player watches it happen in. A UI that animates
         // the marches has the whole report in hand for the length of that phase (§1.2.1).
+        this.planAiOrders();
         this.resolveMilitaryPhase();
         this.phase = "military-execution";
         return this.report();
@@ -549,15 +555,35 @@ export class Game {
     for (const nation of this.world.nations) {
       if (nation.provinces.length === 0) continue;
       const { land, population } = nationState(this.world, nation.id);
-      const allocation =
-        this.allocations[nation.id] ??
-        balanceAllocation(
+      const spare = Math.floor(Math.max(0, population - land.farmland));
+      let allocation: Allocation;
+      if (nation.id === this.human || !this.ai) {
+        allocation =
+          this.allocations[nation.id] ??
+          balanceAllocation(
+            this.economy,
+            subsistenceAllocation(),
+            { level: this.world.level, land, population },
+            80,
+            this.locked[nation.id] ?? [],
+          );
+      } else {
+        // The AI plans in whole workers and stores the result back as shares (§1.2.1).
+        // A first plan starts from a balanced economy rather than a raw subsistence
+        // split, so the climb does not begin inside the §3.5 trap it would have to
+        // climb out of.
+        const seed = this.allocations[nation.id] ?? balanceAllocation(
           this.economy,
           subsistenceAllocation(),
           { level: this.world.level, land, population },
-          80,
-          this.locked[nation.id] ?? [],
         );
+        const from = workersFor(seed, population, land.farmland);
+        const planned = planProduction(this.economy, this.world, nation.id, from);
+        allocation = spare > 0
+          ? Object.fromEntries(Object.entries(planned).map(([k, v]) => [k, v / spare]))
+          : {};
+        this.allocations[nation.id] = allocation;
+      }
       const result = this.economy.resolve({
         level: this.world.level,
         land,
@@ -586,6 +612,20 @@ export class Game {
         p.nation === nation ? { ...p, population: Math.max(0, Math.round(p.population * scale)) } : p,
       ),
     };
+  }
+
+  /**
+   * Orders for every nation but the player's, written just before resolution so they
+   * are given on the same board the player saw (§5.6 resolves them simultaneously).
+   */
+  private planAiOrders(): void {
+    if (!this.ai) return;
+    for (const nation of this.world.nations) {
+      if (nation.id === this.human || nation.provinces.length === 0) continue;
+      for (const [province, order] of Object.entries(planOrders(this.world, nation.id))) {
+        this.orders[Number(province)] = order;
+      }
+    }
   }
 
   private resolveMilitaryPhase(): void {

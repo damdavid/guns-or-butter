@@ -50,6 +50,11 @@ Deliberately built before the AI: the UI is where the original lost, and it is t
 subsystem whose defects are invisible to tests — playing it has found thirteen so far that the
 unit tests did not. See §10.1.
 
+**AI opponents, first pass.** `src/ai.ts`: a utility function over labour allocations
+for the economy, an influence map over the province graph for the military, and a seeded
+temperament per nation. Rivals arm, grow, mass on the cheapest way in, and attack
+together when none of them could win alone.
+
 **Affinity built, unions not.** `src/affinity.ts` implements §6.4: two decaying
 channels, saturating updates, founding-neighbour ties, and live penalties for leading on
 population or on firepower. Clicking a nation shows how it regards the others. The AI
@@ -58,7 +63,7 @@ and economic unions are specified but not yet built. See §10 of the spec.
 ## Commands
 
     npm run dev       # play it in a browser on localhost:5173
-    npm test          # 297 tests, including the 1990 manual's p.12 reference state
+    npm test          # 316 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
     npm run build     # bundle the browser app to web/dist/
     npm run validate  # score the sim against all 644 measurements

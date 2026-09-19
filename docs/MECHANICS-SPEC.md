@@ -1572,9 +1572,11 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    no runtime dependencies. Moved ahead of the AI deliberately: this is the subsystem
    the original lost on, and it is the only one whose defects are invisible to tests.
    Playing it found four bugs the 210 unit tests did not — see §10.1.
-6. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
-   union-declaration rule in §6.1. `balanceAllocation` is a starting point for the
-   economic half of it, with the limits recorded in §10.2.
+6. **AI opponents** — **first pass done.** `src/ai.ts`. [F] — nothing is recoverable
+   about Crawford's AI beyond the union-declaration rule in §6.1, so this is design:
+   a utility function over allocations for the economy, an influence map over the
+   province graph for the military. §10.3 has what it does, what it got wrong on the
+   way, and what it still cannot do.
 7. **Diplomacy** — **affinity done, unions not.** `src/affinity.ts` implements §6.4
    whole: both channels, the decay, the saturating updates, the founding-neighbour seed,
    the live terms and the underdog dividend, with the decision variable `W` exposed as
@@ -1930,6 +1932,83 @@ they say who has been attacked by whom and who has been poor together. Food outp
 already a national secret on the same panel, and there is a case for this being one too,
 or for showing rivals only the word and not the numbers. Worth settling when unions
 arrive and the information is actually worth something.
+
+### 10.3 The AI [F]
+
+Two standard mechanisms, one per half, against a single objective: population is the
+victory metric (§1.3), so people are the unit of account and firepower is valued for
+what it protects and takes.
+
+**The economy is a utility AI.** Candidate allocations are scored by a weighted sum —
+garrison, food, growth, parity with whoever is massed against you — and the best
+improving move is taken, coarse steps first. The weights encode the same intent a
+priority list would, but they trade off rather than strictly outrank. Only improving
+moves are accepted, which is the difference from `balanceAllocation` (§10.2): that one
+chases the largest shortfall and can walk past a better allocation.
+
+Each nation carries a **temperament** — militarism and a growth target, seeded per
+continent so a world always faces the same opposition, like the nation names.
+
+**The military is an influence map.** Every province gets a threat value (enemy
+firepower, diffused) and an opportunity value (how good a place it is to attack *from*,
+diffused). Marching is gradient ascent on opportunity, which produces concentration for
+free: an inland province sees the best jumping-off point as uphill and goes there. Where
+several provinces can together carry a target none could carry alone, they go together.
+
+#### Three mistakes it took a stalemate to find
+
+Each of these froze the game completely, and none would have shown up in a unit test.
+
+- **Valuing the prize and ignoring the way in.** A road is worth four times a
+  cross-country approach (§5.5), so opportunity has to be prize *per unit of force
+  needed*. Without that, 53 firepower sat staring at a target it could never carry while
+  the road in was held by a province with 3.
+- **Marching up `opportunity - threat`.** Subtracting threat makes the border the least
+  attractive ground on the map, because that is where the enemy is. One interior
+  province ended up holding 132 of a nation's 194 firepower and never moving. Threat
+  decides whether a province *holds*; it has no place in deciding where to send a
+  reserve.
+- **A utility that clamped shortfalls at zero.** A starving nation scored the same at
+  -217 tons as at -80, so the whole region was a plateau and the hill climb did nothing
+  for 140 turns. Saturate above, never below: less starving has to be visibly better.
+
+A fourth, smaller: a combined assault needs `sum(effective) > defence + 10`, not ten per
+wave. Each repulsed wave takes its strength off the defence, so only one bonus is ever
+paid. Getting that wrong made the AI *worse* than not coordinating at all — 9 games
+decided of 24 against 11 — and fixing it brought 12.
+
+#### Where it stands
+
+Across 24 games with every nation on the AI: **12 decided within 80 turns, mean 30**.
+Militarism predicts the winner but does not determine it, which is the intent. Beginner
+and intermediate play out; some games end in a stalemate neither side can break, which
+is the main thing left to improve.
+
+#### Expert cannot feed itself, and that is not the AI's fault
+
+Worldgen starts every nation at 1.4933 people per acre of farmland at all three levels
+(§2), but the measured productivity parameters differ by level, and expert's tier-1
+coefficients are far lower — 100 workers make 610 tons of farm tools at intermediate and
+386 at expert (§3.4: advanced settings are "less efficient at smaller scales"). Hill
+climbing on food alone, from a working allocation, the best any nation can reach:
+
+| Level | Worst nation's best possible food surplus |
+| --- | --- |
+| Beginner | +127 |
+| Intermediate | +11 |
+| Expert | **-125** |
+
+Higher tiers do not rescue it — at a starting nation's size iron plows and combines are
+*worse* than farm tools, which is §3.4 working exactly as designed. So an expert nation
+sits on the famine floor (§4.4.1) from turn one: it cannot starve and it cannot grow,
+and the game is static for the human player just as much as for the AI. Intermediate is
+marginal at +11.
+
+This wants a decision rather than a patch. The candidates are a lower
+population-to-farmland ratio at expert, a look at whether the expert tier-1 parameters
+are right, or accepting that expert is a game about conquering farmland rather than
+growing into it. Note there are no expert population readings in §4.4.1 — all 29 are
+from Beginner and Intermediate — so the response itself is unverified at that level.
 
 ### 10.2 Limits of `balanceAllocation`
 
