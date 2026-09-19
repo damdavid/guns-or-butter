@@ -9,7 +9,7 @@
  * to the result, because the ordering rules (§5.6, and waves within a battle) are
  * invisible otherwise.
  */
-import { commoditiesFor, commodityLabel } from "../src/data.ts";
+import { commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
 import { Economy } from "../src/economy.ts";
 import {
   Game,
@@ -44,7 +44,11 @@ let selected: number | null = null;
  */
 let ordering: number | null = null;
 /** What the inspector is showing. */
-let inspect: { kind: "province" | "nation"; id: number } | null = null;
+type Inspecting =
+  | { kind: "province"; id: number }
+  | { kind: "nation"; id: number }
+  | { kind: "factory"; id: CommodityId };
+let inspect: Inspecting | null = null;
 let notice = "";
 let expanded = false;
 let view: Rect;
@@ -331,8 +335,95 @@ const terrainRows = (land: Land) => `
   <dt>Desert</dt><dd>${whole(land.desert)} acres</dd>
   <dt><b>Total land</b></dt><dd><b>${whole(acresOf(land))} acres</b></dd>`;
 
+/**
+ * A factory's recipe and where its output goes.
+ *
+ * The production table says a factory is short of something; this says how much of it
+ * the factory wanted and how much arrived, which is the part §3.5 makes hard to work out
+ * by eye — a shallower consumer can take the whole supply before this one is asked.
+ */
+function factoryHtml(id: CommodityId): string {
+  const c = economy.graph.table.get(id);
+  const result = resolveDraft(draft);
+  const r = result.commodities[id];
+  if (!c || !r) return "";
+
+  const inputs = Object.entries(c.inputs).filter(([, coeff]) => coeff > 0);
+  const wanted = (coeff: number) => r.capacity * coeff;
+  const inputRows = inputs
+    .map(([input, coeff]) => {
+      const got = r.received[input] ?? 0;
+      const need = wanted(coeff);
+      const short = got < need - 1e-6;
+      return `<tr class="${short ? "deficit" : ""}">
+        <td class="name">${commodityLabel(input)}</td>
+        <td class="spare">${coeff} per ton</td>
+        <td>${whole(need)}</td>
+        <td class="${short ? "short" : ""}">${whole(got)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const consumers = (economy.graph.consumers.get(id) ?? [])
+    .map((consumer) => {
+      const other = economy.graph.table.get(consumer)!;
+      const oc = result.commodities[consumer]!;
+      const need = oc.capacity * (other.inputs[id] ?? 0);
+      const got = oc.received[id] ?? 0;
+      return { consumer, need, got };
+    })
+    .filter((x) => x.need > 0 || x.got > 0);
+
+  const consumerRows = consumers
+    .map((x) => `<tr>
+      <td class="name">${commodityLabel(x.consumer)}</td>
+      <td class="spare">${economy.graph.table.get(x.consumer)!.inputs[id]} per ton</td>
+      <td>${whole(x.need)}</td>
+      <td>${whole(x.got)}</td>
+    </tr>`)
+    .join("");
+
+  const endUse =
+    c.kind === "tool" ? `<dt>Feeds</dt><dd>${tierYield(c.tier!)} tons of food per ton</dd>`
+    : c.kind === "weapon" ? `<dt>Arms</dt><dd>${tierYield(c.tier!)} firepower per ton</dd>`
+    : "";
+  const land = c.terrain
+    ? `<dt>Draws on</dt><dd>${commodityLabel(c.terrain)}, ${whole(context().land[c.terrain])} acres</dd>`
+    : "";
+
+  return `<h2>${commodityLabel(id)}
+      <span class="right"><button type="button" data-act="close">Close</button></span></h2>
+    <dl>
+      <dt>Kind</dt><dd>${c.kind}${c.tier ? `, tier ${c.tier}` : ""}</dd>
+      ${land}
+      <dt>Workers</dt><dd>${workersFor(draft, context().population, context().land.farmland)[id] ?? 0}</dd>
+      <dt>Size</dt><dd>${whole(r.capacity)} tons, at this labour</dd>
+      <dt>Output</dt><dd>${whole(r.output)} tons</dd>
+      <dt>Surplus</dt>
+      <dd class="${r.surplus < -0.5 ? "short" : ""}">${whole(r.surplus)} tons</dd>
+      ${endUse}
+    </dl>
+    ${inputs.length === 0
+      ? '<p class="hint">A raw material. It is dug or cut, not made from anything.</p>'
+      : `<h3>Needs</h3>
+         <table class="affinity"><thead><tr>
+           <th class="name">Input</th><th>Recipe</th><th>Wanted</th><th>Got</th>
+         </tr></thead><tbody>${inputRows}</tbody></table>`}
+    ${consumers.length === 0
+      ? `<h3>Goes to</h3><p class="hint">Nothing consumes it. ${
+          c.kind === "weapon" ? "It arms your provinces." :
+          c.kind === "tool" ? "It feeds your farmland." : "It is the end of its chain."}</p>`
+      : `<h3>Goes to</h3>
+         <table class="affinity"><thead><tr>
+           <th class="name">Consumer</th><th>Recipe</th><th>Wants</th><th>Takes</th>
+         </tr></thead><tbody>${consumerRows}</tbody></table>
+         <p class="hint">Consumers are served shallowest first (§3.5), so the one nearest
+           the top of this list takes what it needs before the rest are asked.</p>`}`;
+}
+
 function inspectorHtml(): string {
   if (!inspect) return "";
+  if (inspect.kind === "factory") return factoryHtml(inspect.id);
   if (inspect.kind === "province") {
     const p = shownWorld().provinces[inspect.id];
     if (!p) return "";
@@ -457,7 +548,8 @@ function productionPanel(): string {
       }" data-row="${id}">
         <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
           title="Lock this factory against redistribution" /></td>
-        <td class="name">${commodityLabel(id)}</td>
+        <td class="name"><button type="button" class="link" data-factory="${id}"
+          >${commodityLabel(id)}</button></td>
         <td data-cell="cap" class="capacity">${whole(c.capacity)}</td>
         <td data-cell="out">${whole(c.output)}</td>
         <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
@@ -917,9 +1009,16 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("click", (event) => {
   const node = (event.target as HTMLElement).closest<HTMLElement>(
-    "[data-act], [data-step], [data-mstep], [data-nation]",
+    "[data-act], [data-step], [data-mstep], [data-nation], [data-factory]",
   );
   if (!node) return;
+
+  if (node.dataset.factory) {
+    const id = node.dataset.factory as CommodityId;
+    inspect = inspect?.kind === "factory" && inspect.id === id ? null : { kind: "factory", id };
+    render();
+    return;
+  }
 
   if (node.dataset.step) {
     const id = node.dataset.step as CommodityId;

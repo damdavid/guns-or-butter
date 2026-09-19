@@ -348,3 +348,19 @@ table.affinity td.name, table.affinity th.name { text-align: left; }
 table.affinity .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border: 1px solid var(--ink); vertical-align: -1px; margin-right: 0.2rem; }
 table.affinity .warm { color: var(--good); }
 table.affinity .cool { color: var(--warn); }
+
+/* A factory name is a way into its recipe, so it reads as one without becoming a
+   button-shaped thing in every row. */
+button.link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted var(--rule);
+  text-underline-offset: 2px;
+}
+button.link:hover { background: none; color: var(--accent); text-decoration-color: var(--accent); }
+tr.idle button.link { color: inherit; }

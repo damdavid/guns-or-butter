@@ -1865,6 +1865,21 @@ slipped into the bottom half, and Kuru's liking for the other two has *risen* fr
 to 0.35 while every other tie decayed. Warmth fades, the leader is resented, the poor
 draw together.
 
+#### A factory's recipe, on the factory
+
+Clicking a factory's name opens what it needs and where its output goes: each input with
+its coefficient, how much the factory *wanted* at this labour and how much actually
+arrived, then each consumer with how much it wants and how much it takes.
+
+This is the first place §3.5 is legible rather than merely documented. Lumber on a
+typical opening reads: Charcoal wants 115 and takes 84, Farm Tools wants 92 and **takes
+0**. The production table could only say that farm tools were short of lumber; this says
+that charcoal drank the lot before farm tools were asked, which is the whole of the
+priority rule in two lines of a table.
+
+Raws name the terrain they draw on and its acreage; tools and weapons name what a ton is
+worth in food or firepower.
+
 **One question left open: should another nation's affinity be visible at all?** It is
 shown for every nation at the moment. Most of it is inferable anyway, since the live
 terms are computed from the public standings — but the stored channels are history, and
