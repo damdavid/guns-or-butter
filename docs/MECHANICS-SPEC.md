@@ -1575,7 +1575,13 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
 6. **AI opponents** — next. [F] — nothing is recoverable about Crawford's AI beyond the
    union-declaration rule in §6.1. `balanceAllocation` is a starting point for the
    economic half of it, with the limits recorded in §10.2.
-7. **Diplomacy**, with §6.4 in from the start rather than §6.2.
+7. **Diplomacy** — **affinity done, unions not.** `src/affinity.ts` implements §6.4
+   whole: both channels, the decay, the saturating updates, the founding-neighbour seed,
+   the live terms and the underdog dividend, with the decision variable `W` exposed as
+   `Game.willingnessFrom`. War and the standings drive it today. The union events are
+   specified and implemented but nothing calls them, because unions themselves are the
+   part still missing — as is the acceptance test in §6.4, which measures unions per
+   turn and so cannot run yet.
 
 Three oracles are available while you build: the DOS build under emulation, the §8.1
 fixture, and the measurement CSVs via `npm run validate`.
@@ -1842,6 +1848,30 @@ The rest:
   selecting the province again and picking a different neighbour, and cancelling is
   selecting it and clicking it a second time.
 - Clicking a nation in the Rankings highlights its territory, as the nations list does.
+
+#### 10.1.7 Affinity arrives early, because the UI asked for it
+
+Showing a nation's affinity meant building §6.4, so diplomacy's first half landed ahead
+of the AI. The model is implemented to the spec's own numbers and tested against them:
+the four-profile table at N=8 reproduces to within 0.005, the underdog dividend settles
+at the predicted 0.335 liking and 0.307 trust, and the tuning constraint holds — a
+runaway leader's live penalty outweighs a 15-turn-old betrayal by more than 3x.
+
+Played out, it behaves as designed. On Thule/expert at turn 1, Ur's founding neighbours
+sit at +0.62 and the nations it does not touch at 0. By turn 11 Ur leads on population,
+and Kuru's regard for it has fallen from +0.34 to +0.14 with nothing having *happened*
+between them — that is live term 1 working. Meanwhile Kuru, Carthage and Tartessos have
+slipped into the bottom half, and Kuru's liking for the other two has *risen* from 0.30
+to 0.35 while every other tie decayed. Warmth fades, the leader is resented, the poor
+draw together.
+
+**One question left open: should another nation's affinity be visible at all?** It is
+shown for every nation at the moment. Most of it is inferable anyway, since the live
+terms are computed from the public standings — but the stored channels are history, and
+they say who has been attacked by whom and who has been poor together. Food output is
+already a national secret on the same panel, and there is a case for this being one too,
+or for showing rivals only the word and not the numbers. Worth settling when unions
+arrive and the information is actually worth something.
 
 ### 10.2 Limits of `balanceAllocation`
 

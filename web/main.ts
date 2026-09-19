@@ -361,7 +361,60 @@ function inspectorHtml(): string {
       <dd>${own
         ? whole(resolveDraft(draft).agriculture.food)
         : '<span class="secret">a national secret</span>'}</dd>
-    </dl>`;
+    </dl>
+    ${affinityHtml(r.nation)}`;
+}
+
+/** Where a value sits on the -1..1 scale, as a word. */
+function temper(w: number): { label: string; cls: string } {
+  if (w >= 0.5) return { label: "warm", cls: "warm" };
+  if (w >= 0.15) return { label: "friendly", cls: "warm" };
+  if (w > -0.15) return { label: "neutral", cls: "" };
+  if (w > -0.5) return { label: "wary", cls: "cool" };
+  return { label: "hostile", cls: "cool" };
+}
+
+/**
+ * How a nation regards the others (§6.4).
+ *
+ * Shown for every nation, not just your own: the standings are public, and the live
+ * terms are computed from them, so most of this is inferable anyway. What it does give
+ * away is the stored history — who has been attacked by whom, and who has been poor
+ * together. Whether that should be a national secret like food output is an open
+ * question (§10.1.7).
+ */
+function affinityHtml(nation: number): string {
+  const others = game.willingnessFrom(nation).filter((x) =>
+    game.world.provinces.some((p) => p.nation === x.nation));
+  if (others.length === 0) return "";
+  const rows = others
+    .map((x) => {
+      const t = temper(x.willingness);
+      const liking = game.affinity.liking[nation]![x.nation]!;
+      const trust = game.affinity.trust[nation]![x.nation]!;
+      return `<tr>
+        <td class="name"><span class="swatch" style="background:${fill(x.nation)}"></span>
+          ${nationName(x.nation)}${x.nation === you ? " (you)" : ""}</td>
+        <td class="${t.cls}">${t.label}</td>
+        <td class="spare" title="warmth, volatile">${liking.toFixed(2)}</td>
+        <td class="spare" title="reliability, durable">${trust.toFixed(2)}</td>
+        <td class="${t.cls}">${x.willingness >= 0 ? "+" : ""}${x.willingness.toFixed(2)}</td>
+      </tr>`;
+    })
+    .join("");
+  return `<h3>How ${nationName(nation)} regards the others</h3>
+    <table class="affinity">
+      <thead><tr>
+        <th class="name">Nation</th><th></th>
+        <th title="Warmth. Half-life four turns.">Like</th>
+        <th title="Reliability. Half-life fifteen turns.">Trust</th>
+        <th title="Willingness to join a union, all terms together">Net</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="hint">Winning breeds dislike and arming breeds distrust, both read off the
+      current standings &mdash; so this moves as the game does, not only when something
+      happens.</p>`;
 }
 
 function nationsHtml(): string {

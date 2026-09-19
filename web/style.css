@@ -340,3 +340,11 @@ tr.total td { border-top: 1px solid var(--rule); }
 .march-control button { padding: 0 0.35rem; min-width: 1.4rem; }
 .march-control .who { margin-right: 0.2rem; }
 .march-control .dismiss { margin-left: 0.3rem; font-size: 1rem; line-height: 1; padding: 0 0.3rem; }
+
+/* Affinity, in the nation inspector. */
+h3 { font-size: 0.78rem; margin: 0.8rem 0 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+table.affinity { table-layout: auto; font-size: 0.8rem; }
+table.affinity td.name, table.affinity th.name { text-align: left; }
+table.affinity .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border: 1px solid var(--ink); vertical-align: -1px; margin-right: 0.2rem; }
+table.affinity .warm { color: var(--good); }
+table.affinity .cool { color: var(--warn); }

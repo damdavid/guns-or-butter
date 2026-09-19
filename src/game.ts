@@ -20,6 +20,8 @@ import {
   type Orders,
   type Transfer,
 } from "./military.ts";
+import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type Standing }
+  from "./affinity.ts";
 import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, World } from "./types.ts";
@@ -63,6 +65,8 @@ export interface GameSnapshot {
   turn: number;
   allocations: Record<number, Allocation>;
   locked: Record<number, CommodityId[]>;
+  /** Absent in saves written before §6.4 existed; reseeded from the world if so. */
+  affinity?: Affinity;
 }
 
 /**
@@ -328,6 +332,8 @@ export class Game {
   orders: Record<number, MilitaryOrder> = {};
   /** Per nation: factories pinned against redistribution and against the player (§3.6). */
   locked: Record<number, CommodityId[]> = {};
+  /** How the nations regard each other (§6.4). */
+  affinity: Affinity;
 
   private production: Record<number, EconomyResult> = {};
   private transfers: Transfer[] = [];
@@ -339,7 +345,24 @@ export class Game {
   private constructor(world: World, economy: Economy) {
     this.world = world;
     this.economy = economy;
+    this.affinity = seedAffinity(world);
     this.startOfTurn = this.snapshot();
+  }
+
+  /** What each nation is worth as an ally, to `from` (§6.4). */
+  willingnessFrom(from: number): { nation: number; willingness: number }[] {
+    const standings: Standing[] = this.rankings().map((r) => ({
+      nation: r.nation,
+      population: r.population,
+      firepower: r.firepower,
+    }));
+    return standings
+      .filter((s) => s.nation !== from)
+      .map((s) => ({
+        nation: s.nation,
+        willingness: willingness(this.affinity, from, s.nation, standings, this.turn),
+      }))
+      .sort((a, b) => b.willingness - a.willingness);
   }
 
   static create(continent: string, level: Level): Game {
@@ -461,6 +484,7 @@ export class Game {
     this.world = structuredClone(this.startOfTurn.world);
     this.turn = this.startOfTurn.turn;
     this.allocations = structuredClone(this.startOfTurn.allocations);
+    if (this.startOfTurn.affinity) this.affinity = structuredClone(this.startOfTurn.affinity);
     // Locks deliberately survive an undo. They are a standing instruction about which
     // allocations to protect, not a move taken this turn, and losing them on undo would
     // defeat the point of having them.
@@ -477,6 +501,7 @@ export class Game {
       turn: this.turn,
       allocations: this.allocations,
       locked: this.locked,
+      affinity: this.affinity,
     });
   }
 
@@ -490,6 +515,7 @@ export class Game {
     game.turn = snapshot.turn;
     game.allocations = structuredClone(snapshot.allocations);
     game.locked = structuredClone(snapshot.locked ?? {});
+    if (snapshot.affinity) game.affinity = structuredClone(snapshot.affinity);
     game.startOfTurn = game.snapshot();
     return game;
   }
@@ -501,6 +527,14 @@ export class Game {
   }
 
   private beginTurn(): void {
+    // Affinity ages between turns: both channels decay toward neutral, and the bottom
+    // half by population draw closer together (§6.4).
+    const standings = this.rankings().filter((r) => r.provinces > 0);
+    const bottom = standings
+      .slice(-Math.floor(standings.length / 2))
+      .map((r) => r.nation);
+    agePairs(this.affinity, bottom);
+
     this.turn++;
     this.orders = {};
     this.production = {};
@@ -566,6 +600,16 @@ export class Game {
     this.world = result.world;
     this.transfers = result.transfers;
     this.battles = result.battles;
+
+    // War is the one affinity event that can fire today; the rest wait on unions (§6.4).
+    for (const battle of result.battles) {
+      for (const wave of battle.waves) {
+        const attacker = this.startOfTurn.world.provinces[wave.from]?.nation;
+        const defender = this.startOfTurn.world.provinces[battle.target]?.nation;
+        if (attacker === undefined || defender === undefined) continue;
+        applyAttack(this.affinity, defender, attacker, wave.captured, this.turn);
+      }
+    }
   }
 
   private report(): TurnReport {
