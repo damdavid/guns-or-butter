@@ -245,6 +245,25 @@ describe("production planning", () => {
     }
   });
 
+  it("never plans more workers than the nation has", () => {
+    // Found by fuzzing 48 games: a nation ground down to a handful of spare workers was
+    // handed a chain that only fitted in fractional people, and the plan was stored as
+    // an allocation whose shares summed to 2.5.
+    const world = generateWorld("Dahlia", "beginner");
+    for (const size of [0, 1, 2, 3, 5, 9, 40]) {
+      const { land } = nationState(world, 0);
+      const population = land.farmland + size;
+      // positionOf reads the provinces, so shrink them to make the workforce small.
+      const scaled = world.provinces.map((p) => p.nation === 0
+        ? { ...p, population: p.population * (population / nationState(world, 0).population) } : p);
+      const shrunk = { ...world, provinces: scaled };
+      const spare = Math.floor(Math.max(0, population - land.farmland));
+      const planned = planProduction(economy, shrunk, 0, {});
+      const total = Object.values(planned).reduce((sum, n) => sum + n, 0);
+      assert.ok(total <= spare, `${spare} spare workers but the plan needs ${total}`);
+    }
+  });
+
   it("only staffs what the difficulty offers (§1.1)", () => {
     const world = generateWorld("Thule", "intermediate");
     const { land, population } = nationState(world, 0);

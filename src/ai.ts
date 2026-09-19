@@ -267,7 +267,13 @@ function investInChain(
   const staff = staffChain(economy, state, id, tons);
   if (Object.keys(staff).some((c) => !allowed.has(c))) return null;
 
+  // Affordability is worked out in fractional people but staffing rounds every stage
+  // up, so a chain that fits on paper need not fit in whole workers: a nation down to
+  // two spare could "afford" a five-stage chain and then be handed a plan needing five.
+  // Scaling the other factories to nothing does not claw that back, and the overshoot
+  // was stored as an allocation whose shares summed past 1.
   const cost = Object.values(staff).reduce((sum, n) => sum + n, 0);
+  if (cost > spare) return null;
   const used = Object.values(current).reduce((sum, n) => sum + Math.max(0, n), 0);
   const fromOthers = Math.max(0, cost - Math.max(0, spare - used));
   const scale = used > 0 ? Math.max(0, (used - fromOthers) / used) : 0;
