@@ -8,6 +8,7 @@ import {
   affordableTons, bestFoodChain, chainDemand, chainWorkers, staffChain, workersForTons,
 } from "../src/planner.ts";
 import { Economy } from "../src/economy.ts";
+import { commoditiesFor } from "../src/data.ts";
 import { balanceAllocation, subsistenceAllocation, workersFor } from "../src/game.ts";
 import { generateWorld, nationState } from "../src/worldgen.ts";
 import type { Land } from "../src/types.ts";
@@ -137,6 +138,51 @@ describe("the balancer, rebuilt on the planner", () => {
     assert.ok(result.commodities["sword"]!.output > 0, "swords should actually be made");
     for (const input of ["iron-ore", "pig-iron", "charcoal"]) {
       assert.ok((balanced[input] ?? 0) > 0, `${input} should have been opened`);
+    }
+  });
+
+  it("staffs only what the difficulty offers, even with nothing to aim at (§1.1)", () => {
+    // With no finished good staffed the balancer falls back to feeding people, and that
+    // path went shopping in the whole table: a *beginner* economy large enough to afford
+    // one was handed tractors, diesel engines, petroleum and high-grade steel.
+    const land = { farmland: 4000, forest: 900, mountains: 900, desert: 300 };
+    const ctx = { level: "beginner" as const, land, population: 12000 };
+    const offered = new Set(commoditiesFor("beginner", economy.graph.table.keys()));
+    const balanced = balanceAllocation(economy, { lumber: 1 }, ctx);
+    for (const [id, share] of Object.entries(balanced)) {
+      if (share > 0) assert.ok(offered.has(id), `${id} is not offered at beginner`);
+    }
+  });
+
+  it("feeds a finished good that is locked", () => {
+    // A lock says "keep these workers here", not "stop supplying this". Locking the one
+    // factory you cared about excluded it from the goals, so the balancer built a food
+    // chain instead and the locked factory produced nothing at all.
+    const ctx = context("Kublai", "intermediate");
+    const balanced = balanceAllocation(economy, { sword: 0.4 }, ctx, ["sword"]);
+    const result = economy.resolve({
+      ...ctx,
+      workers: workersFor(balanced, ctx.population, ctx.land.farmland),
+    });
+    assert.ok(result.commodities["sword"]!.output > 0,
+      "a locked sword factory should still be supplied");
+  });
+
+  it("keeps the workforce whole however odd the request", () => {
+    const ctx = context("Kublai", "intermediate");
+    const cases: [Record<string, number>, string[]][] = [
+      [{ sword: 0.8, "farm-tools": 0.8 }, ["sword"]],   // over-committed and pinned
+      [{ "farm-tools": 0.5, musket: 0.5 }, []],         // one goal nobody can afford
+      [{ "farm-tools": -0.5, lumber: 0.5 }, []],        // a negative share
+      [{}, []],
+    ];
+    for (const [base, locked] of cases) {
+      const balanced = balanceAllocation(economy, base, ctx, locked);
+      const sum = Object.values(balanced).reduce((s, v) => s + Math.max(0, v), 0);
+      assert.ok(sum <= 1 + 1e-6, `shares sum to ${sum} for ${JSON.stringify(base)}`);
+      for (const [id, share] of Object.entries(balanced)) {
+        assert.ok(Number.isFinite(share) && share >= 0, `${id} is ${share}`);
+      }
     }
   });
 

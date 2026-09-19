@@ -157,6 +157,9 @@ export interface FoodPlan {
 /**
  * The tool chain that feeds the most people, and the labour to run it.
  *
+ * `allowed`, when given, must contain every commodity in the chain and not merely the
+ * tool at the end of it.
+ *
  * Which tool wins is a property of the ground, not of the difficulty: forest makes the
  * farm-tools chain cheap through lumber and charcoal, while mountains and coal favour
  * iron plows, whose tier-2 ton is worth two of food instead of one. Both were the right
@@ -173,7 +176,9 @@ export function bestFoodChain(
   let best: FoodPlan | null = null;
   for (const commodity of economy.graph.table.values()) {
     if (commodity.kind !== "tool") continue;
-    if (allowed && !allowed.has(commodity.id)) continue;
+    // The whole tree has to be on offer, not just the tool. Checking only the tool let
+    // a beginner economy be handed tractors, diesel engines and petroleum (§1.1).
+    if (allowed && [...chainDemand(economy, commodity.id, 1).keys()].some((c) => !allowed.has(c))) continue;
     // Tools past one ton per acre are wasted (§4.2), so there is nothing to search above.
     const tons = affordableTons(economy, ctx, commodity.id, workers, already, acres);
     if (tons <= 0) continue;

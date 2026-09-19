@@ -9,7 +9,7 @@
  * Phases are strictly sequential and there is no going back mid-turn — the original was
  * emphatic about that, and offered `Undo Turn` at the Rankings phase as the one relief.
  */
-import { AGRICULTURE } from "./data.ts";
+import { AGRICULTURE, commoditiesFor } from "./data.ts";
 import { Economy } from "./economy.ts";
 import {
   conqueror,
@@ -22,7 +22,7 @@ import {
 } from "./military.ts";
 import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type Standing }
   from "./affinity.ts";
-import { affordableTons, bestFoodChain, staffChain } from "./planner.ts";
+import { affordableTons, bestFoodChain, chainDemand, staffChain } from "./planner.ts";
 import { planOrders, planProduction } from "./ai.ts";
 import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
@@ -170,10 +170,11 @@ export function balanceAllocation(
   if (spare <= 0) return base;
 
   const pinned = new Set(locked);
+  const offered = new Set(commoditiesFor(context.level, economy.graph.table.keys()));
   const current = workersFor(base, context.population, context.land.farmland);
   const heldBack = [...pinned].reduce((sum, id) => sum + (current[id] ?? 0), 0);
-  const budget = Math.max(0, spare - heldBack);
-  if (budget <= 0) return base;
+  const cap = Math.max(0, spare - heldBack);
+  if (cap <= 0) return base;
 
   // A pinned factory keeps running, so its tonnage is supply the chains need not buy.
   const already = new Map<CommodityId, number>();
@@ -183,52 +184,80 @@ export function balanceAllocation(
   }
 
   // Nothing consumes a finished good, so those are the ends the player is working
-  // toward; everything else is only ever a means to one of them.
+  // toward; everything else is only ever a means to one of them. A chain reaching
+  // outside what the difficulty offers cannot be built at all (§1.1).
   const goals = Object.keys(current).filter(
     (id) =>
-      !pinned.has(id) &&
       (current[id] ?? 0) > 0 &&
-      (economy.graph.consumers.get(id)?.length ?? 0) === 0,
+      (economy.graph.consumers.get(id)?.length ?? 0) === 0 &&
+      [...chainDemand(economy, id, 1).keys()].every((c) => offered.has(c)),
   );
 
-  const planned: Record<CommodityId, number> = {};
-  const spend = (good: CommodityId, workers: number): number => {
-    const tons = affordableTons(economy, { ...context }, good, workers, already);
-    if (tons <= 0) return 0;
-    const staff = staffChain(economy, { ...context }, good, tons, already);
-    let used = 0;
-    for (const [id, count] of Object.entries(staff)) {
-      if (pinned.has(id)) continue;
-      planned[id] = (planned[id] ?? 0) + count;
-      used += count;
-    }
-    return used;
+  // Kept per goal rather than accumulated, so that re-solving one chain replaces its
+  // labour instead of stacking a second copy of it on top.
+  const plans = new Map<CommodityId, Record<CommodityId, number>>();
+  const costOf = (good: CommodityId) =>
+    Object.values(plans.get(good) ?? {}).reduce((sum, n) => sum + n, 0);
+  const staff = (good: CommodityId, tons: number) => {
+    const workers = tons > 0 ? staffChain(economy, context, good, tons, already) : {};
+    for (const id of pinned) delete workers[id];
+    plans.set(good, workers);
   };
 
-  if (goals.length === 0) {
+  // A locked factory keeps its labour, so what it can make is already decided; its
+  // inputs still have to be bought or it stands there producing nothing. Leaving these
+  // out meant locking the one factory you cared about was the way to starve it.
+  let budget = cap;
+  for (const good of goals) {
+    if (!pinned.has(good)) continue;
+    staff(good, economy.capacity({ ...context, workers: current }, good));
+    budget = Math.max(0, budget - costOf(good));
+  }
+
+  const open = goals.filter((good) => !pinned.has(good));
+  if (open.length > 0) {
+    const weight = open.reduce((sum, id) => sum + (current[id] ?? 0), 0);
+    const share = new Map(open.map((good) => [good, (budget * (current[good] ?? 0)) / weight]));
+    const buy = (good: CommodityId) =>
+      staff(good, affordableTons(economy, context, good, share.get(good)!, already));
+    for (const good of open) buy(good);
+
+    // A chain nobody could afford leaves its share unspent; offer it to the others
+    // rather than let people stand idle.
+    const spent = () => open.reduce((sum, good) => sum + costOf(good), 0);
+    for (const good of open) {
+      const left = budget - spent();
+      if (left <= 1) break;
+      share.set(good, share.get(good)! + left);
+      buy(good);
+    }
+  } else if (plans.size === 0) {
     // Nobody has asked for anything makeable, so feed people: that is the one goal a
     // nation always has, and the manual's opening advice besides.
-    const plan = bestFoodChain(economy, { ...context }, budget, undefined, already);
+    const plan = bestFoodChain(economy, context, budget, offered, already);
     if (!plan) return base;
-    for (const [id, count] of Object.entries(plan.workers)) {
-      if (!pinned.has(id)) planned[id] = count;
-    }
-  } else {
-    const weight = goals.reduce((sum, id) => sum + (current[id] ?? 0), 0);
-    let left = budget;
-    for (const good of goals) left -= spend(good, (budget * (current[good] ?? 0)) / weight);
-    // A chain that could not be afforded at all leaves its share unspent; hand the
-    // remainder to the others rather than let people stand idle.
-    if (left > 1) for (const good of goals) left -= spend(good, left);
+    staff(plan.good, plan.tons);
+  }
+
+  const planned: Record<CommodityId, number> = {};
+  for (const workers of plans.values()) {
+    for (const [id, count] of Object.entries(workers)) planned[id] = (planned[id] ?? 0) + count;
   }
 
   // Staffing rounds every stage up, so the plan can overshoot by a worker per factory.
   const total = Object.values(planned).reduce((sum, count) => sum + count, 0);
-  const scale = total > budget ? budget / total : 1;
+  const scale = total > cap ? cap / total : 1;
 
+  // Pinned shares pass through untouched, save for the same normalisation `workersFor`
+  // applies: an allocation already committed past 1 would otherwise hand its locked
+  // shares back at face value and push the total past 1 all over again.
+  const committed = Object.values(base).reduce((sum, v) => sum + Math.max(0, v), 0);
+  const normalise = committed > 1 ? 1 / committed : 1;
   const next: Record<CommodityId, number> = {};
-  for (const id of pinned) if ((base[id] ?? 0) > 0) next[id] = base[id]!;
-  for (const [id, count] of Object.entries(planned)) next[id] = (count * scale) / spare;
+  for (const id of pinned) if ((base[id] ?? 0) > 0) next[id] = base[id]! * normalise;
+  for (const [id, count] of Object.entries(planned)) {
+    if (!pinned.has(id)) next[id] = (count * scale) / spare;
+  }
   return next;
 }
 
