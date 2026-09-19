@@ -1865,6 +1865,22 @@ slipped into the bottom half, and Kuru's liking for the other two has *risen* fr
 to 0.35 while every other tie decayed. Warmth fades, the leader is resented, the poor
 draw together.
 
+#### Firepower gets a compact form
+
+Armies are the one quantity that can run past five digits — 268,510 in a turn is
+reachable on a big expert economy — and the map has no room for that under a capital.
+`compact()` in `src/format.ts` changes unit only when the mantissa would reach five
+digits: 9999, then 10k, 2000k, 20m, 10b, 10t.
+
+`Intl.NumberFormat`'s compact notation is the more standard choice and was rejected on
+purpose: it renders 1200 and 1249 both as "1.2K", and the difference between two armies
+that size decides the battle between them. Four significant figures is the least this
+game can carry.
+
+Firepower only. Tons and workers stay exact, because balancing an economy needs the
+difference between 1200 and 1249 and a battle does not, and the number inputs stay plain
+numeric so they remain editable.
+
 #### A factory's recipe, on the factory
 
 Clicking a factory's name opens what it needs and where its output goes: each input with

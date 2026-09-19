@@ -22,6 +22,7 @@ import {
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
+import { compact } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
 import { generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
@@ -61,6 +62,13 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
  * whole tons you would have to find to cover it.
  */
 const whole = (n: number) => String(Math.floor(n));
+
+/**
+ * Firepower, compactly (§10.1.7). Armies are the one quantity that can run to five
+ * digits and beyond; tons and workers stay exact, because balancing an economy needs
+ * the difference between 1200 and 1249 and a battle does not.
+ */
+const power = compact;
 
 const nationName = (id: number) => game.world.nations[id]?.name ?? `Nation ${id}`;
 
@@ -201,7 +209,7 @@ function marchControlHtml(): string {
       aria-label="firepower sent from ${p.name}" /><button
       type="button" data-mstep="${p.id}" data-by="1">+</button>
     <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
-    <span class="spare">of ${cap}</span>
+    <span class="spare">of ${power(cap)}</span>
     <button type="button" data-act="dismiss" class="dismiss"
       title="The order stands. The next click on the map starts a new one.">Done</button>`;
 }
@@ -431,7 +439,7 @@ function inspectorHtml(): string {
       <dl>
         <dt>Ruled by</dt><dd>${nationName(p.nation)}${p.nation === you ? " (you)" : ""}</dd>
         <dt>Population</dt><dd>${whole(p.population)}</dd>
-        <dt>Military power</dt><dd>${whole(p.firepower)}</dd>
+        <dt>Military power</dt><dd>${power(p.firepower)}</dd>
         ${terrainRows(p.land)}
         <dt>Coast</dt><dd>${p.coastal ? "yes" : "inland"}</dd>
         <dt>Neighbours</dt><dd>${p.neighbours.length} (${p.neighbours.filter((n) => n.road).length} by road)</dd>
@@ -444,7 +452,7 @@ function inspectorHtml(): string {
   return `<h2>${nationName(r.nation)}${own ? " (you)" : ""}
       <span class="right"><button type="button" data-act="close">Close</button></span></h2>
     <dl>
-      <dt>Military strength</dt><dd>${whole(r.firepower)}</dd>
+      <dt>Military strength</dt><dd>${power(r.firepower)}</dd>
       <dt>Population</dt><dd>${whole(r.population)}</dd>
       <dt>Provinces</dt><dd>${r.provinces}</dd>
       ${terrainRows(r.land)}
@@ -626,7 +634,7 @@ function totalsHtml(result: EconomyResult, land: Land): string {
   const growing = result.nextPopulation >= result.population;
   return `<b>Population:</b> ${whole(result.population)} &rarr;
       <span class="${growing ? "growing" : "starving"}">${whole(result.nextPopulation)}</span><br />
-    <b>Firepower:</b> ${whole(result.firepower)} this turn<br />
+    <b>Firepower:</b> ${power(result.firepower)} this turn<br />
     <span class="spare"><b>Land:</b> ${whole(land.farmland)} farm, ${whole(land.forest)} forest,
       ${whole(land.mountains)} mountain, ${whole(land.desert)} desert</span>`;
 }
@@ -718,7 +726,7 @@ function ordersPanel(): string {
       const send = sentFrom(p.id);
       const off = target === null ? "disabled" : "";
       return `<tr>
-        <td>${p.name}</td><td>${whole(p.firepower)}</td>
+        <td>${p.name}</td><td>${power(p.firepower)}</td>
         <td>${target === null ? '<span class="spare">holding</span>'
           : game.world.provinces[target]!.nation === you
             ? `reinforce ${game.world.provinces[target]!.name}`
@@ -771,7 +779,7 @@ function rankingsPanel(): string {
     }" data-nation="${r.nation}">
       <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
       <dd>${whole(r.population)} people &middot; ${r.provinces} provinces
-        &middot; ${whole(r.firepower)} firepower</dd>
+        &middot; ${power(r.firepower)} firepower</dd>
     </div>`)
     .join("");
   return `<h2>Rankings <small>end of turn ${game.turn}</small></h2>
@@ -792,7 +800,7 @@ function replaySteps(before: World, report: TurnReport): Step[] {
   for (const t of report.transfers) {
     steps.push({
       from: t.from, to: t.to, force: t.firepower, hostile: false, taken: false,
-      text: `${whole(t.firepower)} marches ${name(t.from)} &rarr; ${name(t.to)}`,
+      text: `${power(t.firepower)} marches ${name(t.from)} &rarr; ${name(t.to)}`,
       apply: (w) => { w.provinces[t.to]!.firepower += t.firepower; },
     });
   }
@@ -803,10 +811,10 @@ function replaySteps(before: World, report: TurnReport): Step[] {
       const nation = before.provinces[wave.from]!.nation;
       steps.push({
         from: wave.from, to: b.target, force: wave.committed, hostile: true, taken: captured,
-        text: `${whole(wave.committed)} from ${name(wave.from)} attacks ${name(b.target)} ` +
-          `${wave.viaRoad ? "by road" : "across country, quartered"}: ${whole(wave.effective)} ` +
-          `against ${whole(wave.defenceBefore)} &mdash; ` +
-          (captured ? `<b>taken</b>, ${whole(wave.survivors)} hold it` : "repulsed"),
+        text: `${power(wave.committed)} from ${name(wave.from)} attacks ${name(b.target)} ` +
+          `${wave.viaRoad ? "by road" : "across country, quartered"}: ${power(wave.effective)} ` +
+          `against ${power(wave.defenceBefore)} &mdash; ` +
+          (captured ? `<b>taken</b>, ${power(wave.survivors)} hold it` : "repulsed"),
         apply: (w) => {
           const target = w.provinces[b.target]!;
           if (captured) {
@@ -836,7 +844,7 @@ function replaySteps(before: World, report: TurnReport): Step[] {
 async function travel(step: Step, world: World): Promise<void> {
   const a = world.provinces[step.from]!.capital;
   const b = world.provinces[step.to]!.capital;
-  const label = whole(step.force);
+  const label = power(step.force);
   const start = performance.now();
   for (;;) {
     const t = Math.min(1, (performance.now() - start) / MARCH_MS);
