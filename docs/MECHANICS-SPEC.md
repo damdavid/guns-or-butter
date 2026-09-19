@@ -1828,12 +1828,19 @@ The rest:
   into execution (§1.2.1), so the winner is known before the replay has drawn a single
   arrow — the splash was appearing over the top of the battle that won the game.
 - **The march control is docked in the corner of the map**, naming both ends of the
-  march, with a close button. It first sat on the province it was ordering, which put it
+  march, with a Done button. It first sat on the province it was ordering, which put it
   over the ground the player was trying to read and, on a small continent, over the
-  target as well. Closing it only puts it away — the order stands, and the arrow stays
-  on the map. Cancelling an order is still clicking the province itself. The province
-  stays selected after an order, so the control can be adjusted without hunting for the
-  table row.
+  target as well.
+
+  **Placing an order ends the selection.** Keeping the province selected afterwards made
+  the next click ambiguous: on a neighbour it quietly retargeted the march, anywhere else
+  it started a new one, and nothing on screen said which. Now choosing a target finishes
+  the order, and the map returns to its resting state — the next click on any armed
+  province begins a fresh one. The control stays open on the order just placed so its
+  size can still be set, and the hint says so in as many words. Done only puts the
+  control away; the order stands and its arrow stays on the map. Retargeting is
+  selecting the province again and picking a different neighbour, and cancelling is
+  selecting it and clicking it a second time.
 - Clicking a nation in the Rankings highlights its territory, as the nations list does.
 
 ### 10.2 Limits of `balanceAllocation`

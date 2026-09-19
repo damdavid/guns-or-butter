@@ -32,8 +32,17 @@ const you = 0;
 let game: Game;
 /** Uncommitted allocation, so a change can be previewed before it is applied. */
 let draft: Allocation = subsistenceAllocation();
-/** Province being given orders, in the orders phase. */
+/** Province awaiting a target click, in the orders phase. */
 let selected: number | null = null;
+/**
+ * Province whose placed order the control is showing.
+ *
+ * Kept apart from `selected` so that placing an order *ends* the selection. While a
+ * province was still selected afterwards, a click on one of its neighbours quietly
+ * retargeted the march instead of starting a new one, and there was no way to tell
+ * which a click would do.
+ */
+let ordering: number | null = null;
 /** What the inspector is showing. */
 let inspect: { kind: "province" | "nation"; id: number } | null = null;
 let notice = "";
@@ -148,11 +157,13 @@ function drawMap(): void {
   }
   el("map-hint").textContent = replaying
     ? "Replaying the turn's marches."
-    : game.phase === "military-orders"
-      ? selected === null
-        ? "Click an armed province to order it. Solid outlines are roads; dashed cost three quarters of your strength."
-        : `Ordering ${game.world.provinces[selected]!.name}. Click a neighbour — yours to reinforce, anyone else's to attack — or itself to hold.`
-      : "Click a province for its details. Drag to pan, scroll to zoom.";
+    : game.phase !== "military-orders"
+      ? "Click a province for its details. Drag to pan, scroll to zoom."
+      : selected !== null
+        ? `Ordering ${game.world.provinces[selected]!.name}. Click a neighbour — yours to reinforce, anyone else's to attack — or itself to hold.`
+        : ordering !== null
+          ? `${game.world.provinces[ordering]!.name} is ordered. Set the size below, or click any armed province to order the next one.`
+          : "Click an armed province to order it. Solid outlines are roads; dashed cost three quarters of your strength.";
 }
 
 /** Cheap view update: the geometry has not changed, only the window onto it. */
@@ -171,13 +182,13 @@ function applyView(): void {
  * costs a glance and covers nothing that moves.
  */
 function marchControlHtml(): string {
-  if (selected === null || game.phase !== "military-orders" || replaying) return "";
-  const p = game.world.provinces[selected];
-  const order = game.orders[selected];
+  if (ordering === null || game.phase !== "military-orders" || replaying) return "";
+  const p = game.world.provinces[ordering];
+  const order = game.orders[ordering];
   if (!p || !order || order.target === null) return "";
   const target = game.world.provinces[order.target]!;
   const cap = Math.floor(p.firepower);
-  const send = sentFrom(selected);
+  const send = sentFrom(ordering);
   // Named at both ends: the control is no longer beside the province it is ordering.
   return `<span class="who">${p.name} &rarr;
       ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</span>
@@ -188,7 +199,7 @@ function marchControlHtml(): string {
     <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
     <span class="spare">of ${cap}</span>
     <button type="button" data-act="dismiss" class="dismiss"
-      title="Close. The order stands.">&times;</button>`;
+      title="The order stands. The next click on the map starts a new one.">Done</button>`;
 }
 
 const MIN_VIEW = 80;
@@ -277,16 +288,22 @@ addEventListener("pointerup", (event) => {
     const orderable = (q: number) =>
       game.world.provinces[q]!.nation === you && game.world.provinces[q]!.firepower >= 1;
     if (selected === null) {
-      if (orderable(id)) selected = id;
+      if (orderable(id)) {
+        selected = id;
+        ordering = null;
+      }
     } else if (id === selected) {
       game.setOrder(selected, { marchFraction: game.orders[selected]?.marchFraction ?? 1, target: null });
       selected = null;
     } else if (legalTargets().has(id)) {
-      // The province stays selected, so the control that appears beside it can be used
-      // without hunting for the row in the table.
       game.setOrder(selected, { marchFraction: game.orders[selected]?.marchFraction ?? 1, target: id });
+      // The order is placed, so the selection is finished. The control stays open on it
+      // for the size of the march; the next click on the map starts fresh.
+      ordering = selected;
+      selected = null;
     } else if (orderable(id)) {
       selected = id;
+      ordering = null;
     }
   }
   render();
@@ -880,8 +897,8 @@ document.addEventListener("click", (event) => {
       inspect = null;
       break;
     case "dismiss":
-      // Only puts the control away. Cancelling is clicking the province itself.
-      selected = null;
+      // Only puts the control away. Cancelling an order is clicking its province twice.
+      ordering = null;
       break;
     case "expand":
       expanded = !expanded;
@@ -928,6 +945,7 @@ el("advance").addEventListener("click", async () => {
     replayLog = [];
   }
   selected = null;
+  ordering = null;
   render();
 
   if (animate && before && report) {
@@ -945,6 +963,7 @@ el("undo").addEventListener("click", () => {
   draft = game.allocations[you] ?? draft;
   replayLog = [];
   selected = null;
+  ordering = null;
   inspect = null;
   notice = "Turn undone.";
   render();
@@ -1003,6 +1022,7 @@ function begin(continent: string, nation: string, level: Level): void {
   draft = subsistenceAllocation();
   view = continentBounds(game.world);
   selected = null;
+  ordering = null;
   inspect = null;
   replayLog = [];
   notice = "";
@@ -1035,6 +1055,7 @@ el("resume").addEventListener("click", () => {
   draft = found.draft ?? game.allocations[you] ?? subsistenceAllocation();
   view = continentBounds(game.world);
   selected = null;
+  ordering = null;
   inspect = null;
   replayLog = [];
   notice = `Resumed at the start of turn ${game.turn}.`;
