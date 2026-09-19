@@ -316,3 +316,104 @@ describe("feeding the economy (§3)", () => {
     }
   });
 });
+
+describe("roads on a frontier (§2)", () => {
+  const LEVELS = ["beginner", "intermediate", "expert"] as const;
+
+  /** Every spoke once, with whether it is a road and whether it crosses a frontier. */
+  const spokes = (world: ReturnType<typeof generateWorld>) =>
+    world.provinces.flatMap((p) =>
+      p.neighbours
+        .filter((n) => n.province > p.id)
+        .map((n) => ({
+          road: n.road,
+          frontier: world.provinces[n.province]!.nation !== p.nation,
+        })),
+    );
+
+  const CONTINENTS = ["Saturday", "Kittycat", "Kublai", "Ganthor", "Thule", "Vashti", "Ur", "Nineveh"];
+
+  it("leaves at most two thirds of any frontier's spokes paved", () => {
+    // A road is the difference between a 20-firepower threshold and a 50-firepower one
+    // (§5.5), so a frontier that is mostly road cannot be held at all.
+    for (const name of CONTINENTS) {
+      for (const level of LEVELS) {
+        const edges = spokes(generateWorld(name, level));
+        const frontier = edges.filter((e) => e.frontier);
+        if (frontier.length === 0) continue;
+        const paved = frontier.filter((e) => e.road).length / frontier.length;
+        assert.ok(
+          paved <= WORLDGEN.maxBorderRoadFraction + 1e-9,
+          `${name}/${level}: ${(paved * 100).toFixed(1)}% of the frontier is road`,
+        );
+      }
+    }
+  });
+
+  it("leaves at most two thirds of any nation's border provinces with a road out", () => {
+    // The measure a player actually counts, and not the same as the spoke share: a
+    // nation can sit well under the spoke cap and still have a road on six of its seven
+    // border provinces. Saturday/expert did exactly that — Corinth, 6 of 7.
+    for (const name of CONTINENTS) {
+      for (const level of LEVELS) {
+        const world = generateWorld(name, level);
+        for (const nation of world.nations) {
+          const border = world.provinces.filter(
+            (p) => p.nation === nation.id &&
+              p.neighbours.some((n) => world.provinces[n.province]!.nation !== nation.id),
+          );
+          if (border.length === 0) continue;
+          const out = border.filter((p) =>
+            p.neighbours.some((n) => n.road && world.provinces[n.province]!.nation !== nation.id));
+          assert.ok(
+            out.length <= Math.floor(border.length * WORLDGEN.maxBorderRoadFraction),
+            `${name}/${level} ${nation.name}: ${out.length} of ${border.length} border ` +
+            `provinces have a road out, cap is ${Math.floor(border.length * WORLDGEN.maxBorderRoadFraction)}`,
+          );
+        }
+      }
+    }
+  });
+
+  it("keeps the case that prompted the rule under the cap", () => {
+    const world = generateWorld("Saturday", "expert");
+    const corinth = world.nations.find((n) => n.name === "Corinth")!;
+    const border = world.provinces.filter(
+      (p) => p.nation === corinth.id &&
+        p.neighbours.some((n) => world.provinces[n.province]!.nation !== corinth.id),
+    );
+    const out = border.filter((p) =>
+      p.neighbours.some((n) => n.road && world.provinces[n.province]!.nation !== corinth.id));
+    assert.equal(border.length, 7, "the reported case had seven border provinces");
+    assert.ok(out.length <= 4, `${out.length} of 7 have a road out; two thirds of seven is four`);
+  });
+
+  it("still lays roads on about half the continent", () => {
+    // Capping the frontier trades each demoted road for an interior one, so the
+    // dialogue's "oh, only half" survives the cap.
+    for (const name of ["Saturday", "Kittycat", "Kublai", "Thule"]) {
+      for (const level of LEVELS) {
+        const edges = spokes(generateWorld(name, level));
+        const share = edges.filter((e) => e.road).length / edges.length;
+        assert.ok(
+          Math.abs(share - WORLDGEN.roadFraction) < 0.06,
+          `${name}/${level}: ${(share * 100).toFixed(1)}% of all spokes are road`,
+        );
+      }
+    }
+  });
+
+  it("still leaves a frontier crossable somewhere", () => {
+    // Capping roads must not wall a nation in: an unreachable enemy is an unwinnable
+    // game, and §5.5 keeps cross-country attacks possible anyway.
+    for (const name of ["Kittycat", "Kublai", "Thule", "Vashti"]) {
+      const world = generateWorld(name, "intermediate");
+      for (const nation of world.nations) {
+        const own = world.provinces.filter((p) => p.nation === nation.id);
+        const reachable = own.some((p) =>
+          p.neighbours.some((n) => world.provinces[n.province]!.nation !== nation.id));
+        assert.ok(reachable, `${name}: nation ${nation.id} borders nobody`);
+      }
+    }
+  });
+});

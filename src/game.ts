@@ -20,6 +20,9 @@ import {
   type Orders,
   type Transfer,
 } from "./military.ts";
+import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type Standing }
+  from "./affinity.ts";
+import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, World } from "./types.ts";
 
@@ -62,6 +65,8 @@ export interface GameSnapshot {
   turn: number;
   allocations: Record<number, Allocation>;
   locked: Record<number, CommodityId[]>;
+  /** Absent in saves written before §6.4 existed; reseeded from the world if so. */
+  affinity?: Affinity;
 }
 
 /**
@@ -211,6 +216,65 @@ export function balanceAllocation(
   return current;
 }
 
+/**
+ * Move one factory to a whole number of workers, taking the difference from the other
+ * unlocked factories pro rata — in whole workers, not in fractions (§3.6).
+ *
+ * `reallocate` works in shares, which is what the model stores, but the player is moving
+ * people. Rounding a share back into integers could take a worker off a factory the
+ * player had not touched while handing two to another, so lowering sulfur by one could
+ * lower charcoal by one as well. Working in integers makes the rule visible: raising a
+ * factory lowers exactly one other, and lowering it raises exactly one other.
+ *
+ * `workforce` is the labour available to spend. Pass it and the idle pool is a
+ * participant: labour stranded as unspent can be drawn back out, which is the only way a
+ * factory can grow when every other factory is locked. Leave it out and the function
+ * merely conserves whatever it was given.
+ */
+export function moveWorkers(
+  current: Readonly<Record<CommodityId, number>>,
+  id: CommodityId,
+  want: number,
+  locked: readonly CommodityId[] = [],
+  workforce?: number,
+): Record<CommodityId, number> {
+  const pinned = new Set(locked);
+  if (pinned.has(id)) return { ...current };
+
+  const keys = Object.keys(current);
+  const others = keys.filter((k) => k !== id && !pinned.has(k));
+  const lockedTotal = keys.filter((k) => pinned.has(k)).reduce((s, k) => s + (current[k] ?? 0), 0);
+  const total = keys.reduce((s, k) => s + (current[k] ?? 0), 0);
+
+  // Everything the unlocked factories and the idle pool have between them.
+  const available = Math.max(0, (workforce ?? total) - lockedTotal);
+  const target = Math.max(0, Math.min(Math.round(want), available));
+  const pool = available - target;
+
+  const next: Record<CommodityId, number> = { ...current, [id]: target };
+  // Nowhere to put the remainder but the idle pool, which `target` can draw back out.
+  if (others.length === 0) return next;
+
+  const othersTotal = others.reduce((s, k) => s + (current[k] ?? 0), 0);
+  // Largest remainder, so the pool is handed out whole and in proportion.
+  const share = others.map((k) => ({
+    k,
+    exact: othersTotal > 0 ? ((current[k] ?? 0) / othersTotal) * pool : pool / others.length,
+  }));
+  let handed = 0;
+  for (const s of share) {
+    next[s.k] = Math.floor(s.exact);
+    handed += next[s.k]!;
+  }
+  const byRemainder = [...share].sort(
+    (a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)),
+  );
+  for (let i = 0; handed < pool && i < byRemainder.length; i++, handed++) {
+    next[byRemainder[i]!.k] = (next[byRemainder[i]!.k] ?? 0) + 1;
+  }
+  return next;
+}
+
 /** Convert labour fractions into the worker counts the economy takes. */
 export function workersFor(
   allocation: Allocation,
@@ -219,7 +283,9 @@ export function workersFor(
 ): Record<CommodityId, number> {
   // Agricultural labour is locked at one worker per acre and is not the player's to
   // spend (§4.1), so only the remainder can be allocated.
-  const spare = Math.max(0, population - farmland * AGRICULTURE.workersPerAcre);
+  // Whole people. Population is continuous (§4.4) but a fraction of a worker cannot be
+  // put in a factory, and a fractional remainder showed up as unspendable idle labour.
+  const spare = Math.floor(Math.max(0, population - farmland * AGRICULTURE.workersPerAcre));
   const total = Object.values(allocation).reduce((s, v) => s + Math.max(0, v), 0);
   if (total <= 0 || spare <= 0) return {};
   // Fractions summing to 1 or less are taken literally, leaving the remainder idle;
@@ -231,7 +297,12 @@ export function workersFor(
   // loses up to one worker per factory and reports the dust as idle labour, which is
   // both wrong and maddening: the screen offers workers that cannot be spent because in
   // fraction terms the allocation is already fully committed.
-  const target = Math.floor(spare * Math.min(total, 1));
+  // The epsilon is not cosmetic. The UI works in whole workers and stores them back as
+  // `workers / spare`, and those fractions re-add to 0.9999999999 rather than 1 often
+  // enough to matter: the floor then swallowed a worker, and because largest remainder
+  // decides who loses it, pressing + on a factory could stop moving it at all. Typing
+  // the number worked, which is what made the bug look random.
+  const target = Math.floor(spare * Math.min(total, 1) + 1e-9);
   const wanted = Object.entries(allocation)
     .filter(([, fraction]) => fraction > 0)
     .map(([id, fraction]) => ({ id, exact: fraction * scale * spare }));
@@ -261,6 +332,8 @@ export class Game {
   orders: Record<number, MilitaryOrder> = {};
   /** Per nation: factories pinned against redistribution and against the player (§3.6). */
   locked: Record<number, CommodityId[]> = {};
+  /** How the nations regard each other (§6.4). */
+  affinity: Affinity;
 
   private production: Record<number, EconomyResult> = {};
   private transfers: Transfer[] = [];
@@ -272,7 +345,24 @@ export class Game {
   private constructor(world: World, economy: Economy) {
     this.world = world;
     this.economy = economy;
+    this.affinity = seedAffinity(world);
     this.startOfTurn = this.snapshot();
+  }
+
+  /** What each nation is worth as an ally, to `from` (§6.4). */
+  willingnessFrom(from: number): { nation: number; willingness: number }[] {
+    const standings: Standing[] = this.rankings().map((r) => ({
+      nation: r.nation,
+      population: r.population,
+      firepower: r.firepower,
+    }));
+    return standings
+      .filter((s) => s.nation !== from)
+      .map((s) => ({
+        nation: s.nation,
+        willingness: willingness(this.affinity, from, s.nation, standings, this.turn),
+      }))
+      .sort((a, b) => b.willingness - a.willingness);
   }
 
   static create(continent: string, level: Level): Game {
@@ -373,13 +463,15 @@ export class Game {
         this.phase = "military-orders";
         return null;
       case "military-orders":
-        // Orders freeze here; execution is a separate phase so a UI can animate it.
-        this.phase = "military-execution";
-        return null;
-      case "military-execution":
+        // Combat resolves on the way *into* execution, not out of it, so that the
+        // execution phase is the one the player watches it happen in. A UI that animates
+        // the marches has the whole report in hand for the length of that phase (§1.2.1).
         this.resolveMilitaryPhase();
-        this.phase = "rankings";
+        this.phase = "military-execution";
         return this.report();
+      case "military-execution":
+        this.phase = "rankings";
+        return null;
       case "rankings":
         this.beginTurn();
         return null;
@@ -392,6 +484,7 @@ export class Game {
     this.world = structuredClone(this.startOfTurn.world);
     this.turn = this.startOfTurn.turn;
     this.allocations = structuredClone(this.startOfTurn.allocations);
+    if (this.startOfTurn.affinity) this.affinity = structuredClone(this.startOfTurn.affinity);
     // Locks deliberately survive an undo. They are a standing instruction about which
     // allocations to protect, not a move taken this turn, and losing them on undo would
     // defeat the point of having them.
@@ -408,6 +501,7 @@ export class Game {
       turn: this.turn,
       allocations: this.allocations,
       locked: this.locked,
+      affinity: this.affinity,
     });
   }
 
@@ -421,6 +515,7 @@ export class Game {
     game.turn = snapshot.turn;
     game.allocations = structuredClone(snapshot.allocations);
     game.locked = structuredClone(snapshot.locked ?? {});
+    if (snapshot.affinity) game.affinity = structuredClone(snapshot.affinity);
     game.startOfTurn = game.snapshot();
     return game;
   }
@@ -432,6 +527,14 @@ export class Game {
   }
 
   private beginTurn(): void {
+    // Affinity ages between turns: both channels decay toward neutral, and the bottom
+    // half by population draw closer together (§6.4).
+    const standings = this.rankings().filter((r) => r.provinces > 0);
+    const bottom = standings
+      .slice(-Math.floor(standings.length / 2))
+      .map((r) => r.nation);
+    agePairs(this.affinity, bottom);
+
     this.turn++;
     this.orders = {};
     this.production = {};
@@ -487,10 +590,26 @@ export class Game {
 
   private resolveMilitaryPhase(): void {
     const orders: Orders = this.orders;
-    const result = resolveMilitary(this.world, orders);
+    // Seeded per world and turn, so the tie-break draw is the same one on a replay after
+    // Undo Turn. A draw that moved under undo would be a worse rule than a fixed order.
+    const result = resolveMilitary(
+      this.world,
+      orders,
+      makeRng(`${this.world.name}/battle/${this.turn}`),
+    );
     this.world = result.world;
     this.transfers = result.transfers;
     this.battles = result.battles;
+
+    // War is the one affinity event that can fire today; the rest wait on unions (§6.4).
+    for (const battle of result.battles) {
+      for (const wave of battle.waves) {
+        const attacker = this.startOfTurn.world.provinces[wave.from]?.nation;
+        const defender = this.startOfTurn.world.provinces[battle.target]?.nation;
+        if (attacker === undefined || defender === undefined) continue;
+        applyAttack(this.affinity, defender, attacker, wave.captured, this.turn);
+      }
+    }
   }
 
   private report(): TurnReport {

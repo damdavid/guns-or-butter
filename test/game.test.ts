@@ -4,16 +4,16 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import {
-  Game, balanceAllocation, reallocate, subsistenceAllocation, workersFor,
+  Game, balanceAllocation, moveWorkers, reallocate, subsistenceAllocation, workersFor,
   type Allocation,
 } from "../src/game.ts";
 import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 
 const playTurn = (game: Game) => {
-  game.advance(); // production
-  game.advance(); // orders frozen
-  const report = game.advance(); // execution
+  game.advance(); // production resolves
+  const report = game.advance(); // orders resolve, and execution begins with the report
+  game.advance(); // execution -> rankings
   return report!;
 };
 
@@ -23,12 +23,16 @@ describe("phase sequence (§1.2)", () => {
     assert.equal(game.phase, "production");
     game.advance();
     assert.equal(game.phase, "military-orders");
-    game.advance();
-    assert.equal(game.phase, "military-execution");
+
+    // Combat resolves on the way into execution, so the report is in hand for the whole
+    // of the phase the player watches it in (§1.2.1).
     const report = game.advance();
-    assert.equal(game.phase, "rankings");
-    assert.ok(report, "execution should produce a turn report");
+    assert.equal(game.phase, "military-execution");
+    assert.ok(report, "entering execution should produce a turn report");
     assert.equal(report.turn, 1);
+
+    assert.equal(game.advance(), null, "leaving execution resolves nothing further");
+    assert.equal(game.phase, "rankings");
     game.advance();
     assert.equal(game.phase, "production");
     assert.equal(game.turn, 2);
@@ -143,8 +147,7 @@ describe("couplings between the subsystems", () => {
     };
     const populationBefore = game.world.provinces[target]!.population;
     game.setOrder(attacker.id, { marchFraction: 1, target });
-    game.advance();
-    const report = game.advance()!;
+    const report = game.advance()!; // orders resolve on the way into execution
     assert.ok(report.battles.length > 0);
     assert.ok(
       game.world.provinces[target]!.population < populationBefore,
@@ -262,6 +265,146 @@ describe("labour allocation", () => {
       "balancing should raise sword output, not lower it");
     assert.ok(balanced["sword"]! > 0.1, `swords were drained to ${balanced["sword"]}`);
     assert.ok(after.firepower > before.firepower);
+  });
+});
+
+describe("moving whole workers (§3.6)", () => {
+  const start = { lumber: 33, sulfur: 12, "iron-ore": 33, charcoal: 18, "pig-iron": 30, "farm-tools": 23 };
+  const total = (a: Record<string, number>) => Object.values(a).reduce((s, v) => s + v, 0);
+
+  it("takes from exactly one other factory when a factory is raised", () => {
+    // Reported from play: lowering sulfur by one also lowered charcoal by one. Rounding
+    // a share back into integers could move a factory the player had not touched.
+    const after = moveWorkers(start, "sulfur", 13);
+    assert.equal(after["sulfur"], 13);
+    const up = Object.keys(start).filter((k) => k !== "sulfur" && after[k]! > start[k as keyof typeof start]);
+    const down = Object.keys(start).filter((k) => after[k]! < start[k as keyof typeof start]);
+    assert.deepEqual(up, [], "nothing else may rise when one factory takes workers");
+    assert.equal(down.length, 1, `expected one donor, got ${down.join(",")}`);
+    assert.equal(total(after), total(start), "the workforce is conserved");
+  });
+
+  it("gives to exactly one other factory when a factory is lowered", () => {
+    const after = moveWorkers(start, "sulfur", 11);
+    assert.equal(after["sulfur"], 11);
+    const down = Object.keys(start).filter((k) => k !== "sulfur" && after[k]! < start[k as keyof typeof start]);
+    assert.deepEqual(down, [], "nothing else may fall when one factory releases workers");
+    assert.equal(total(after), total(start));
+  });
+
+  it("stays conserved and monotone over a run of single steps", () => {
+    let current: Record<string, number> = { ...start };
+    for (let i = 0; i < 10; i++) {
+      const next = moveWorkers(current, "sulfur", (current["sulfur"] ?? 0) - 1);
+      for (const k of Object.keys(next)) {
+        if (k === "sulfur") continue;
+        assert.ok(next[k]! >= current[k]!, `${k} fell while sulfur was being emptied`);
+      }
+      assert.equal(total(next), total(start));
+      current = next;
+    }
+    assert.equal(current["sulfur"], 2);
+  });
+
+  it("lets labour stranded as idle be spent again", () => {
+    // Reported from play. With every other factory locked there is nobody to give the
+    // workers to, so lowering one stranded them as unspent labour — and the idle pool
+    // was not a source, so nothing could draw them back out.
+    const workforce = 149;
+    const locked = ["lumber", "iron-ore", "charcoal", "pig-iron", "farm-tools"];
+    const lowered = moveWorkers(start, "sulfur", 8, locked, workforce);
+    assert.equal(lowered["sulfur"], 8);
+    assert.equal(workforce - total(lowered), 4, "four should be sitting idle");
+
+    const restored = moveWorkers(lowered, "sulfur", 12, locked, workforce);
+    assert.equal(restored["sulfur"], 12, "the idle four must be spendable again");
+    assert.equal(workforce - total(restored), 0);
+  });
+
+  it("spends idle labour on whichever factory asks for it", () => {
+    const workforce = 149;
+    const stranded = { ...start, sulfur: 2 };  // ten workers idle
+    assert.equal(workforce - total(stranded), 10);
+    for (const [id, want] of [["charcoal", 28], ["sulfur", 12], ["lumber", 43]] as const) {
+      const after = moveWorkers(stranded, id, want, [], workforce);
+      assert.equal(after[id], want, `${id} should have reached ${want}`);
+      assert.equal(workforce - total(after), 0, `${id} should have absorbed the idle ten`);
+    }
+  });
+
+  it("cannot spend labour the locked factories are already holding", () => {
+    const workforce = 149;
+    const locked = ["lumber", "iron-ore", "charcoal", "pig-iron", "farm-tools"];
+    const held = locked.reduce((s, k) => s + start[k as keyof typeof start], 0);
+    const after = moveWorkers(start, "sulfur", 9999, locked, workforce);
+    assert.equal(after["sulfur"], workforce - held, "only the unlocked remainder is available");
+  });
+
+  it("can be driven to the full workforce one press at a time", () => {
+    // Reported from play: the + button and the slider would stop moving a factory while
+    // typing the number still worked. The UI stores whole workers back as fractions of
+    // the workforce, and those re-add to 0.9999999999 often enough that the floor in
+    // `workersFor` swallowed a worker — largest remainder then decided which factory
+    // lost it, so the stall looked random.
+    const economy = new Economy();
+    const game = Game.create("Kublai", "expert");
+    const { land, population } = nationState(game.world, 0);
+    const spare = Math.floor(Math.max(0, population - land.farmland));
+    const ids = [...economy.graph.table.keys()];
+
+    for (const target of ["lumber", "combine", "sulfur", "tractor"]) {
+      let draft: Allocation = subsistenceAllocation();
+      const workers = () => {
+        const now = workersFor(draft, population, land.farmland);
+        return Object.fromEntries(ids.map((id) => [id, now[id] ?? 0]));
+      };
+      let previous = -1;
+      for (let press = 0; press < spare + 5; press++) {
+        const held = workers()[target] ?? 0;
+        if (held >= spare) break;
+        assert.notEqual(held, previous, `${target} stopped moving at ${held} of ${spare}`);
+        previous = held;
+        const next = moveWorkers(workers(), target, held + 1, [], spare);
+        draft = Object.fromEntries(Object.entries(next).map(([k, v]) => [k, v / spare]));
+      }
+      assert.equal(workers()[target], spare, `${target} never reached the whole workforce`);
+    }
+  });
+
+  it("never loses a worker to the fraction round trip", () => {
+    const game = Game.create("Thule", "intermediate");
+    const { land, population } = nationState(game.world, 0);
+    const spare = Math.floor(Math.max(0, population - land.farmland));
+    let draft: Allocation = subsistenceAllocation();
+    for (const [id, want] of [["lumber", 40], ["charcoal", 71], ["sword", 3], ["iron", 55]] as const) {
+      const now = workersFor(draft, population, land.farmland);
+      const next = moveWorkers(
+        Object.fromEntries(Object.keys(subsistenceAllocation()).concat(id).map((k) => [k, now[k] ?? 0])),
+        id, want, [], spare,
+      );
+      draft = Object.fromEntries(Object.entries(next).map(([k, v]) => [k, v / spare]));
+      const after = workersFor(draft, population, land.farmland);
+      assert.equal(after[id], want, `${id} should hold exactly ${want}`);
+      assert.equal(
+        Object.values(after).reduce((s, v) => s + v, 0), spare,
+        `the workforce leaked after setting ${id}`,
+      );
+    }
+  });
+
+  it("leaves locked factories exactly where they are", () => {
+    const after = moveWorkers(start, "sulfur", 0, ["lumber", "charcoal"]);
+    assert.equal(after["lumber"], start.lumber);
+    assert.equal(after["charcoal"], start.charcoal);
+    assert.equal(after["sulfur"], 0);
+    assert.equal(total(after), total(start));
+  });
+
+  it("refuses to move a locked factory, and clamps what it is asked for", () => {
+    assert.deepEqual(moveWorkers(start, "sulfur", 5, ["sulfur"]), start);
+    assert.equal(moveWorkers(start, "sulfur", -50)["sulfur"], 0);
+    assert.equal(moveWorkers(start, "sulfur", 9999)["sulfur"], total(start));
+    assert.equal(total(moveWorkers(start, "sulfur", 9999)), total(start));
   });
 });
 

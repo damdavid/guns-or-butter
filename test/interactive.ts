@@ -296,7 +296,7 @@ async function run(): Promise<void> {
       console.log(`\n=== RANKINGS — end of turn ${game.turn} ===`);
       for (const r of game.rankings()) {
         console.log(
-          `  ${r.nation === you ? "you " : "    "} nation ${r.nation}: ` +
+          `  ${r.nation === you ? "you " : "    "} ${(game.world.nations[r.nation]?.name ?? `nation ${r.nation}`).padEnd(12)} ` +
           `${pad(r.population, 6)} people  ${pad(r.provinces, 3)} provinces  ${pad(r.firepower.toFixed(0), 6)} firepower`,
         );
       }
@@ -313,7 +313,8 @@ async function run(): Promise<void> {
   }
 
   if (game.winner !== null) {
-    console.log(`\nNation ${game.winner} has conquered the world.${game.winner === you ? " That is you." : ""}`);
+    const champion = game.world.nations[game.winner]?.name ?? `Nation ${game.winner}`;
+    console.log(`\n${champion} has conquered the world.${game.winner === you ? " That is you." : ""}`);
   }
   finish();
 }

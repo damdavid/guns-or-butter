@@ -9,44 +9,50 @@
  * to the result, because the ordering rules (§5.6, and waves within a battle) are
  * invisible otherwise.
  */
+import { commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
 import { Economy } from "../src/economy.ts";
 import {
   Game,
   balanceAllocation,
-  reallocate,
+  moveWorkers,
   subsistenceAllocation,
   workersFor,
   type Allocation,
+  type GameSnapshot,
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
+import { compact, grouped } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
-import { nationState } from "../src/worldgen.ts";
+import { generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
 
-const CORE: CommodityId[] = [
-  "lumber", "sulfur", "iron-ore", "coal", "charcoal", "pig-iron", "gunpowder", "iron",
-  "farm-tools", "iron-plow", "sword", "musket",
-];
-
-const params = new URLSearchParams(location.search);
-const continent = params.get("continent") ?? "Kittycat";
-const level = (params.get("level") ?? "intermediate") as Level;
-const you = Number(params.get("nation") ?? "0");
-
 const economy = new Economy();
-const game = Game.create(continent, level);
+const you = 0;
 
+let game: Game;
 /** Uncommitted allocation, so a change can be previewed before it is applied. */
-let draft: Allocation = game.allocations[you] ?? subsistenceAllocation();
-/** Province being given orders, in the orders phase. */
+let draft: Allocation = subsistenceAllocation();
+/** Province awaiting a target click, in the orders phase. */
 let selected: number | null = null;
+/**
+ * Province whose placed order the control is showing.
+ *
+ * Kept apart from `selected` so that placing an order *ends* the selection. While a
+ * province was still selected afterwards, a click on one of its neighbours quietly
+ * retargeted the march instead of starting a new one, and there was no way to tell
+ * which a click would do.
+ */
+let ordering: number | null = null;
 /** What the inspector is showing. */
-let inspect: { kind: "province" | "nation"; id: number } | null = null;
+type Inspecting =
+  | { kind: "province"; id: number }
+  | { kind: "nation"; id: number }
+  | { kind: "factory"; id: CommodityId };
+let inspect: Inspecting | null = null;
 let notice = "";
-let lastReport: TurnReport | null = null;
 let expanded = false;
-let view: Rect = continentBounds(game.world);
+let view: Rect;
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -57,6 +63,21 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
  */
 const whole = (n: number) => String(Math.floor(n));
 
+/**
+ * Firepower, compactly (§10.1.7). Armies are the one quantity that can run to five
+ * digits and beyond; tons and workers stay exact, because balancing an economy needs
+ * the difference between 1200 and 1249 and a battle does not.
+ */
+const power = (n: number) => compact(n, 2);
+
+/** People, grouped in thousands. The standings are read by comparing them. */
+const people = grouped;
+
+const nationName = (id: number) => game.world.nations[id]?.name ?? `Nation ${id}`;
+
+/** What this difficulty offers (§1.1): beginner 12 commodities, intermediate 19, expert 33. */
+const levelCommodities = () => commoditiesFor(game.world.level, economy.graph.table.keys());
+
 function context() {
   const { land, population } = nationState(game.world, you);
   return { level: game.world.level, land, population };
@@ -64,7 +85,7 @@ function context() {
 
 const spareWorkers = () => {
   const { land, population } = nationState(game.world, you);
-  return Math.max(0, population - land.farmland);
+  return Math.floor(Math.max(0, population - land.farmland));
 };
 
 const resolveDraft = (allocation: Allocation): EconomyResult => {
@@ -75,7 +96,7 @@ const resolveDraft = (allocation: Allocation): EconomyResult => {
 const acresOf = (land: Land) => land.farmland + land.forest + land.mountains + land.desert;
 const fill = (nation: number) => NATION_FILL[nation % NATION_FILL.length]!;
 
-// --- animation state -------------------------------------------------------------
+// --- replay state ----------------------------------------------------------------
 
 interface Step {
   from: number;
@@ -93,6 +114,8 @@ let replayMarkers: { at: Point; label: string; hostile: boolean }[] = [];
 let replayLog: { text: string; taken: boolean }[] = [];
 let replaying = false;
 let skipReplay = false;
+/** Set between resolving the turn and the replay starting, so victory waits for it. */
+let replayPending = false;
 
 // --- map -------------------------------------------------------------------------
 
@@ -107,7 +130,7 @@ function legalTargets(): Map<number, boolean> {
 
 /** Ordered marches, so the map shows the plan and not just the orders table. */
 function marches(): { from: number; to: number; hostile: boolean }[] {
-  if (game.phase === "rankings" || replaying) return [];
+  if (game.phase !== "military-orders" || replaying) return [];
   return Object.entries(game.orders).flatMap(([from, order]) => {
     const id = Number(from);
     if (order.target === null || game.world.provinces[id]!.nation !== you) return [];
@@ -130,25 +153,32 @@ function drawMap(): void {
     const id = Number(node.dataset.province);
     if (world.provinces[id]!.nation === you) node.classList.add("mine");
   }
-  // The inspected province is marked separately from the order selection, since you can
-  // be reading about one province while ordering another.
-  if (inspect?.kind === "province" && inspect.id !== selected) {
-    const p = world.provinces[inspect.id];
-    if (p) {
-      const points = p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ");
-      svg.insertAdjacentHTML(
-        "beforeend",
-        `<polygon class="highlight inspected" points="${points}" fill="none" pointer-events="none"/>`,
-      );
-    }
+  // What the inspector is looking at, outlined separately from the order selection —
+  // you are often reading about one province while ordering another.
+  const looking =
+    inspect?.kind === "province"
+      ? world.provinces.filter((p) => p.id === inspect!.id && p.id !== selected)
+      : inspect?.kind === "nation"
+        ? world.provinces.filter((p) => p.nation === inspect!.id)
+        : [];
+  if (looking.length > 0) {
+    // A whole nation is outlined in white: at eight provinces the outline is most of the
+    // map, and white is the one colour no nation fill or terrain mark uses.
+    const kind = inspect!.kind === "nation" ? "held" : "inspected";
+    svg.insertAdjacentHTML("beforeend", looking
+      .map((p) => `<polygon class="highlight ${kind}" fill="none" pointer-events="none" points="${
+        p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ")}"/>`)
+      .join(""));
   }
   el("map-hint").textContent = replaying
     ? "Replaying the turn's marches."
-    : game.phase === "military-orders"
-      ? selected === null
-        ? "Click an armed province to order it. Solid outlines are roads; dashed cost three quarters of your strength."
-        : `Ordering ${game.world.provinces[selected]!.name}. Click a neighbour — yours to reinforce, anyone else's to attack — or itself to hold.`
-      : "Click a province for its details. Drag to pan, scroll to zoom.";
+    : game.phase !== "military-orders"
+      ? "Click a province for its details. Drag to pan, scroll to zoom."
+      : selected !== null
+        ? `Ordering ${game.world.provinces[selected]!.name}. Click a neighbour — yours to reinforce, anyone else's to attack — or itself to hold.`
+        : ordering !== null
+          ? `${game.world.provinces[ordering]!.name} is ordered. Set the size below, or click any armed province to order the next one.`
+          : "Click an armed province to order it. Solid outlines are roads; dashed cost three quarters of your strength.";
 }
 
 /** Cheap view update: the geometry has not changed, only the window onto it. */
@@ -157,6 +187,34 @@ function applyView(): void {
     "viewBox",
     `${view.x.toFixed(1)} ${view.y.toFixed(1)} ${view.w.toFixed(1)} ${view.h.toFixed(1)}`,
   );
+}
+
+/**
+ * The march control, docked in the corner of the map.
+ *
+ * It first sat on the province it was ordering, which put it over the ground the player
+ * was trying to read — and on a small continent, over the target as well. A fixed corner
+ * costs a glance and covers nothing that moves.
+ */
+function marchControlHtml(): string {
+  if (ordering === null || game.phase !== "military-orders" || replaying) return "";
+  const p = game.world.provinces[ordering];
+  const order = game.orders[ordering];
+  if (!p || !order || order.target === null) return "";
+  const target = game.world.provinces[order.target]!;
+  const cap = Math.floor(p.firepower);
+  const send = sentFrom(ordering);
+  // Named at both ends: the control is no longer beside the province it is ordering.
+  return `<span class="who">${p.name} &rarr;
+      ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</span>
+    <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
+    ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
+      aria-label="firepower sent from ${p.name}" /><button
+      type="button" data-mstep="${p.id}" data-by="1">+</button>
+    <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
+    <span class="spare">of ${power(cap)}</span>
+    <button type="button" data-act="dismiss" class="dismiss"
+      title="The order stands. The next click on the map starts a new one.">Done</button>`;
 }
 
 const MIN_VIEW = 80;
@@ -202,6 +260,7 @@ function zoomAbout(cx: number, cy: number, factor: number): void {
 }
 
 el("map").addEventListener("wheel", (event) => {
+  if (!game) return;
   event.preventDefault();
   zoomAbout(event.clientX, event.clientY, Math.exp(-event.deltaY * 0.0015));
 }, { passive: false });
@@ -210,7 +269,7 @@ el("map").addEventListener("wheel", (event) => {
 let drag: { cx: number; cy: number; view: Rect; moved: number } | null = null;
 
 el("map").addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
+  if (!game || event.button !== 0) return;
   drag = { cx: event.clientX, cy: event.clientY, view: { ...view }, moved: 0 };
   el("map").querySelector("svg")?.classList.add("panning");
 });
@@ -244,15 +303,22 @@ addEventListener("pointerup", (event) => {
     const orderable = (q: number) =>
       game.world.provinces[q]!.nation === you && game.world.provinces[q]!.firepower >= 1;
     if (selected === null) {
-      if (orderable(id)) selected = id;
+      if (orderable(id)) {
+        selected = id;
+        ordering = null;
+      }
     } else if (id === selected) {
       game.setOrder(selected, { marchFraction: game.orders[selected]?.marchFraction ?? 1, target: null });
       selected = null;
     } else if (legalTargets().has(id)) {
       game.setOrder(selected, { marchFraction: game.orders[selected]?.marchFraction ?? 1, target: id });
+      // The order is placed, so the selection is finished. The control stays open on it
+      // for the size of the march; the next click on the map starts fresh.
+      ordering = selected;
       selected = null;
     } else if (orderable(id)) {
       selected = id;
+      ordering = null;
     }
   }
   render();
@@ -280,16 +346,103 @@ const terrainRows = (land: Land) => `
   <dt>Desert</dt><dd>${whole(land.desert)} acres</dd>
   <dt><b>Total land</b></dt><dd><b>${whole(acresOf(land))} acres</b></dd>`;
 
+/**
+ * A factory's recipe and where its output goes.
+ *
+ * The production table says a factory is short of something; this says how much of it
+ * the factory wanted and how much arrived, which is the part §3.5 makes hard to work out
+ * by eye — a shallower consumer can take the whole supply before this one is asked.
+ */
+function factoryHtml(id: CommodityId): string {
+  const c = economy.graph.table.get(id);
+  const result = resolveDraft(draft);
+  const r = result.commodities[id];
+  if (!c || !r) return "";
+
+  const inputs = Object.entries(c.inputs).filter(([, coeff]) => coeff > 0);
+  const wanted = (coeff: number) => r.capacity * coeff;
+  const inputRows = inputs
+    .map(([input, coeff]) => {
+      const got = r.received[input] ?? 0;
+      const need = wanted(coeff);
+      const short = got < need - 1e-6;
+      return `<tr class="${short ? "deficit" : ""}">
+        <td class="name">${commodityLabel(input)}</td>
+        <td class="spare">${coeff} per ton</td>
+        <td>${whole(need)}</td>
+        <td class="${short ? "short" : ""}">${whole(got)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const consumers = (economy.graph.consumers.get(id) ?? [])
+    .map((consumer) => {
+      const other = economy.graph.table.get(consumer)!;
+      const oc = result.commodities[consumer]!;
+      const need = oc.capacity * (other.inputs[id] ?? 0);
+      const got = oc.received[id] ?? 0;
+      return { consumer, need, got };
+    })
+    .filter((x) => x.need > 0 || x.got > 0);
+
+  const consumerRows = consumers
+    .map((x) => `<tr>
+      <td class="name">${commodityLabel(x.consumer)}</td>
+      <td class="spare">${economy.graph.table.get(x.consumer)!.inputs[id]} per ton</td>
+      <td>${whole(x.need)}</td>
+      <td>${whole(x.got)}</td>
+    </tr>`)
+    .join("");
+
+  const endUse =
+    c.kind === "tool" ? `<dt>Feeds</dt><dd>${tierYield(c.tier!)} tons of food per ton</dd>`
+    : c.kind === "weapon" ? `<dt>Arms</dt><dd>${tierYield(c.tier!)} firepower per ton</dd>`
+    : "";
+  const land = c.terrain
+    ? `<dt>Draws on</dt><dd>${commodityLabel(c.terrain)}, ${whole(context().land[c.terrain])} acres</dd>`
+    : "";
+
+  return `<h2>${commodityLabel(id)}
+      <span class="right"><button type="button" data-act="close">Close</button></span></h2>
+    <dl>
+      <dt>Kind</dt><dd>${c.kind}${c.tier ? `, tier ${c.tier}` : ""}</dd>
+      ${land}
+      <dt>Workers</dt><dd>${workersFor(draft, context().population, context().land.farmland)[id] ?? 0}</dd>
+      <dt>Size</dt><dd>${whole(r.capacity)} tons, at this labour</dd>
+      <dt>Output</dt><dd>${whole(r.output)} tons</dd>
+      <dt>Surplus</dt>
+      <dd class="${r.surplus < -0.5 ? "short" : ""}">${whole(r.surplus)} tons</dd>
+      ${endUse}
+    </dl>
+    ${inputs.length === 0
+      ? '<p class="hint">A raw material. It is dug or cut, not made from anything.</p>'
+      : `<h3>Needs</h3>
+         <table class="affinity"><thead><tr>
+           <th class="name">Input</th><th>Recipe</th><th>Wanted</th><th>Got</th>
+         </tr></thead><tbody>${inputRows}</tbody></table>`}
+    ${consumers.length === 0
+      ? `<h3>Goes to</h3><p class="hint">Nothing consumes it. ${
+          c.kind === "weapon" ? "It arms your provinces." :
+          c.kind === "tool" ? "It feeds your farmland." : "It is the end of its chain."}</p>`
+      : `<h3>Goes to</h3>
+         <table class="affinity"><thead><tr>
+           <th class="name">Consumer</th><th>Recipe</th><th>Wants</th><th>Takes</th>
+         </tr></thead><tbody>${consumerRows}</tbody></table>
+         <p class="hint">Consumers are served shallowest first (§3.5), so the one nearest
+           the top of this list takes what it needs before the rest are asked.</p>`}`;
+}
+
 function inspectorHtml(): string {
   if (!inspect) return "";
+  if (inspect.kind === "factory") return factoryHtml(inspect.id);
   if (inspect.kind === "province") {
     const p = shownWorld().provinces[inspect.id];
     if (!p) return "";
     return `<h2>${p.name}<span class="right"><button type="button" data-act="close">Close</button></span></h2>
       <dl>
-        <dt>Ruled by</dt><dd>Nation ${p.nation}${p.nation === you ? " (you)" : ""}</dd>
-        <dt>Population</dt><dd>${whole(p.population)}</dd>
-        <dt>Military power</dt><dd>${whole(p.firepower)}</dd>
+        <dt>Ruled by</dt><dd>${nationName(p.nation)}${p.nation === you ? " (you)" : ""}</dd>
+        <dt>Population</dt><dd>${people(p.population)}</dd>
+        <dt>Military power</dt><dd>${power(p.firepower)}</dd>
         ${terrainRows(p.land)}
         <dt>Coast</dt><dd>${p.coastal ? "yes" : "inland"}</dd>
         <dt>Neighbours</dt><dd>${p.neighbours.length} (${p.neighbours.filter((n) => n.road).length} by road)</dd>
@@ -299,17 +452,71 @@ function inspectorHtml(): string {
   const r = game.rankings().find((x) => x.nation === inspect!.id);
   if (!r) return "";
   const own = r.nation === you;
-  const food = own ? whole(resolveDraft(draft).agriculture.food) : null;
-  return `<h2>Nation ${r.nation}${own ? " (you)" : ""}
+  return `<h2>${nationName(r.nation)}${own ? " (you)" : ""}
       <span class="right"><button type="button" data-act="close">Close</button></span></h2>
     <dl>
-      <dt>Military strength</dt><dd>${whole(r.firepower)}</dd>
-      <dt>Population</dt><dd>${whole(r.population)}</dd>
+      <dt>Military strength</dt><dd>${power(r.firepower)}</dd>
+      <dt>Population</dt><dd>${people(r.population)}</dd>
       <dt>Provinces</dt><dd>${r.provinces}</dd>
       ${terrainRows(r.land)}
       <dt>Food output</dt>
-      <dd>${food ?? '<span class="secret">a national secret</span>'}</dd>
-    </dl>`;
+      <dd>${own
+        ? whole(resolveDraft(draft).agriculture.food)
+        : '<span class="secret">a national secret</span>'}</dd>
+    </dl>
+    ${affinityHtml(r.nation)}`;
+}
+
+/** Where a value sits on the -1..1 scale, as a word. */
+function temper(w: number): { label: string; cls: string } {
+  if (w >= 0.5) return { label: "warm", cls: "warm" };
+  if (w >= 0.15) return { label: "friendly", cls: "warm" };
+  if (w > -0.15) return { label: "neutral", cls: "" };
+  if (w > -0.5) return { label: "wary", cls: "cool" };
+  return { label: "hostile", cls: "cool" };
+}
+
+/**
+ * How a nation regards the others (§6.4).
+ *
+ * Shown for every nation, not just your own: the standings are public, and the live
+ * terms are computed from them, so most of this is inferable anyway. What it does give
+ * away is the stored history — who has been attacked by whom, and who has been poor
+ * together. Whether that should be a national secret like food output is an open
+ * question (§10.1.7).
+ */
+function affinityHtml(nation: number): string {
+  const others = game.willingnessFrom(nation).filter((x) =>
+    game.world.provinces.some((p) => p.nation === x.nation));
+  if (others.length === 0) return "";
+  const rows = others
+    .map((x) => {
+      const t = temper(x.willingness);
+      const liking = game.affinity.liking[nation]![x.nation]!;
+      const trust = game.affinity.trust[nation]![x.nation]!;
+      return `<tr>
+        <td class="name"><span class="swatch" style="background:${fill(x.nation)}"></span>
+          ${nationName(x.nation)}${x.nation === you ? " (you)" : ""}</td>
+        <td class="${t.cls}">${t.label}</td>
+        <td class="spare" title="warmth, volatile">${liking.toFixed(2)}</td>
+        <td class="spare" title="reliability, durable">${trust.toFixed(2)}</td>
+        <td class="${t.cls}">${x.willingness >= 0 ? "+" : ""}${x.willingness.toFixed(2)}</td>
+      </tr>`;
+    })
+    .join("");
+  return `<h3>How ${nationName(nation)} regards the others</h3>
+    <table class="affinity">
+      <thead><tr>
+        <th class="name">Nation</th><th></th>
+        <th title="Warmth. Half-life four turns.">Like</th>
+        <th title="Reliability. Half-life fifteen turns.">Trust</th>
+        <th title="Willingness to join a union, all terms together">Net</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="hint">Winning breeds dislike and arming breeds distrust, both read off the
+      current standings &mdash; so this moves as the game does, not only when something
+      happens.</p>`;
 }
 
 function nationsHtml(): string {
@@ -320,8 +527,8 @@ function nationsHtml(): string {
       inspect?.kind === "nation" && inspect.id === r.nation ? "open" : ""
     }" data-nation="${r.nation}">
       <span class="swatch" style="background:${fill(r.nation)}"></span>
-      Nation ${r.nation}${r.nation === you ? " (you)" : ""}
-      <span class="num">${whole(r.population)} people &middot; ${r.provinces} prov</span>
+      ${nationName(r.nation)}${r.nation === you ? " (you)" : ""}
+      <span class="num">${people(r.population)} people &middot; ${r.provinces} prov</span>
     </li>`)
     .join("");
   return `<h2>Nations <small>standing by population</small></h2>
@@ -334,11 +541,11 @@ function nationsHtml(): string {
 function productionPanel(): string {
   const result = resolveDraft(draft);
   const spare = spareWorkers();
-  const workers = workersFor(draft, context().population, context().land.farmland);
-  const rows = [...new Set([...CORE, ...Object.keys(draft).filter((id) => (draft[id] ?? 0) > 0)])];
-  const used = Object.values(workers).reduce((s, v) => s + v, 0);
-  const a = result.agriculture;
   const ctx = context();
+  const workers = workersFor(draft, ctx.population, ctx.land.farmland);
+  const rows = levelCommodities();
+  const used = Object.values(workers).reduce((s, v) => s + v, 0);
+  const idle = spare - used;
 
   const body = rows
     .map((id) => {
@@ -347,19 +554,25 @@ function productionPanel(): string {
       const w = workers[id] ?? 0;
       const locked = game.isLocked(you, id);
       const limited = c.limitingFactor !== "Labor";
-      return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""}" data-row="${id}">
-        <td>${id}</td>
-        <td data-cell="out">${whole(c.output)}</td>
-        <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
-        <td data-cell="lim" class="lim">${c.limitingFactor === "Labor" ? "&mdash;" : c.limitingFactor}</td>
-        <td class="nudge"><button type="button" data-step="${id}" data-by="-1" ${locked ? "disabled" : ""}>&minus;</button></td>
-        <td><input type="number" data-workers="${id}" value="${w}" min="0" max="${spare}" step="1"
-          ${locked ? "disabled" : ""} aria-label="workers in ${id}" /></td>
-        <td class="nudge"><button type="button" data-step="${id}" data-by="1" ${locked ? "disabled" : ""}>+</button></td>
-        <td class="slider"><input type="range" min="0" max="${spare}" value="${w}"
-          data-slider="${id}" ${locked ? "disabled" : ""} /></td>
+      return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""} ${
+        c.surplus < -0.5 ? "deficit" : ""
+      }" data-row="${id}">
         <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
           title="Lock this factory against redistribution" /></td>
+        <td class="name"><button type="button" class="link" data-factory="${id}"
+          >${commodityLabel(id)}</button></td>
+        <td data-cell="cap" class="capacity">${whole(c.capacity)}</td>
+        <td data-cell="out">${whole(c.output)}</td>
+        <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
+        <td data-cell="lim" class="lim">${c.limitingFactor === "Labor" ? "&mdash;" : commodityLabel(c.limitingFactor)}</td>
+        <td class="tune">
+          <button type="button" data-step="${id}" data-by="-1" ${locked ? "disabled" : ""}>&minus;</button
+          ><input type="number" data-workers="${id}" value="${w}" min="0" max="${spare}" step="1"
+            ${locked ? "disabled" : ""} aria-label="workers in ${commodityLabel(id)}" /><button
+            type="button" data-step="${id}" data-by="1" ${locked ? "disabled" : ""}>+</button>
+        </td>
+        <td class="slider"><input type="range" min="0" max="${spare}" value="${w}"
+          data-slider="${id}" ${locked ? "disabled" : ""} /></td>
       </tr>`;
     })
     .join("");
@@ -367,20 +580,27 @@ function productionPanel(): string {
   return `<h2>Production <small>turn ${game.turn}</small>
       <span class="right"><button type="button" data-act="expand">${expanded ? "Shrink" : "Expand"}</button></span>
     </h2>
-    <table>
+    <table class="production">
+      <colgroup>
+        <col class="c-lock" /><col class="c-name" /><col class="c-num" /><col class="c-num" />
+        <col class="c-num" /><col class="c-short" /><col class="c-tune" /><col class="c-slider" />
+      </colgroup>
       <thead><tr>
-        <th>Commodity</th><th>Out</th><th>Surplus</th><th>Short of</th>
-        <th colspan="3">Workers</th><th></th><th>&#128274;</th>
+        <th class="lock">&#128274;</th><th class="name">Factory</th>
+        <th title="What its workers could make">Size</th>
+        <th title="What it actually made">Output</th><th>Surplus</th><th>Short of</th>
+        <th>Workers</th><th class="slider"></th>
       </tr></thead>
-      <tbody>${body}</tbody>
-      <tfoot><tr>
-        <td>Food</td><td>${whole(a.food)}</td>
-        <td class="${a.surplus < 0 ? "short" : "spare"}">${whole(a.surplus)}</td>
-        <td class="lim">needs ${whole(a.required)}</td>
-        <td colspan="3">${a.workers} farming</td><td></td><td></td>
-      </tr></tfoot>
+      <tbody>${body}
+        <tr class="idle-row" data-row="__idle">
+          <td></td><td class="name">Idle</td><td></td><td></td><td></td>
+          <td class="lim">${idle > 0 ? "unspent labour" : "&mdash;"}</td>
+          <td class="tune" data-cell="idle">${whole(idle)}</td><td class="slider"></td>
+        </tr>
+      </tbody>
+      <tfoot id="food">${foodHtml(result)}</tfoot>
     </table>
-    <div class="totals" id="totals">${totalsHtml(result, used, spare, ctx.land)}</div>
+    <div class="totals" id="totals">${totalsHtml(result, ctx.land)}</div>
     <div class="controls">
       <button type="button" data-act="auto">Auto-balance</button>
       <button type="button" data-act="lock-all">Lock all</button>
@@ -388,14 +608,37 @@ function productionPanel(): string {
     </div>`;
 }
 
-function totalsHtml(result: EconomyResult, used: number, spare: number, land: Land): string {
+/**
+ * The food rows. Kept separate because they have to be refreshed alongside the factory
+ * rows as the allocation changes — leaving them out of `refreshNumbers` is what made
+ * food look like it never responded to tool production at all.
+ */
+function foodHtml(result: EconomyResult): string {
+  const a = result.agriculture;
+  const toolTons = Object.values(a.toolsUsed).reduce((s, v) => s + v, 0);
+  const fromTools = a.food - a.acres;
+  return `<tr class="total ${a.surplus < 0 ? "deficit" : ""}">
+      <td></td><td class="name">Food</td><td class="capacity">${whole(a.acres)} ac</td>
+      <td>${whole(a.food)}</td>
+      <td class="${a.surplus < 0 ? "short" : "spare"}">${whole(a.surplus)}</td>
+      <td class="lim">needs ${whole(a.required)}</td>
+      <td>${whole(a.workers)} farming</td><td class="slider"></td>
+    </tr>
+    <tr>
+      <td colspan="8" class="spare wrap">
+        ${whole(a.acres)} from the land + ${whole(fromTools)} from
+        ${whole(toolTons)} tons of tools${toolTons > 0 ? "" : " (none made yet)"};
+        tools are capped at one ton per acre, so at most ${whole(a.acres)} tons can be used
+      </td>
+    </tr>`;
+}
+
+function totalsHtml(result: EconomyResult, land: Land): string {
   const growing = result.nextPopulation >= result.population;
-  const idle = spare - used;
-  return `population ${whole(result.population)} &rarr;
-      <span class="${growing ? "growing" : "starving"}">${whole(result.nextPopulation)}</span><br />
-    workers <b>${used}</b> of <b>${spare}</b>${idle > 0 ? ` &middot; <span class="preview">${idle} idle</span>` : ""}
-      &middot; firepower this turn ${whole(result.firepower)}<br />
-    <span class="spare">land: ${whole(land.farmland)} farm, ${whole(land.forest)} forest,
+  return `<b>Population:</b> ${people(result.population)} &rarr;
+      <span class="${growing ? "growing" : "starving"}">${people(result.nextPopulation)}</span><br />
+    <b>Firepower:</b> ${power(result.firepower)} this turn<br />
+    <span class="spare"><b>Land:</b> ${whole(land.farmland)} farm, ${whole(land.forest)} forest,
       ${whole(land.mountains)} mountain, ${whole(land.desert)} desert</span>`;
 }
 
@@ -406,9 +649,7 @@ function totalsHtml(result: EconomyResult, used: number, spare: number, land: La
  * point is to watch the other factories move as this one is changed.
  *
  * `editing` is the one control not to write back to — the box being typed into, whose
- * value is already what the user meant. Keying off `document.activeElement` instead was a
- * bug: the nudge buttons left focus in the number box, so the draft moved and the box did
- * not follow it.
+ * value is already what the user meant.
  */
 function refreshNumbers(editing?: Element | null): void {
   const result = resolveDraft(draft);
@@ -421,22 +662,55 @@ function refreshNumbers(editing?: Element | null): void {
     const c = result.commodities[id];
     if (!c) continue;
     const w = workers[id] ?? 0;
+    row.querySelector<HTMLElement>('[data-cell="cap"]')!.textContent = whole(c.capacity);
     row.querySelector<HTMLElement>('[data-cell="out"]')!.textContent = whole(c.output);
     const sur = row.querySelector<HTMLElement>('[data-cell="sur"]')!;
     sur.textContent = whole(c.surplus);
     sur.className = c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : "";
     row.querySelector<HTMLElement>('[data-cell="lim"]')!.textContent =
-      c.limitingFactor === "Labor" ? "—" : String(c.limitingFactor);
+      c.limitingFactor === "Labor" ? "—" : commodityLabel(c.limitingFactor);
     row.classList.toggle("limited", c.limitingFactor !== "Labor");
+    row.classList.toggle("deficit", c.surplus < -0.5);
     row.classList.toggle("idle", w === 0);
-    // Every control except the one in hand follows the redistribution.
     for (const input of row.querySelectorAll<HTMLInputElement>("[data-slider], [data-workers]")) {
       if (input !== editing) input.value = String(w);
     }
   }
   const used = Object.values(workers).reduce((s, v) => s + v, 0);
-  el("totals").innerHTML = totalsHtml(result, used, spare, ctx.land);
+  const idleCell = document.querySelector<HTMLElement>('[data-cell="idle"]');
+  if (idleCell) idleCell.textContent = String(spare - used);
+  el("food").innerHTML = foodHtml(result);
+  el("totals").innerHTML = totalsHtml(result, ctx.land);
 }
+
+/**
+ * Move one factory to a worker count, redistributing the rest pro rata (§3.6).
+ *
+ * The share is nudged until the rounding actually lands on the count asked for. Worker
+ * counts come from a largest-remainder split of the whole workforce, so setting a share
+ * of `n / spare` does not reliably yield `n` — and when it did not, the spare worker went
+ * to some unrelated factory, which is what made adding one worker to muskets look like it
+ * was raising the gunpowder surplus.
+ */
+function setWorkers(id: CommodityId, count: number): void {
+  const spare = spareWorkers();
+  if (spare <= 0) return;
+  const next = moveWorkers(currentWorkers(), id, count, game.locked[you] ?? [], spare);
+  const shares: Record<CommodityId, number> = {};
+  for (const [k, v] of Object.entries(next)) shares[k] = v / spare;
+  draft = shares;
+}
+
+/** Whole workers per factory, covering every commodity this level offers. */
+function currentWorkers(): Record<CommodityId, number> {
+  const ctx = context();
+  const now = workersFor(draft, ctx.population, ctx.land.farmland);
+  const out: Record<CommodityId, number> = {};
+  for (const id of levelCommodities()) out[id] = now[id] ?? 0;
+  return out;
+}
+
+// --- other phases ----------------------------------------------------------------
 
 /** Firepower actually marching from a province, as a whole number. */
 function sentFrom(province: number): number {
@@ -446,37 +720,28 @@ function sentFrom(province: number): number {
   return Math.min(Math.floor(p.firepower), Math.floor(p.firepower * order.marchFraction));
 }
 
-/** Move one factory to a worker count, redistributing the rest pro rata (§3.6). */
-function setWorkers(id: CommodityId, count: number): void {
-  const spare = spareWorkers();
-  const want = Math.min(Math.max(0, Math.round(count)), spare);
-  draft = reallocate(draft, id, want / Math.max(spare, 1), game.locked[you] ?? []);
-}
-
-// --- other phases ----------------------------------------------------------------
-
 function ordersPanel(): string {
   const armed = game.world.provinces.filter((p) => p.nation === you && p.firepower >= 1);
   const rows = armed
     .map((p) => {
       const target = game.orders[p.id]?.target ?? null;
-      const fraction = game.orders[p.id]?.marchFraction ?? 1;
       const cap = Math.floor(p.firepower);
-      const send = Math.min(cap, Math.floor(p.firepower * fraction));
+      const send = sentFrom(p.id);
+      const off = target === null ? "disabled" : "";
       return `<tr>
-        <td>${p.name}</td><td>${whole(p.firepower)}</td>
+        <td>${p.name}</td><td>${power(p.firepower)}</td>
         <td>${target === null ? '<span class="spare">holding</span>'
           : game.world.provinces[target]!.nation === you
             ? `reinforce ${game.world.provinces[target]!.name}`
             : `<b>attack ${game.world.provinces[target]!.name}</b>`}</td>
-        <td class="nudge"><button type="button" data-mstep="${p.id}" data-by="-1"
-          ${target === null ? "disabled" : ""}>&minus;</button></td>
-        <td><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
-          ${target === null ? "disabled" : ""} aria-label="firepower sent from ${p.name}" /></td>
-        <td class="nudge"><button type="button" data-mstep="${p.id}" data-by="1"
-          ${target === null ? "disabled" : ""}>+</button></td>
+        <td class="tune">
+          <button type="button" data-mstep="${p.id}" data-by="-1" ${off}>&minus;</button
+          ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
+            ${off} aria-label="firepower sent from ${p.name}" /><button
+            type="button" data-mstep="${p.id}" data-by="1" ${off}>+</button>
+        </td>
         <td class="slider"><input type="range" min="0" max="${cap}" value="${send}"
-          data-march="${p.id}" ${target === null ? "disabled" : ""} /></td>
+          data-march="${p.id}" ${off} /></td>
       </tr>`;
     })
     .join("");
@@ -484,53 +749,43 @@ function ordersPanel(): string {
   return `<h2>Military orders <small>turn ${game.turn}</small></h2>
     ${armed.length === 0
       ? '<p class="spare">No armed provinces. Put workers into swords during production.</p>'
-      : `<table><thead><tr>
-           <th>Province</th><th>Power</th><th>Order</th><th colspan="3">Send</th><th></th>
-         </tr></thead><tbody>${rows}</tbody></table>`}
+      : `<table class="orders">
+           <colgroup>
+             <col class="c-name" /><col class="c-num" /><col class="c-order" />
+             <col class="c-tune" /><col class="c-slider" />
+           </colgroup>
+           <thead><tr>
+             <th>Province</th><th>Power</th><th>Order</th><th>Send</th><th class="slider"></th>
+           </tr></thead><tbody>${rows}</tbody></table>`}
     <p class="hint">An attack loses 10 firepower on arrival and the defender fights with 10
       more, so an empty province still needs over 20 by road &mdash; over 50 across country.</p>`;
 }
 
 function executionPanel(): string {
-  if (replaying || replayLog.length > 0) {
-    return `<h2>Execution <small>turn ${lastReport?.turn ?? game.turn}</small></h2>
-      ${replayLog.length === 0
-        ? '<p class="spare">Marching&hellip;</p>'
-        : `<ul class="log">${replayLog
-            .map((l, i) => `<li class="${l.taken ? "taken" : ""} ${i === replayLog.length - 1 && replaying ? "now" : ""}">${l.text}</li>`)
-            .join("")}</ul>`}
-      ${replaying ? '<div class="controls"><button type="button" data-act="skip">Skip</button></div>' : ""}`;
-  }
-
-  const marching = game.world.provinces.filter(
-    (p) => p.nation === you && (game.orders[p.id]?.target ?? null) !== null,
-  );
-  return `<h2>Execution <small>turn ${game.turn}</small></h2>
-    <p>Orders are frozen. ${marching.length === 0
-      ? "You march nowhere this turn."
-      : `${marching.length} province${marching.length === 1 ? "" : "s"} on the move.`}</p>
-    <ul class="log">${marching.map((p) => {
-      const order = game.orders[p.id]!;
-      return `<li>${p.name} sends ${whole(p.firepower * order.marchFraction)} of
-        ${whole(p.firepower)} against ${game.world.provinces[order.target!]!.name}</li>`;
-    }).join("")}</ul>
-    <p class="hint">Assaults on one province resolve in order, so a first wave softens the
-      defender for the second.</p>`;
+  return `<h2>Execution <small>turn ${game.turn}</small>
+      ${replaying ? '<span class="right"><button type="button" data-act="skip">Skip</button></span>' : ""}
+    </h2>
+    ${replayLog.length === 0
+      ? `<p class="spare">${replaying ? "Marching&hellip;" : "A quiet turn &mdash; nothing marched."}</p>`
+      : `<ul class="log">${replayLog
+          .map((l, i) => `<li class="${l.taken ? "taken" : ""} ${
+            i === replayLog.length - 1 && replaying ? "now" : ""
+          }">${l.text}</li>`)
+          .join("")}</ul>`}`;
 }
 
 function rankingsPanel(): string {
   const rows = game
     .rankings()
-    .map((r: Ranking) => `<div class="${r.nation === you ? "you" : ""}">
-      <dt>Nation ${r.nation}${r.nation === you ? " (you)" : ""}</dt>
-      <dd>${whole(r.population)} people &middot; ${r.provinces} provinces
-        &middot; ${whole(r.firepower)} firepower</dd>
+    .map((r: Ranking) => `<div class="${r.nation === you ? "you" : ""} ${
+      inspect?.kind === "nation" && inspect.id === r.nation ? "open" : ""
+    }" data-nation="${r.nation}">
+      <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
+      <dd>${people(r.population)} people &middot; ${r.provinces} provinces
+        &middot; ${power(r.firepower)} firepower</dd>
     </div>`)
     .join("");
   return `<h2>Rankings <small>end of turn ${game.turn}</small></h2>
-    ${replayLog.length > 0
-      ? `<ul class="log">${replayLog.map((l) => `<li class="${l.taken ? "taken" : ""}">${l.text}</li>`).join("")}</ul>`
-      : '<p class="spare">A quiet turn &mdash; nothing marched.</p>'}
     <p class="hint">Standing is population. Not territory, not firepower &mdash; which is
       what makes arming yourself expensive.</p>
     <dl class="rank">${rows}</dl>`;
@@ -548,7 +803,7 @@ function replaySteps(before: World, report: TurnReport): Step[] {
   for (const t of report.transfers) {
     steps.push({
       from: t.from, to: t.to, force: t.firepower, hostile: false, taken: false,
-      text: `${whole(t.firepower)} marches ${name(t.from)} &rarr; ${name(t.to)}`,
+      text: `${power(t.firepower)} marches ${name(t.from)} &rarr; ${name(t.to)}`,
       apply: (w) => { w.provinces[t.to]!.firepower += t.firepower; },
     });
   }
@@ -559,10 +814,10 @@ function replaySteps(before: World, report: TurnReport): Step[] {
       const nation = before.provinces[wave.from]!.nation;
       steps.push({
         from: wave.from, to: b.target, force: wave.committed, hostile: true, taken: captured,
-        text: `${whole(wave.committed)} from ${name(wave.from)} attacks ${name(b.target)} ` +
-          `${wave.viaRoad ? "by road" : "across country, quartered"}: ${whole(wave.effective)} ` +
-          `against ${whole(wave.defenceBefore)} &mdash; ` +
-          (captured ? `<b>taken</b>, ${whole(wave.survivors)} hold it` : "repulsed"),
+        text: `${power(wave.committed)} from ${name(wave.from)} attacks ${name(b.target)} ` +
+          `${wave.viaRoad ? "by road" : "across country, quartered"}: ${power(wave.effective)} ` +
+          `against ${power(wave.defenceBefore)} &mdash; ` +
+          (captured ? `<b>taken</b>, ${power(wave.survivors)} hold it` : "repulsed"),
         apply: (w) => {
           const target = w.provinces[b.target]!;
           if (captured) {
@@ -577,7 +832,7 @@ function replaySteps(before: World, report: TurnReport): Step[] {
     if (b.civilianLoss > 0) {
       steps.push({
         from: b.target, to: b.target, force: 0, hostile: true, taken: b.captured,
-        text: `${name(b.target)} loses ${whole(b.civilianLoss)} civilians to the fighting`,
+        text: `${name(b.target)} loses ${people(b.civilianLoss)} civilians to the fighting`,
         apply: (w) => {
           const target = w.provinces[b.target]!;
           target.population = Math.max(0, target.population - b.civilianLoss);
@@ -592,11 +847,10 @@ function replaySteps(before: World, report: TurnReport): Step[] {
 async function travel(step: Step, world: World): Promise<void> {
   const a = world.provinces[step.from]!.capital;
   const b = world.provinces[step.to]!.capital;
-  const label = whole(step.force);
+  const label = power(step.force);
   const start = performance.now();
-  const duration = 420;
   for (;;) {
-    const t = Math.min(1, (performance.now() - start) / duration);
+    const t = Math.min(1, (performance.now() - start) / MARCH_MS);
     replayMarkers = [{
       at: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t },
       label,
@@ -608,6 +862,10 @@ async function travel(step: Step, world: World): Promise<void> {
   }
   replayMarkers = [];
 }
+
+/** Half the speed it first ran at: the first pass was too quick to follow. */
+const MARCH_MS = 840;
+const BEAT_MS = 560;
 
 async function replay(before: World, report: TurnReport): Promise<void> {
   const steps = replaySteps(before, report);
@@ -628,14 +886,14 @@ async function replay(before: World, report: TurnReport): Promise<void> {
   replayWorld = stage;
   replayLog = [];
   render();
-  await sleep(skipReplay ? 0 : 260);
+  await sleep(BEAT_MS / 2);
 
   for (const step of steps) {
     if (step.from !== step.to && !skipReplay) await travel(step, stage);
     step.apply(stage);
     replayLog = [...replayLog, { text: step.text, taken: step.taken }];
     render();
-    if (!skipReplay) await sleep(280);
+    if (!skipReplay) await sleep(BEAT_MS);
   }
 
   replaying = false;
@@ -654,27 +912,21 @@ const PHASES = [
 ] as const;
 
 function render(): void {
-  // `advance` moves the phase to rankings before the replay runs, so while the marches
-  // are still on screen the shell has to keep showing execution — otherwise the panel
-  // announced "a quiet turn" over the top of a battle.
-  const phase = replaying ? "military-execution" : game.phase;
-  const index = PHASES.findIndex(([p]) => p === phase);
+  const index = PHASES.findIndex(([p]) => p === game.phase);
   el("phases").innerHTML = PHASES.map(([p, label], i) =>
-    `<span class="${p === phase ? "on" : i < index ? "done" : ""}">${label}</span>`).join("");
+    `<span class="${p === game.phase ? "on" : i < index ? "done" : ""}">${label}</span>`).join("");
 
   const mine = game.rankings().find((r) => r.nation === you);
-  el("standing").innerHTML = game.winner !== null
-    ? `<b>Nation ${game.winner} has conquered the world.</b>`
-    : `Continent <b>${game.world.name}</b> &middot; ${game.world.level} &middot;
-       you are nation <b>${you}</b> &middot; ${whole(mine?.population ?? 0)} people,
+  el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}
+       &middot; you are <b>${nationName(you)}</b> &middot; ${people(mine?.population ?? 0)} people,
        ${mine?.provinces ?? 0} provinces`;
 
-  document.body.classList.toggle("expanded", expanded && phase === "production");
+  document.body.classList.toggle("expanded", expanded && game.phase === "production");
 
   el("panel").innerHTML =
-    phase === "production" ? productionPanel()
-    : phase === "military-orders" ? ordersPanel()
-    : phase === "military-execution" ? executionPanel()
+    game.phase === "production" ? productionPanel()
+    : game.phase === "military-orders" ? ordersPanel()
+    : game.phase === "military-execution" ? executionPanel()
     : rankingsPanel();
 
   const inspectorEl = el("inspector");
@@ -690,10 +942,33 @@ function render(): void {
     rankings: "Next turn",
   }[game.phase];
   advance.className = "primary";
-  advance.disabled = game.winner !== null || replaying;
-  el("undo").hidden = phase !== "rankings";
+  advance.disabled = replaying;
+  el("undo").hidden = game.phase !== "rankings";
   el("notice").textContent = notice;
   drawMap();
+
+  const control = el("march-control");
+  control.innerHTML = marchControlHtml();
+  control.hidden = control.innerHTML.trim() === "";
+
+  if (game.winner !== null && !replaying && !replayPending) showSplash(game.winner);
+}
+
+function showSplash(winner: number): void {
+  const won = winner === you;
+  el("splash-title").textContent = won ? "The world is yours" : `${nationName(winner)} has conquered the world`;
+  const turns = `${game.turn} turn${game.turn === 1 ? "" : "s"}`;
+  el("splash-body").textContent = won
+    ? `${nationName(you)} holds every province on ${game.world.name}, after ${turns}.`
+    : `${nationName(winner)} holds every province on ${game.world.name}. ${nationName(you)} is no more.`;
+  el("splash-rank").innerHTML = game
+    .rankings()
+    .map((r) => `<div class="${r.nation === you ? "you" : ""}">
+      <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
+      <dd>${people(r.population)} people &middot; ${r.provinces} provinces</dd>
+    </div>`)
+    .join("");
+  el("splash").hidden = false;
 }
 
 // --- events ----------------------------------------------------------------------
@@ -730,10 +1005,11 @@ document.addEventListener("change", (event) => {
   if (target.dataset.lock) {
     const id = target.dataset.lock as CommodityId;
     notice = game.toggleLock(you, id)
-      ? `${id} locked — redistribution will leave it alone.`
-      : `${id} unlocked.`;
+      ? `${commodityLabel(id)} locked — redistribution will leave it alone.`
+      : `${commodityLabel(id)} unlocked.`;
     render();
   } else if (target.dataset.workers) {
+    // Commit clamps: `max` does not stop anyone typing past it.
     const ctx = context();
     const w = workersFor(draft, ctx.population, ctx.land.farmland)[target.dataset.workers] ?? 0;
     target.value = String(w);
@@ -743,13 +1019,21 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("click", (event) => {
-  const node = (event.target as HTMLElement).closest<HTMLElement>("[data-act], [data-step], [data-mstep], [data-nation]");
+  const node = (event.target as HTMLElement).closest<HTMLElement>(
+    "[data-act], [data-step], [data-mstep], [data-nation], [data-factory]",
+  );
   if (!node) return;
+
+  if (node.dataset.factory) {
+    const id = node.dataset.factory as CommodityId;
+    inspect = inspect?.kind === "factory" && inspect.id === id ? null : { kind: "factory", id };
+    render();
+    return;
+  }
 
   if (node.dataset.step) {
     const id = node.dataset.step as CommodityId;
-    const current = workersFor(draft, context().population, context().land.farmland)[id] ?? 0;
-    setWorkers(id, current + Number(node.dataset.by));
+    setWorkers(id, (currentWorkers()[id] ?? 0) + Number(node.dataset.by));
     refreshNumbers();
     return;
   }
@@ -758,11 +1042,8 @@ document.addEventListener("click", (event) => {
     const order = game.orders[province];
     const power = game.world.provinces[province]!.firepower;
     if (order && order.target !== null && power > 0) {
-      const send = Math.floor(power * order.marchFraction) + Number(node.dataset.by);
-      game.setOrder(province, {
-        ...order,
-        marchFraction: Math.min(1, Math.max(0, send / power)),
-      });
+      const send = sentFrom(province) + Number(node.dataset.by);
+      game.setOrder(province, { ...order, marchFraction: Math.min(1, Math.max(0, send / power)) });
       render();
     }
     return;
@@ -777,6 +1058,10 @@ document.addEventListener("click", (event) => {
   switch (node.dataset.act) {
     case "close":
       inspect = null;
+      break;
+    case "dismiss":
+      // Only puts the control away. Cancelling an order is clicking its province twice.
+      ordering = null;
       break;
     case "expand":
       expanded = !expanded;
@@ -811,41 +1096,161 @@ el("advance").addEventListener("click", async () => {
   notice = "";
   if (game.phase === "production") game.setAllocation(you, draft);
 
-  const animate = game.phase === "military-execution";
+  // Combat resolves on the way into execution, so the replay runs *during* that phase —
+  // after Execute orders and before See rankings.
+  const animate = game.phase === "military-orders";
   const before = animate ? structuredClone(game.world) : null;
-  const orders = animate ? structuredClone(game.orders) : null;
 
+  replayPending = animate;
   const report = game.advance();
-  if (report) lastReport = report;
   if (game.phase === "production") {
     draft = game.allocations[you] ?? draft;
     replayLog = [];
   }
   selected = null;
+  ordering = null;
   render();
 
   if (animate && before && report) {
-    // `advance` has already cleared the phase forward, so the replay needs the orders as
-    // they stood when they were given.
-    const kept = game.orders;
-    game.orders = orders!;
-    try {
-      await replay(before, report);
-    } finally {
-      game.orders = kept;
-    }
+    await replay(before, report);
+    replayPending = false;
+    render();
   }
+  replayPending = false;
+  save();
 });
 
 el("undo").addEventListener("click", () => {
   game.undoTurn();
+  save();
   draft = game.allocations[you] ?? draft;
-  lastReport = null;
   replayLog = [];
   selected = null;
+  ordering = null;
   inspect = null;
   notice = "Turn undone.";
   render();
 });
 
-render();
+// --- saving ----------------------------------------------------------------------
+
+const SAVE = "guns-or-butter/save";
+
+interface Saved {
+  snapshot: GameSnapshot;
+  draft: Allocation;
+}
+
+/**
+ * Autosave, so a refresh resumes rather than starts over.
+ *
+ * `GameSnapshot` holds the world, the turn and the allocations but not the phase or the
+ * orders, so a resume lands at the start of the saved turn. That is the honest thing to
+ * restore: half a turn of orders is not a state the game has a name for.
+ */
+function save(): void {
+  try {
+    const payload: Saved = { snapshot: game.snapshot(), draft };
+    localStorage.setItem(SAVE, JSON.stringify(payload));
+  } catch {
+    // A full or blocked store is not worth interrupting a game over.
+  }
+}
+
+function saved(): Saved | null {
+  try {
+    const raw = localStorage.getItem(SAVE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Saved;
+    return parsed?.snapshot?.world?.provinces?.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function offerResume(): void {
+  const found = saved();
+  const button = el<HTMLButtonElement>("resume");
+  button.hidden = found === null;
+  if (found) {
+    const world = found.snapshot.world;
+    button.textContent = `Resume ${world.nations[0]?.name ?? "your game"} on ${world.name}, turn ${found.snapshot.turn}`;
+  }
+}
+
+// --- start and finish ------------------------------------------------------------
+
+function begin(continent: string, nation: string, level: Level): void {
+  game = Game.fromWorld(generateWorld(continent, level, { playerNation: nation }), economy);
+  draft = subsistenceAllocation();
+  view = continentBounds(game.world);
+  selected = null;
+  ordering = null;
+  inspect = null;
+  replayLog = [];
+  notice = "";
+  el("splash").hidden = true;
+  el("start").hidden = true;
+  render();
+  save();
+}
+
+el<HTMLFormElement>("start-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target as HTMLFormElement);
+  begin(
+    String(data.get("continent") ?? "").trim() || "Kittycat",
+    String(data.get("nation") ?? "").trim() || "Babylon",
+    (String(data.get("level")) || "intermediate") as Level,
+  );
+});
+
+el("again").addEventListener("click", () => {
+  el("splash").hidden = true;
+  el("start").hidden = false;
+  offerResume();
+});
+
+el("resume").addEventListener("click", () => {
+  const found = saved();
+  if (!found) return;
+  game = Game.restore(found.snapshot, economy);
+  draft = found.draft ?? game.allocations[you] ?? subsistenceAllocation();
+  view = continentBounds(game.world);
+  selected = null;
+  ordering = null;
+  inspect = null;
+  replayLog = [];
+  notice = `Resumed at the start of turn ${game.turn}.`;
+  el("splash").hidden = true;
+  el("start").hidden = true;
+  render();
+});
+
+el("quit").addEventListener("click", () => {
+  save();
+  el("splash").hidden = true;
+  el("start").hidden = false;
+  offerResume();
+});
+
+el("exit").addEventListener("click", () => {
+  // Only works for a window a script opened, so fall back to saying so plainly.
+  window.close();
+  el("splash-title").textContent = "Thanks for playing";
+  el("splash-body").textContent =
+    "Close the tab when you are ready, or start another game.";
+  el<HTMLButtonElement>("exit").hidden = true;
+});
+
+// A continent in the URL skips the start screen, which is what the test harness uses.
+const params = new URLSearchParams(location.search);
+if (params.get("continent")) {
+  begin(
+    params.get("continent")!,
+    params.get("nation") ?? "Babylon",
+    (params.get("level") ?? "intermediate") as Level,
+  );
+} else {
+  offerResume();
+}
