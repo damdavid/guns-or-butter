@@ -85,7 +85,27 @@ svg.map.panning { cursor: grabbing; }
    the screen with the most numbers on it and the one the player spends longest in. */
 body.expanded main { grid-template-columns: minmax(0, 1fr); }
 body.expanded .map-pane { display: none; }
-body.expanded #nations, body.expanded #inspector { display: none; }
+body.expanded #nations { display: none; }
+
+/* Expanded, the side column becomes the whole window: production takes what is left
+   after the inspector, and the inspector only takes a column when it has something in
+   it. Reading a factory's recipe while setting its workers is the point. */
+body.expanded .side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+}
+body.expanded #panel { grid-row: 1; grid-column: 1; min-height: 0; overflow-y: auto; }
+body.expanded #inspector { display: none; }
+body.expanded.inspecting .side { grid-template-columns: minmax(0, 1fr) 26rem; }
+body.expanded.inspecting #inspector {
+  display: block;
+  grid-row: 1;
+  grid-column: 2;
+  min-height: 0;
+  overflow-y: auto;
+}
 body.expanded table { font-size: 0.95rem; }
 body.expanded td { padding: 0.2rem 0.4rem; }
 body.expanded input[type="number"] { width: 5rem; font-size: 0.95rem; }

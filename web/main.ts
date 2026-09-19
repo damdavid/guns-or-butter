@@ -932,6 +932,9 @@ function render(): void {
   const inspectorEl = el("inspector");
   inspectorEl.innerHTML = inspectorHtml();
   inspectorEl.hidden = inspectorEl.innerHTML === "";
+  // Expanded production gives the inspector its own column rather than hiding it, but
+  // only when there is something in it to read.
+  document.body.classList.toggle("inspecting", !inspectorEl.hidden);
   el("nations").innerHTML = nationsHtml();
 
   const advance = el<HTMLButtonElement>("advance");

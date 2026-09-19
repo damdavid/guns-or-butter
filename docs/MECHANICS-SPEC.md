@@ -1916,6 +1916,13 @@ priority rule in two lines of a table.
 Raws name the terrain they draw on and its acreage; tools and weapons name what a ton is
 worth in food or firepower.
 
+**Expanded production keeps it on screen.** Expanding once hid the inspector along with
+everything else, which put the recipe and the worker box that answers it on opposite
+sides of a click. The inspector now takes a column of its own when it has something in
+it, and production takes the rest — 1138px against 416px at 1600 wide — so a factory's
+shortage and its slider are readable together. With nothing inspected, production still
+gets the whole window.
+
 **One question left open: should another nation's affinity be visible at all?** It is
 shown for every nation at the moment. Most of it is inferable anyway, since the live
 terms are computed from the public standings — but the stored channels are history, and
