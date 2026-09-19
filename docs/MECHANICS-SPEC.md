@@ -2004,11 +2004,43 @@ sits on the famine floor (§4.4.1) from turn one: it cannot starve and it cannot
 and the game is static for the human player just as much as for the AI. Intermediate is
 marginal at +11.
 
-This wants a decision rather than a patch. The candidates are a lower
-population-to-farmland ratio at expert, a look at whether the expert tier-1 parameters
-are right, or accepting that expert is a game about conquering farmland rather than
-growing into it. Note there are no expert population readings in §4.4.1 — all 29 are
-from Beginner and Intermediate — so the response itself is unverified at that level.
+#### …because expert is built around unions, and unions are the missing piece
+
+**The Economic Union phase exists at Expert and nowhere else** (§1.1, §1.2.1). Expert is
+also the only level where a nation cannot feed itself alone. That is not plausibly a
+coincidence, and it reads §6.1's own words back at us: members' populations and terrain
+pool into one economic unit, *"which, given superlinear productivity, is an enormous
+efficiency gain. This is the whole point."*
+
+At expert it is not an efficiency gain, it is survival. Pooling does not change the
+population-to-farmland ratio, but the productivity exponent is above 1, so a bigger pool
+feeds itself better at the same ratio — about 7-9 points of surplus per doubling. Best
+achievable food surplus for a union of the poorest *n* nations, climbing on food alone:
+
+| Members | Thule | Kublai |
+| --- | --- | --- |
+| 1 (alone) | −115 | −111 |
+| 2 | −49 | −136 |
+| 3 | −54 | −3 |
+| 4 | −55 | **+18** |
+| 6 | −37 | **+436** |
+| 8 | **+13** | **+720** |
+
+**Two is not enough.** A pair roughly halves the deficit and no more. Breaking even takes
+four to eight members, which is most or all of the world — and the deeper you go past
+break-even the more dramatic the return, because every doubling compounds.
+
+So expert is not mis-tuned; it is **incomplete**. It cannot be judged until unions exist,
+and the sequencing matters: §6.1's rule that *the weakest player declares the union* is
+exactly what a level where the weak cannot survive alone would need. Whether affinity
+(§6.4) will actually produce unions of four or more is the open question, and it cannot
+be answered until step 7 is built.
+
+Two caveats worth carrying into that work. There are no expert population readings in
+§4.4.1 — all 29 are from Beginner and Intermediate — so the response is unverified at
+that level. And a union lasts one turn (§6.1), so a nation that pools to eat has to pool
+again next turn, which makes the acceptance test in §6.4 — a roughly flat rate of union
+formation — a survival requirement at expert rather than a nicety.
 
 ### 10.2 Limits of `balanceAllocation`
 
