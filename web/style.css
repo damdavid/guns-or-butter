@@ -320,7 +320,8 @@ tr.total td { border-top: 1px solid var(--rule); }
 .march-control {
   position: absolute;
   z-index: 5;
-  transform: translate(-50%, 0);
+  right: 0.7rem;
+  bottom: 0.7rem;
   background: var(--panel);
   border: 1px solid var(--ink);
   border-radius: 3px;
@@ -337,3 +338,5 @@ tr.total td { border-top: 1px solid var(--rule); }
 .march-control input[type="range"] { width: 7rem; }
 .march-control input[type="number"] { width: 3.6rem; }
 .march-control button { padding: 0 0.35rem; min-width: 1.4rem; }
+.march-control .who { margin-right: 0.2rem; }
+.march-control .dismiss { margin-left: 0.3rem; font-size: 1rem; line-height: 1; padding: 0 0.3rem; }

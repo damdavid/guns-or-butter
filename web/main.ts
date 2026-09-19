@@ -161,26 +161,14 @@ function applyView(): void {
     "viewBox",
     `${view.x.toFixed(1)} ${view.y.toFixed(1)} ${view.w.toFixed(1)} ${view.h.toFixed(1)}`,
   );
-  placeMarchControl();
-}
-
-/** World coordinates to a position within the map pane. The inverse of `toWorld`. */
-function toPane(at: Point): { left: number; top: number } | null {
-  const svg = el("map").querySelector("svg");
-  const pane = document.querySelector(".map-pane");
-  if (!svg || !pane) return null;
-  const r = svg.getBoundingClientRect();
-  const box = pane.getBoundingClientRect();
-  const scale = Math.min(r.width / view.w, r.height / view.h);
-  return {
-    left: r.x - box.x + (r.width - view.w * scale) / 2 + (at.x - view.x) * scale,
-    top: r.y - box.y + (r.height - view.h * scale) / 2 + (at.y - view.y) * scale,
-  };
 }
 
 /**
- * The march control sits on the map beside the province it is ordering, so the number
- * being set is next to the thing being ordered rather than in a table across the page.
+ * The march control, docked in the corner of the map.
+ *
+ * It first sat on the province it was ordering, which put it over the ground the player
+ * was trying to read — and on a small continent, over the target as well. A fixed corner
+ * costs a glance and covers nothing that moves.
  */
 function marchControlHtml(): string {
   if (selected === null || game.phase !== "military-orders" || replaying) return "";
@@ -190,23 +178,17 @@ function marchControlHtml(): string {
   const target = game.world.provinces[order.target]!;
   const cap = Math.floor(p.firepower);
   const send = sentFrom(selected);
-  return `${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}
+  // Named at both ends: the control is no longer beside the province it is ordering.
+  return `<span class="who">${p.name} &rarr;
+      ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</span>
     <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
     ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
       aria-label="firepower sent from ${p.name}" /><button
       type="button" data-mstep="${p.id}" data-by="1">+</button>
     <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
-    <span class="spare">of ${cap}</span>`;
-}
-
-function placeMarchControl(): void {
-  const box = el("march-control");
-  if (box.hidden || selected === null) return;
-  const p = game.world.provinces[selected];
-  const at = p && toPane({ x: p.capital.x, y: p.capital.y + 14 });
-  if (!at) return;
-  box.style.left = `${at.left}px`;
-  box.style.top = `${at.top}px`;
+    <span class="spare">of ${cap}</span>
+    <button type="button" data-act="dismiss" class="dismiss"
+      title="Close. The order stands.">&times;</button>`;
 }
 
 const MIN_VIEW = 80;
@@ -795,7 +777,6 @@ function render(): void {
   const control = el("march-control");
   control.innerHTML = marchControlHtml();
   control.hidden = control.innerHTML.trim() === "";
-  placeMarchControl();
 
   if (game.winner !== null && !replaying && !replayPending) showSplash(game.winner);
 }
@@ -897,6 +878,10 @@ document.addEventListener("click", (event) => {
   switch (node.dataset.act) {
     case "close":
       inspect = null;
+      break;
+    case "dismiss":
+      // Only puts the control away. Cancelling is clicking the province itself.
+      selected = null;
       break;
     case "expand":
       expanded = !expanded;

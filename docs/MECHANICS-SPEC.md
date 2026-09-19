@@ -1810,9 +1810,13 @@ The rest:
 - **Victory waits for the marches to finish.** `advance()` resolves combat on the way
   into execution (§1.2.1), so the winner is known before the replay has drawn a single
   arrow — the splash was appearing over the top of the battle that won the game.
-- **The march control rides on the map** beside the province it is ordering, so the
-  number being set is next to the thing being ordered. The province stays selected after
-  an order so the control can be adjusted without hunting for the table row.
+- **The march control is docked in the corner of the map**, naming both ends of the
+  march, with a close button. It first sat on the province it was ordering, which put it
+  over the ground the player was trying to read and, on a small continent, over the
+  target as well. Closing it only puts it away — the order stands, and the arrow stays
+  on the map. Cancelling an order is still clicking the province itself. The province
+  stays selected after an order, so the control can be adjusted without hunting for the
+  table row.
 - Clicking a nation in the Rankings highlights its territory, as the nations list does.
 
 ### 10.2 Limits of `balanceAllocation`
