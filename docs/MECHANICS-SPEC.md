@@ -1781,6 +1781,40 @@ The rest of the pass:
   row and a marked edge rather than one red number; the Skip button moved into the
   execution heading so it is reachable before the log rather than after it.
 
+#### 10.1.6 Seventh pass
+
+**A frontier is now at most two thirds road [F].** Roads were drawn without regard to
+nations, so a national border could come out almost entirely paved — and since a road is
+the difference between a 20-firepower threshold and a 50-firepower one (§5.5), such a
+border is indefensible by construction. Nations are therefore settled before the roads
+are laid, and each demoted frontier road is traded for an interior one so the continent
+keeps the dialogue's "oh, only half". Measured across 24 worlds: worst frontier now 63.6%
+paved, overall road share unchanged at 50-52%.
+
+**The + button and the slider could stop moving a factory while typing still worked.**
+Not rare at all once looked for: 14 of 19 commodities at intermediate, 33 of 33 at
+expert. The UI holds whole workers and stores them back as fractions of the workforce,
+and those fractions re-add to 0.9999999999 often enough that the floor in `workersFor`
+swallowed a worker. Largest remainder then decided *which* factory lost it, which is what
+made the stall look random. An epsilon on that floor fixes it; 0 of 33 stall now.
+
+The rest:
+
+- **The game autosaves**, so a refresh resumes instead of starting over, and the start
+  screen offers the save. `GameSnapshot` carries the world, turn and allocations but not
+  the phase or the orders, so a resume lands at the start of the saved turn — half a turn
+  of orders is not a state the game has a name for.
+- **Exit sits at the far right of the footer**, as far from the button pressed every turn
+  as the bar allows. It saves and returns to the start screen; with the autosave behind
+  it, leaving costs nothing.
+- **Victory waits for the marches to finish.** `advance()` resolves combat on the way
+  into execution (§1.2.1), so the winner is known before the replay has drawn a single
+  arrow — the splash was appearing over the top of the battle that won the game.
+- **The march control rides on the map** beside the province it is ordering, so the
+  number being set is next to the thing being ordered. The province stays selected after
+  an order so the control can be adjusted without hunting for the table row.
+- Clicking a nation in the Rankings highlights its territory, as the nations list does.
+
 ### 10.2 Limits of `balanceAllocation`
 
 Auto-balance is scaffolding, not the AI, and playing it exposed how far it is from one.

@@ -340,6 +340,58 @@ describe("moving whole workers (§3.6)", () => {
     assert.equal(after["sulfur"], workforce - held, "only the unlocked remainder is available");
   });
 
+  it("can be driven to the full workforce one press at a time", () => {
+    // Reported from play: the + button and the slider would stop moving a factory while
+    // typing the number still worked. The UI stores whole workers back as fractions of
+    // the workforce, and those re-add to 0.9999999999 often enough that the floor in
+    // `workersFor` swallowed a worker — largest remainder then decided which factory
+    // lost it, so the stall looked random.
+    const economy = new Economy();
+    const game = Game.create("Kublai", "expert");
+    const { land, population } = nationState(game.world, 0);
+    const spare = Math.floor(Math.max(0, population - land.farmland));
+    const ids = [...economy.graph.table.keys()];
+
+    for (const target of ["lumber", "combine", "sulfur", "tractor"]) {
+      let draft: Allocation = subsistenceAllocation();
+      const workers = () => {
+        const now = workersFor(draft, population, land.farmland);
+        return Object.fromEntries(ids.map((id) => [id, now[id] ?? 0]));
+      };
+      let previous = -1;
+      for (let press = 0; press < spare + 5; press++) {
+        const held = workers()[target] ?? 0;
+        if (held >= spare) break;
+        assert.notEqual(held, previous, `${target} stopped moving at ${held} of ${spare}`);
+        previous = held;
+        const next = moveWorkers(workers(), target, held + 1, [], spare);
+        draft = Object.fromEntries(Object.entries(next).map(([k, v]) => [k, v / spare]));
+      }
+      assert.equal(workers()[target], spare, `${target} never reached the whole workforce`);
+    }
+  });
+
+  it("never loses a worker to the fraction round trip", () => {
+    const game = Game.create("Thule", "intermediate");
+    const { land, population } = nationState(game.world, 0);
+    const spare = Math.floor(Math.max(0, population - land.farmland));
+    let draft: Allocation = subsistenceAllocation();
+    for (const [id, want] of [["lumber", 40], ["charcoal", 71], ["sword", 3], ["iron", 55]] as const) {
+      const now = workersFor(draft, population, land.farmland);
+      const next = moveWorkers(
+        Object.fromEntries(Object.keys(subsistenceAllocation()).concat(id).map((k) => [k, now[k] ?? 0])),
+        id, want, [], spare,
+      );
+      draft = Object.fromEntries(Object.entries(next).map(([k, v]) => [k, v / spare]));
+      const after = workersFor(draft, population, land.farmland);
+      assert.equal(after[id], want, `${id} should hold exactly ${want}`);
+      assert.equal(
+        Object.values(after).reduce((s, v) => s + v, 0), spare,
+        `the workforce leaked after setting ${id}`,
+      );
+    }
+  });
+
   it("leaves locked factories exactly where they are", () => {
     const after = moveWorkers(start, "sulfur", 0, ["lumber", "charcoal"]);
     assert.equal(after["lumber"], start.lumber);

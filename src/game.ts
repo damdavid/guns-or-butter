@@ -293,7 +293,12 @@ export function workersFor(
   // loses up to one worker per factory and reports the dust as idle labour, which is
   // both wrong and maddening: the screen offers workers that cannot be spent because in
   // fraction terms the allocation is already fully committed.
-  const target = Math.floor(spare * Math.min(total, 1));
+  // The epsilon is not cosmetic. The UI works in whole workers and stores them back as
+  // `workers / spare`, and those fractions re-add to 0.9999999999 rather than 1 often
+  // enough to matter: the floor then swallowed a worker, and because largest remainder
+  // decides who loses it, pressing + on a factory could stop moving it at all. Typing
+  // the number worked, which is what made the bug look random.
+  const target = Math.floor(spare * Math.min(total, 1) + 1e-9);
   const wanted = Object.entries(allocation)
     .filter(([, fraction]) => fraction > 0)
     .map(([id, fraction]) => ({ id, exact: fraction * scale * spare }));

@@ -28,6 +28,7 @@
           <option value="expert">Expert &mdash; 8 nations</option>
         </select>
         <button type="submit" class="primary">Begin</button>
+        <button id="resume" type="button" hidden>Resume</button>
       </form>
     </div>
 
@@ -58,6 +59,7 @@
           <span id="map-hint" class="hint"></span>
         </div>
         <div id="map"></div>
+        <div id="march-control" class="march-control" hidden></div>
       </section>
 
       <section class="side">
@@ -71,6 +73,7 @@
       <button id="advance" type="button"></button>
       <button id="undo" type="button" hidden>Undo turn</button>
       <span id="notice" class="notice"></span>
+      <button id="quit" type="button" class="quit">Exit to start</button>
     </footer>
 
     <script type="module" src="dist/app.js"></script>

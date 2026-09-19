@@ -25,6 +25,12 @@ export const WORLDGEN = {
   coastWobble: 0.22,
   /** Fraction of spokes that are roads. The dialogue says "oh, only half". */
   roadFraction: 0.5,
+  /**
+   * At most this share of a nation's frontier may be road. A road is the difference
+   * between needing 20 firepower to take a province and needing 50 (§5.5), so a frontier
+   * that is mostly road is a frontier that cannot be held.
+   */
+  maxBorderRoadFraction: 0.66,
   /** Mean farmland acres per province; observed 34-58. */
   farmlandPerProvince: 42,
   farmlandSpread: 0.28,
@@ -476,12 +482,19 @@ export function generateWorld(
   // movement was cut from the original, so an unreachable province is unplayable.
   connectStragglers(capitals, adjacency, spokes);
 
+  // Nations are settled before the roads, because the roads have to know where the
+  // frontiers are. Its own stream, so the layout does not shift the terrain that
+  // follows it.
+  const owner = assignNations(adjacency, players, makeRng(`${name}/owners`));
+
   // 5. Roads: about half the spokes. The remainder are the borders that carry the
   // terrain penalty in combat (§5.5).
+  const shuffled = rng.shuffle(spokes);
   const roads = new Set<string>();
-  for (const [u, v] of rng.shuffle(spokes).slice(0, Math.round(spokes.length * WORLDGEN.roadFraction))) {
+  for (const [u, v] of shuffled.slice(0, Math.round(spokes.length * WORLDGEN.roadFraction))) {
     roads.add(edgeKey(u, v));
   }
+  capBorderRoads(shuffled, roads, owner);
 
   // 6. Terrain sits on the road-less borders, and straddles them — so both provinces
   // share the acreage. Types come from regional seeds rather than per-edge coin flips,
@@ -552,7 +565,6 @@ export function generateWorld(
     for (const t of TERRAIN_TYPES) l[t] = Math.round(l[t]);
   });
 
-  const owner = assignNations(adjacency, players, rng);
   const names = uniqueNames(rng, count);
 
   // Which polygon edges are shared with another province, and which face the sea.
@@ -715,6 +727,38 @@ export function borderSegments(world: World): BorderSegment[] {
 }
 
 /** A nation's economy inputs, summed over the provinces it holds (§2.1, §3.1). */
+/**
+ * Hold a nation's frontier below `maxBorderRoadFraction` road, trading each demoted
+ * border road for an interior one so the continent keeps its half-of-everything.
+ *
+ * Roads are drawn without regard to nations, so a frontier could come out almost
+ * entirely road — and since a road is the difference between a 20-firepower threshold
+ * and a 50-firepower one (§5.5), such a border is indefensible by construction.
+ */
+function capBorderRoads(
+  shuffled: readonly [number, number][],
+  roads: Set<string>,
+  owner: readonly number[],
+): void {
+  const isFrontier = ([u, v]: readonly [number, number]) => owner[u] !== owner[v];
+  const frontier = shuffled.filter(isFrontier);
+  const allowed = Math.floor(frontier.length * WORLDGEN.maxBorderRoadFraction);
+  let paved = frontier.filter(([u, v]) => roads.has(edgeKey(u, v))).length;
+  if (paved <= allowed) return;
+
+  // Promote interior spokes in the same shuffled order, so the swap stays seeded.
+  const interior = shuffled.filter((e) => !isFrontier(e) && !roads.has(edgeKey(e[0], e[1])));
+  let next = 0;
+  for (const [u, v] of frontier) {
+    if (paved <= allowed) break;
+    if (!roads.has(edgeKey(u, v))) continue;
+    roads.delete(edgeKey(u, v));
+    paved--;
+    const swap = interior[next++];
+    if (swap) roads.add(edgeKey(swap[0], swap[1]));
+  }
+}
+
 export function nationState(world: World, nation: number): { land: Land; population: number } {
   const own = world.provinces.filter((p) => p.nation === nation);
   const land: Land = { farmland: 0, forest: 0, mountains: 0, desert: 0 };

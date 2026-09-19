@@ -290,6 +290,9 @@ dl.rank div { display: flex; gap: 0.5rem; padding: 0.2rem 0; border-top: 1px sol
 dl.rank dt { width: 9rem; }
 dl.rank dd { margin: 0; color: var(--ink-soft); }
 dl.rank div.you dt { font-weight: bold; }
+dl.rank div { cursor: pointer; }
+dl.rank div:hover { background: #f6efdf; }
+dl.rank div.open { background: #efe6d2; }
 
 /* The nudge buttons belong against the box they nudge, not spread across the row. */
 td.tune { white-space: nowrap; text-align: right; width: 1%; padding-right: 0.6rem; }
@@ -306,3 +309,31 @@ tr.deficit td.lim, tr.deficit .short { color: var(--warn); font-weight: bold; }
 tr.idle.deficit td { color: var(--ink-soft); }
 tr.total td { border-top: 1px solid var(--rule); }
 .capacity { color: var(--ink-soft); }
+
+/* Exit sits at the far right of the footer, as far from the button pressed every turn
+   as the bar allows. The game autosaves, so leaving costs nothing. */
+.quit { margin-left: auto; }
+
+/* The march control rides on the map beside the province it is ordering, so the number
+   being set is next to the thing being ordered rather than in a table across the page. */
+.map-pane { position: relative; }
+.march-control {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, 0);
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  box-shadow: 0 3px 12px rgba(36, 31, 26, 0.3);
+  padding: 0.3rem 0.45rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.march-control[hidden] { display: none; }
+.march-control b { color: var(--warn); }
+.march-control input[type="range"] { width: 7rem; }
+.march-control input[type="number"] { width: 3.6rem; }
+.march-control button { padding: 0 0.35rem; min-width: 1.4rem; }

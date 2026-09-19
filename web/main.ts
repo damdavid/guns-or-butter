@@ -18,6 +18,7 @@ import {
   subsistenceAllocation,
   workersFor,
   type Allocation,
+  type GameSnapshot,
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
@@ -89,6 +90,8 @@ let replayMarkers: { at: Point; label: string; hostile: boolean }[] = [];
 let replayLog: { text: string; taken: boolean }[] = [];
 let replaying = false;
 let skipReplay = false;
+/** Set between resolving the turn and the replay starting, so victory waits for it. */
+let replayPending = false;
 
 // --- map -------------------------------------------------------------------------
 
@@ -158,6 +161,52 @@ function applyView(): void {
     "viewBox",
     `${view.x.toFixed(1)} ${view.y.toFixed(1)} ${view.w.toFixed(1)} ${view.h.toFixed(1)}`,
   );
+  placeMarchControl();
+}
+
+/** World coordinates to a position within the map pane. The inverse of `toWorld`. */
+function toPane(at: Point): { left: number; top: number } | null {
+  const svg = el("map").querySelector("svg");
+  const pane = document.querySelector(".map-pane");
+  if (!svg || !pane) return null;
+  const r = svg.getBoundingClientRect();
+  const box = pane.getBoundingClientRect();
+  const scale = Math.min(r.width / view.w, r.height / view.h);
+  return {
+    left: r.x - box.x + (r.width - view.w * scale) / 2 + (at.x - view.x) * scale,
+    top: r.y - box.y + (r.height - view.h * scale) / 2 + (at.y - view.y) * scale,
+  };
+}
+
+/**
+ * The march control sits on the map beside the province it is ordering, so the number
+ * being set is next to the thing being ordered rather than in a table across the page.
+ */
+function marchControlHtml(): string {
+  if (selected === null || game.phase !== "military-orders" || replaying) return "";
+  const p = game.world.provinces[selected];
+  const order = game.orders[selected];
+  if (!p || !order || order.target === null) return "";
+  const target = game.world.provinces[order.target]!;
+  const cap = Math.floor(p.firepower);
+  const send = sentFrom(selected);
+  return `${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}
+    <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
+    ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
+      aria-label="firepower sent from ${p.name}" /><button
+      type="button" data-mstep="${p.id}" data-by="1">+</button>
+    <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
+    <span class="spare">of ${cap}</span>`;
+}
+
+function placeMarchControl(): void {
+  const box = el("march-control");
+  if (box.hidden || selected === null) return;
+  const p = game.world.provinces[selected];
+  const at = p && toPane({ x: p.capital.x, y: p.capital.y + 14 });
+  if (!at) return;
+  box.style.left = `${at.left}px`;
+  box.style.top = `${at.top}px`;
 }
 
 const MIN_VIEW = 80;
@@ -251,8 +300,9 @@ addEventListener("pointerup", (event) => {
       game.setOrder(selected, { marchFraction: game.orders[selected]?.marchFraction ?? 1, target: null });
       selected = null;
     } else if (legalTargets().has(id)) {
+      // The province stays selected, so the control that appears beside it can be used
+      // without hunting for the row in the table.
       game.setOrder(selected, { marchFraction: game.orders[selected]?.marchFraction ?? 1, target: id });
-      selected = null;
     } else if (orderable(id)) {
       selected = id;
     }
@@ -572,7 +622,9 @@ function executionPanel(): string {
 function rankingsPanel(): string {
   const rows = game
     .rankings()
-    .map((r: Ranking) => `<div class="${r.nation === you ? "you" : ""}">
+    .map((r: Ranking) => `<div class="${r.nation === you ? "you" : ""} ${
+      inspect?.kind === "nation" && inspect.id === r.nation ? "open" : ""
+    }" data-nation="${r.nation}">
       <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
       <dd>${whole(r.population)} people &middot; ${r.provinces} provinces
         &middot; ${whole(r.firepower)} firepower</dd>
@@ -740,14 +792,20 @@ function render(): void {
   el("notice").textContent = notice;
   drawMap();
 
-  if (game.winner !== null && !replaying) showSplash(game.winner);
+  const control = el("march-control");
+  control.innerHTML = marchControlHtml();
+  control.hidden = control.innerHTML.trim() === "";
+  placeMarchControl();
+
+  if (game.winner !== null && !replaying && !replayPending) showSplash(game.winner);
 }
 
 function showSplash(winner: number): void {
   const won = winner === you;
   el("splash-title").textContent = won ? "The world is yours" : `${nationName(winner)} has conquered the world`;
+  const turns = `${game.turn} turn${game.turn === 1 ? "" : "s"}`;
   el("splash-body").textContent = won
-    ? `${nationName(you)} holds every province on ${game.world.name}, after ${game.turn} turns.`
+    ? `${nationName(you)} holds every province on ${game.world.name}, after ${turns}.`
     : `${nationName(winner)} holds every province on ${game.world.name}. ${nationName(you)} is no more.`;
   el("splash-rank").innerHTML = game
     .rankings()
@@ -878,6 +936,7 @@ el("advance").addEventListener("click", async () => {
   const animate = game.phase === "military-orders";
   const before = animate ? structuredClone(game.world) : null;
 
+  replayPending = animate;
   const report = game.advance();
   if (game.phase === "production") {
     draft = game.allocations[you] ?? draft;
@@ -886,11 +945,18 @@ el("advance").addEventListener("click", async () => {
   selected = null;
   render();
 
-  if (animate && before && report) await replay(before, report);
+  if (animate && before && report) {
+    await replay(before, report);
+    replayPending = false;
+    render();
+  }
+  replayPending = false;
+  save();
 });
 
 el("undo").addEventListener("click", () => {
   game.undoTurn();
+  save();
   draft = game.allocations[you] ?? draft;
   replayLog = [];
   selected = null;
@@ -898,6 +964,52 @@ el("undo").addEventListener("click", () => {
   notice = "Turn undone.";
   render();
 });
+
+// --- saving ----------------------------------------------------------------------
+
+const SAVE = "guns-or-butter/save";
+
+interface Saved {
+  snapshot: GameSnapshot;
+  draft: Allocation;
+}
+
+/**
+ * Autosave, so a refresh resumes rather than starts over.
+ *
+ * `GameSnapshot` holds the world, the turn and the allocations but not the phase or the
+ * orders, so a resume lands at the start of the saved turn. That is the honest thing to
+ * restore: half a turn of orders is not a state the game has a name for.
+ */
+function save(): void {
+  try {
+    const payload: Saved = { snapshot: game.snapshot(), draft };
+    localStorage.setItem(SAVE, JSON.stringify(payload));
+  } catch {
+    // A full or blocked store is not worth interrupting a game over.
+  }
+}
+
+function saved(): Saved | null {
+  try {
+    const raw = localStorage.getItem(SAVE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Saved;
+    return parsed?.snapshot?.world?.provinces?.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function offerResume(): void {
+  const found = saved();
+  const button = el<HTMLButtonElement>("resume");
+  button.hidden = found === null;
+  if (found) {
+    const world = found.snapshot.world;
+    button.textContent = `Resume ${world.nations[0]?.name ?? "your game"} on ${world.name}, turn ${found.snapshot.turn}`;
+  }
+}
 
 // --- start and finish ------------------------------------------------------------
 
@@ -912,6 +1024,7 @@ function begin(continent: string, nation: string, level: Level): void {
   el("splash").hidden = true;
   el("start").hidden = true;
   render();
+  save();
 }
 
 el<HTMLFormElement>("start-form").addEventListener("submit", (event) => {
@@ -927,6 +1040,29 @@ el<HTMLFormElement>("start-form").addEventListener("submit", (event) => {
 el("again").addEventListener("click", () => {
   el("splash").hidden = true;
   el("start").hidden = false;
+  offerResume();
+});
+
+el("resume").addEventListener("click", () => {
+  const found = saved();
+  if (!found) return;
+  game = Game.restore(found.snapshot, economy);
+  draft = found.draft ?? game.allocations[you] ?? subsistenceAllocation();
+  view = continentBounds(game.world);
+  selected = null;
+  inspect = null;
+  replayLog = [];
+  notice = `Resumed at the start of turn ${game.turn}.`;
+  el("splash").hidden = true;
+  el("start").hidden = true;
+  render();
+});
+
+el("quit").addEventListener("click", () => {
+  save();
+  el("splash").hidden = true;
+  el("start").hidden = false;
+  offerResume();
 });
 
 el("exit").addEventListener("click", () => {
@@ -946,4 +1082,6 @@ if (params.get("continent")) {
     params.get("nation") ?? "Babylon",
     (params.get("level") ?? "intermediate") as Level,
   );
+} else {
+  offerResume();
 }
