@@ -728,34 +728,75 @@ export function borderSegments(world: World): BorderSegment[] {
 
 /** A nation's economy inputs, summed over the provinces it holds (§2.1, §3.1). */
 /**
- * Hold a nation's frontier below `maxBorderRoadFraction` road, trading each demoted
+ * Hold every nation's frontier below `maxBorderRoadFraction` road, trading each demoted
  * border road for an interior one so the continent keeps its half-of-everything.
  *
- * Roads are drawn without regard to nations, so a frontier could come out almost
- * entirely road — and since a road is the difference between a 20-firepower threshold
- * and a 50-firepower one (§5.5), such a border is indefensible by construction.
+ * Two measures, because they are not the same thing and only the second is what a player
+ * sees. The first bounds the share of *frontier spokes* that are paved. The second bounds
+ * the share of each nation's *border provinces* that have any road out at all — a nation
+ * can sit under the spoke cap and still have a road on six of its seven border
+ * provinces, which is the case that prompted the rule.
+ *
+ * A road is the difference between a 20-firepower threshold and a 50-firepower one
+ * (§5.5), so a province with a road out is a province an enemy can take cheaply. At least
+ * a third of every nation's frontier is now approachable only cross-country.
  */
 function capBorderRoads(
   shuffled: readonly [number, number][],
   roads: Set<string>,
   owner: readonly number[],
 ): void {
-  const isFrontier = ([u, v]: readonly [number, number]) => owner[u] !== owner[v];
+  const key = (e: readonly [number, number]) => edgeKey(e[0], e[1]);
+  const isFrontier = (e: readonly [number, number]) => owner[e[0]] !== owner[e[1]];
   const frontier = shuffled.filter(isFrontier);
-  const allowed = Math.floor(frontier.length * WORLDGEN.maxBorderRoadFraction);
-  let paved = frontier.filter(([u, v]) => roads.has(edgeKey(u, v))).length;
-  if (paved <= allowed) return;
+  if (frontier.length === 0) return;
 
   // Promote interior spokes in the same shuffled order, so the swap stays seeded.
-  const interior = shuffled.filter((e) => !isFrontier(e) && !roads.has(edgeKey(e[0], e[1])));
-  let next = 0;
-  for (const [u, v] of frontier) {
-    if (paved <= allowed) break;
-    if (!roads.has(edgeKey(u, v))) continue;
-    roads.delete(edgeKey(u, v));
+  const interior = shuffled.filter((e) => !isFrontier(e) && !roads.has(key(e)));
+  let promoted = 0;
+  const demote = (e: readonly [number, number]) => {
+    roads.delete(key(e));
+    const swap = interior[promoted++];
+    if (swap) roads.add(key(swap));
+  };
+
+  // 1. At most two thirds of the frontier's spokes.
+  const allowedSpokes = Math.floor(frontier.length * WORLDGEN.maxBorderRoadFraction);
+  let paved = frontier.filter((e) => roads.has(key(e))).length;
+  for (const e of frontier) {
+    if (paved <= allowedSpokes) break;
+    if (!roads.has(key(e))) continue;
+    demote(e);
     paved--;
-    const swap = interior[next++];
-    if (swap) roads.add(edgeKey(swap[0], swap[1]));
+  }
+
+  // 2. At most two thirds of any one nation's border provinces may have a road out.
+  const facing = new Map<number, [number, number][]>();
+  for (const e of frontier) {
+    for (const province of e) {
+      const list = facing.get(province);
+      if (list) list.push([e[0], e[1]]);
+      else facing.set(province, [[e[0], e[1]]]);
+    }
+  }
+  const hasRoadOut = (province: number) =>
+    (facing.get(province) ?? []).some((e) => roads.has(key(e)));
+
+  for (const nation of [...new Set(owner)].sort((a, b) => a - b)) {
+    const border = [...facing.keys()].filter((q) => owner[q] === nation).sort((a, b) => a - b);
+    const allowed = Math.floor(border.length * WORLDGEN.maxBorderRoadFraction);
+    // Strip the cheapest province each time — the one with fewest roads to take away —
+    // so the continent loses as few roads as the rule allows.
+    for (let guard = 0; guard < border.length; guard++) {
+      const roaded = border.filter(hasRoadOut);
+      if (roaded.length <= allowed) break;
+      const victim = roaded.sort(
+        (a, b) =>
+          facing.get(a)!.filter((e) => roads.has(key(e))).length -
+            facing.get(b)!.filter((e) => roads.has(key(e))).length || a - b,
+      )[0]!;
+      for (const e of facing.get(victim)!) if (roads.has(key(e))) demote(e);
+    }
   }
 }
 

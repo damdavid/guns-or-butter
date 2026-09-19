@@ -331,10 +331,12 @@ describe("roads on a frontier (§2)", () => {
         })),
     );
 
-  it("leaves at most two thirds of any frontier paved", () => {
+  const CONTINENTS = ["Saturday", "Kittycat", "Kublai", "Ganthor", "Thule", "Vashti", "Ur", "Nineveh"];
+
+  it("leaves at most two thirds of any frontier's spokes paved", () => {
     // A road is the difference between a 20-firepower threshold and a 50-firepower one
     // (§5.5), so a frontier that is mostly road cannot be held at all.
-    for (const name of ["Kittycat", "Kublai", "Ganthor", "Thule", "Vashti", "Ur", "Nineveh"]) {
+    for (const name of CONTINENTS) {
       for (const level of LEVELS) {
         const edges = spokes(generateWorld(name, level));
         const frontier = edges.filter((e) => e.frontier);
@@ -348,10 +350,48 @@ describe("roads on a frontier (§2)", () => {
     }
   });
 
+  it("leaves at most two thirds of any nation's border provinces with a road out", () => {
+    // The measure a player actually counts, and not the same as the spoke share: a
+    // nation can sit well under the spoke cap and still have a road on six of its seven
+    // border provinces. Saturday/expert did exactly that — Corinth, 6 of 7.
+    for (const name of CONTINENTS) {
+      for (const level of LEVELS) {
+        const world = generateWorld(name, level);
+        for (const nation of world.nations) {
+          const border = world.provinces.filter(
+            (p) => p.nation === nation.id &&
+              p.neighbours.some((n) => world.provinces[n.province]!.nation !== nation.id),
+          );
+          if (border.length === 0) continue;
+          const out = border.filter((p) =>
+            p.neighbours.some((n) => n.road && world.provinces[n.province]!.nation !== nation.id));
+          assert.ok(
+            out.length <= Math.floor(border.length * WORLDGEN.maxBorderRoadFraction),
+            `${name}/${level} ${nation.name}: ${out.length} of ${border.length} border ` +
+            `provinces have a road out, cap is ${Math.floor(border.length * WORLDGEN.maxBorderRoadFraction)}`,
+          );
+        }
+      }
+    }
+  });
+
+  it("keeps the case that prompted the rule under the cap", () => {
+    const world = generateWorld("Saturday", "expert");
+    const corinth = world.nations.find((n) => n.name === "Corinth")!;
+    const border = world.provinces.filter(
+      (p) => p.nation === corinth.id &&
+        p.neighbours.some((n) => world.provinces[n.province]!.nation !== corinth.id),
+    );
+    const out = border.filter((p) =>
+      p.neighbours.some((n) => n.road && world.provinces[n.province]!.nation !== corinth.id));
+    assert.equal(border.length, 7, "the reported case had seven border provinces");
+    assert.ok(out.length <= 4, `${out.length} of 7 have a road out; two thirds of seven is four`);
+  });
+
   it("still lays roads on about half the continent", () => {
     // Capping the frontier trades each demoted road for an interior one, so the
     // dialogue's "oh, only half" survives the cap.
-    for (const name of ["Kittycat", "Kublai", "Thule"]) {
+    for (const name of ["Saturday", "Kittycat", "Kublai", "Thule"]) {
       for (const level of LEVELS) {
         const edges = spokes(generateWorld(name, level));
         const share = edges.filter((e) => e.road).length / edges.length;

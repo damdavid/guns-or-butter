@@ -1788,8 +1788,25 @@ nations, so a national border could come out almost entirely paved — and since
 the difference between a 20-firepower threshold and a 50-firepower one (§5.5), such a
 border is indefensible by construction. Nations are therefore settled before the roads
 are laid, and each demoted frontier road is traded for an interior one so the continent
-keeps the dialogue's "oh, only half". Measured across 24 worlds: worst frontier now 63.6%
-paved, overall road share unchanged at 50-52%.
+keeps the dialogue's "oh, only half".
+
+**Two measures, because they are not the same thing.** The cap started as a bound on the
+share of *frontier spokes* that are paved, which is the natural way to write it and the
+wrong way to read it. A nation can sit comfortably under that and still have a road on
+almost every border province, because one province can carry several frontier spokes:
+Saturday/expert had Corinth at 6 of 7 border provinces with a road out while the
+continent's frontier spokes were only 51% paved. What a player counts is provinces, so
+both are bounded now, the second **per nation** rather than across the map.
+
+Measured across 36 worlds and 168 nations: worst border-province share 62.5%, worst
+frontier-spoke share 45.5%, overall road share unchanged at 50.0-51.6%.
+
+Two consequences worth knowing. A nation with one or two border provinces can end up with
+**no road out at all**, since two thirds of one province rounds down to none — it happened
+to 2 of the 168, and it makes such a nation costly to attack and costly to attack from.
+And internal road connectivity is untouched by all this: frontier spokes lie between
+nations by definition, and moving troops between your own provinces is a transfer, which
+§5.5 does not apply the road multiplier to.
 
 **The + button and the slider could stop moving a factory while typing still worked.**
 Not rare at all once looked for: 14 of 19 commodities at intermediate, 33 of 33 at
