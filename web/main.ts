@@ -68,7 +68,7 @@ const whole = (n: number) => String(Math.floor(n));
  * digits and beyond; tons and workers stay exact, because balancing an economy needs
  * the difference between 1200 and 1249 and a battle does not.
  */
-const power = compact;
+const power = (n: number) => compact(n, 2);
 
 /** People, grouped in thousands. The standings are read by comparing them. */
 const people = grouped;

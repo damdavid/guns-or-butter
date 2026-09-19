@@ -13,16 +13,25 @@
  * as "1.2K", and the difference between two armies that size decides the battle between
  * them. Rounds down, like every other quantity on screen.
  */
-export function compact(n: number): string {
+export function compact(n: number, decimals = 0): string {
   const sign = n < 0 ? "-" : "";
   const units = ["", "k", "m", "b", "t"];
-  let value = Math.floor(Math.abs(n));
+  let value = Math.abs(n);
   let unit = 0;
   while (value >= 10_000 && unit < units.length - 1) {
-    value = Math.floor(value / 1000);
+    value /= 1000;
     unit++;
   }
-  return `${sign}${value}${units[unit]}`;
+  // Truncated, not rounded: 456,999 is 456.99k, never 457.00k. Everything on screen
+  // rounds down, so that a number never claims more than the nation actually has.
+  const scale = 10 ** decimals;
+  const shown = (Math.floor(value * scale) / scale)
+    .toFixed(decimals)
+    // No decimal point on a whole number: 26, not 26.00, and 999.4, not 999.40. The
+    // digits are there to carry information, and a run of zeros carries none.
+    .replace(/(\.\d*?)0+$/, "$1")
+    .replace(/\.$/, "");
+  return `${sign}${shown}${units[unit]}`;
 }
 
 /**

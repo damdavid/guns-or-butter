@@ -13,6 +13,29 @@ describe("compact numbers", () => {
     assert.equal(compact(20_000_000), "20m");
   });
 
+  it("carries two decimals for firepower, but never a run of zeros", () => {
+    const power = (n: number) => compact(n, 2);
+    assert.equal(power(10_432.7), "10.43k", "the digits the unit change would have lost");
+    assert.equal(power(268_510.8), "268.51k");
+    assert.equal(power(456_123), "456.12k");
+    assert.equal(power(12.87), "12.87");
+    assert.equal(power(999.4), "999.4", "one useful digit, not two");
+    // A whole number stays whole.
+    assert.equal(power(26), "26");
+    assert.equal(power(999), "999");
+    assert.equal(power(10_000), "10k");
+    assert.equal(power(2_000_000), "2000k");
+    assert.equal(power(20_000_000), "20m");
+  });
+
+  it("truncates the decimals rather than rounding them up", () => {
+    // Everything on screen rounds down, so a nation never appears to hold more than it
+    // does. toFixed alone would turn 456,999 into 457.00k.
+    assert.equal(compact(456_999, 2), "456.99k");
+    assert.equal(compact(9.999, 2), "9.99");
+    assert.equal(compact(19_999, 2), "19.99k");
+  });
+
   it("stays exact below five digits", () => {
     for (const n of [0, 1, 7, 42, 999, 1000, 5678, 9999]) {
       assert.equal(compact(n), String(n));

@@ -1872,6 +1872,13 @@ reachable on a big expert economy — and the map has no room for that under a c
 `compact()` in `src/format.ts` changes unit only when the mantissa would reach five
 digits: 9999, then 10k, 2000k, 20m, 10b, 10t.
 
+Firepower carries **two decimals, with no run of zeros**: `10.43k`, `268.51k`, `12.87`,
+`999.4`, but `26` and `10k` and `20m`. The decimals earn their place exactly where the
+unit change would otherwise throw digits away — 10,432 was `10k` and is now `10.43k` —
+and a whole number stays whole rather than gaining a meaningless `.00`. They are
+truncated rather than rounded, like everything else on screen, so 456,999 reads
+`456.99k` and never `457k`.
+
 `Intl.NumberFormat`'s compact notation is the more standard choice and was rejected on
 purpose: it renders 1200 and 1249 both as "1.2K", and the difference between two armies
 that size decides the battle between them. Four significant figures is the least this
