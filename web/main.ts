@@ -9,12 +9,12 @@
  * to the result, because the ordering rules (§5.6, and waves within a battle) are
  * invisible otherwise.
  */
-import { commodityLabel } from "../src/data.ts";
+import { commoditiesFor, commodityLabel } from "../src/data.ts";
 import { Economy } from "../src/economy.ts";
 import {
   Game,
   balanceAllocation,
-  reallocate,
+  moveWorkers,
   subsistenceAllocation,
   workersFor,
   type Allocation,
@@ -24,11 +24,6 @@ import {
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
 import { generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
-
-const CORE: CommodityId[] = [
-  "lumber", "sulfur", "iron-ore", "coal", "charcoal", "pig-iron", "gunpowder", "iron",
-  "farm-tools", "iron-plow", "sword", "musket",
-];
 
 const economy = new Economy();
 const you = 0;
@@ -54,6 +49,9 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 const whole = (n: number) => String(Math.floor(n));
 
 const nationName = (id: number) => game.world.nations[id]?.name ?? `Nation ${id}`;
+
+/** What this difficulty offers (§1.1): beginner 12 commodities, intermediate 19, expert 33. */
+const levelCommodities = () => commoditiesFor(game.world.level, economy.graph.table.keys());
 
 function context() {
   const { land, population } = nationState(game.world, you);
@@ -128,17 +126,19 @@ function drawMap(): void {
     const id = Number(node.dataset.province);
     if (world.provinces[id]!.nation === you) node.classList.add("mine");
   }
-  // The inspected province is marked separately from the order selection, since you can
-  // be reading about one province while ordering another.
-  if (inspect?.kind === "province" && inspect.id !== selected) {
-    const p = world.provinces[inspect.id];
-    if (p) {
-      const points = p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ");
-      svg.insertAdjacentHTML(
-        "beforeend",
-        `<polygon class="highlight inspected" points="${points}" fill="none" pointer-events="none"/>`,
-      );
-    }
+  // What the inspector is looking at, outlined separately from the order selection —
+  // you are often reading about one province while ordering another.
+  const looking =
+    inspect?.kind === "province"
+      ? world.provinces.filter((p) => p.id === inspect!.id && p.id !== selected)
+      : inspect?.kind === "nation"
+        ? world.provinces.filter((p) => p.nation === inspect!.id)
+        : [];
+  if (looking.length > 0) {
+    svg.insertAdjacentHTML("beforeend", looking
+      .map((p) => `<polygon class="highlight inspected" fill="none" pointer-events="none" points="${
+        p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ")}"/>`)
+      .join(""));
   }
   el("map-hint").textContent = replaying
     ? "Replaying the turn's marches."
@@ -336,7 +336,7 @@ function productionPanel(): string {
   const spare = spareWorkers();
   const ctx = context();
   const workers = workersFor(draft, ctx.population, ctx.land.farmland);
-  const rows = [...new Set([...CORE, ...Object.keys(draft).filter((id) => (draft[id] ?? 0) > 0)])];
+  const rows = levelCommodities();
   const used = Object.values(workers).reduce((s, v) => s + v, 0);
   const idle = spare - used;
 
@@ -370,7 +370,11 @@ function productionPanel(): string {
   return `<h2>Production <small>turn ${game.turn}</small>
       <span class="right"><button type="button" data-act="expand">${expanded ? "Shrink" : "Expand"}</button></span>
     </h2>
-    <table>
+    <table class="production">
+      <colgroup>
+        <col class="c-name" /><col class="c-num" /><col class="c-num" /><col class="c-num" />
+        <col class="c-short" /><col class="c-tune" /><col class="c-slider" /><col class="c-lock" />
+      </colgroup>
       <thead><tr>
         <th>Factory</th><th title="What its workers could make">Size</th>
         <th title="What it actually made">Output</th><th>Surplus</th><th>Short of</th>
@@ -385,7 +389,7 @@ function productionPanel(): string {
       </tbody>
       <tfoot id="food">${foodHtml(result)}</tfoot>
     </table>
-    <div class="totals" id="totals">${totalsHtml(result, used, spare, ctx.land)}</div>
+    <div class="totals" id="totals">${totalsHtml(result, ctx.land)}</div>
     <div class="controls">
       <button type="button" data-act="auto">Auto-balance</button>
       <button type="button" data-act="lock-all">Lock all</button>
@@ -417,13 +421,12 @@ function foodHtml(result: EconomyResult): string {
     </tr>`;
 }
 
-function totalsHtml(result: EconomyResult, used: number, spare: number, land: Land): string {
+function totalsHtml(result: EconomyResult, land: Land): string {
   const growing = result.nextPopulation >= result.population;
-  return `population ${whole(result.population)} &rarr;
-      <span class="${growing ? "growing" : "starving"}">${whole(result.nextPopulation)}</span>
-      &middot; workers <b>${used}</b> of <b>${spare}</b>
-      &middot; firepower this turn ${whole(result.firepower)}<br />
-    <span class="spare">land: ${whole(land.farmland)} farm, ${whole(land.forest)} forest,
+  return `<b>Population:</b> ${whole(result.population)} &rarr;
+      <span class="${growing ? "growing" : "starving"}">${whole(result.nextPopulation)}</span><br />
+    <b>Firepower:</b> ${whole(result.firepower)} this turn<br />
+    <span class="spare"><b>Land:</b> ${whole(land.farmland)} farm, ${whole(land.forest)} forest,
       ${whole(land.mountains)} mountain, ${whole(land.desert)} desert</span>`;
 }
 
@@ -464,7 +467,7 @@ function refreshNumbers(editing?: Element | null): void {
   const idleCell = document.querySelector<HTMLElement>('[data-cell="idle"]');
   if (idleCell) idleCell.textContent = String(spare - used);
   el("food").innerHTML = foodHtml(result);
-  el("totals").innerHTML = totalsHtml(result, used, spare, ctx.land);
+  el("totals").innerHTML = totalsHtml(result, ctx.land);
 }
 
 /**
@@ -478,20 +481,20 @@ function refreshNumbers(editing?: Element | null): void {
  */
 function setWorkers(id: CommodityId, count: number): void {
   const spare = spareWorkers();
-  const ctx = context();
-  const want = Math.min(Math.max(0, Math.round(count)), spare);
   if (spare <= 0) return;
+  const next = moveWorkers(currentWorkers(), id, count, game.locked[you] ?? []);
+  const shares: Record<CommodityId, number> = {};
+  for (const [k, v] of Object.entries(next)) shares[k] = v / spare;
+  draft = shares;
+}
 
-  const locked = game.locked[you] ?? [];
-  const got = (a: Allocation) => workersFor(a, ctx.population, ctx.land.farmland)[id] ?? 0;
-  let best = reallocate(draft, id, want / spare, locked);
-  // A handful of sub-worker steps is always enough; bail out rather than spin.
-  for (let i = 0; i < 24 && got(best) !== want; i++) {
-    const step = (want - got(best)) / spare / 2;
-    const share = Math.min(1, Math.max(0, (best[id] ?? 0) + step));
-    best = reallocate(draft, id, share, locked);
-  }
-  draft = best;
+/** Whole workers per factory, covering every commodity this level offers. */
+function currentWorkers(): Record<CommodityId, number> {
+  const ctx = context();
+  const now = workersFor(draft, ctx.population, ctx.land.farmland);
+  const out: Record<CommodityId, number> = {};
+  for (const id of levelCommodities()) out[id] = now[id] ?? 0;
+  return out;
 }
 
 // --- other phases ----------------------------------------------------------------
@@ -533,9 +536,14 @@ function ordersPanel(): string {
   return `<h2>Military orders <small>turn ${game.turn}</small></h2>
     ${armed.length === 0
       ? '<p class="spare">No armed provinces. Put workers into swords during production.</p>'
-      : `<table><thead><tr>
-           <th>Province</th><th>Power</th><th>Order</th><th>Send</th><th></th>
-         </tr></thead><tbody>${rows}</tbody></table>`}
+      : `<table class="orders">
+           <colgroup>
+             <col class="c-name" /><col class="c-num" /><col class="c-order" />
+             <col class="c-tune" /><col class="c-slider" />
+           </colgroup>
+           <thead><tr>
+             <th>Province</th><th>Power</th><th>Order</th><th>Send</th><th class="slider"></th>
+           </tr></thead><tbody>${rows}</tbody></table>`}
     <p class="hint">An attack loses 10 firepower on arrival and the defender fights with 10
       more, so an empty province still needs over 20 by road &mdash; over 50 across country.</p>`;
 }
@@ -562,9 +570,6 @@ function rankingsPanel(): string {
     </div>`)
     .join("");
   return `<h2>Rankings <small>end of turn ${game.turn}</small></h2>
-    ${replayLog.length > 0
-      ? `<ul class="log">${replayLog.map((l) => `<li class="${l.taken ? "taken" : ""}">${l.text}</li>`).join("")}</ul>`
-      : '<p class="spare">A quiet turn &mdash; nothing marched.</p>'}
     <p class="hint">Standing is population. Not territory, not firepower &mdash; which is
       what makes arming yourself expensive.</p>
     <dl class="rank">${rows}</dl>`;
@@ -800,9 +805,7 @@ document.addEventListener("click", (event) => {
 
   if (node.dataset.step) {
     const id = node.dataset.step as CommodityId;
-    const ctx = context();
-    const current = workersFor(draft, ctx.population, ctx.land.farmland)[id] ?? 0;
-    setWorkers(id, current + Number(node.dataset.by));
+    setWorkers(id, (currentWorkers()[id] ?? 0) + Number(node.dataset.by));
     refreshNumbers();
     return;
   }

@@ -82,6 +82,40 @@ export const tierYield = (tier: number): number => 2 ** (tier - 1);
  * Display name for a commodity. The ids are the lowercase, hyphenated names lifted from
  * the binary (§3.2); this is the same name as a player would read it.
  */
+/**
+ * Which commodities exist at each difficulty level (§1.1).
+ *
+ * Read off the measurements rather than authored: the readings in `docs/*.csv` leave a
+ * blank wherever a commodity could not be produced at that level, so the blanks are the
+ * evidence. Beginner comes out at 12 where §1.1 says 13 — the manual's count is off by
+ * one against what the binary actually offers, or it counts food as a commodity.
+ */
+const BEGINNER: readonly CommodityId[] = [
+  "lumber", "sulfur", "iron-ore", "coal",
+  "charcoal", "pig-iron", "gunpowder", "iron",
+  "farm-tools", "iron-plow", "sword", "musket",
+];
+
+const INTERMEDIATE_ADDS: readonly CommodityId[] = [
+  "light-metal", "nitrate", "low-grade-steel", "explosives", "steam-engine",
+  "combine", "rifle",
+];
+
+export const LEVEL_COMMODITIES: Record<Level, readonly CommodityId[]> = {
+  beginner: BEGINNER,
+  intermediate: [...BEGINNER, ...INTERMEDIATE_ADDS],
+  // Expert is the whole table, so it is derived rather than listed twice.
+  expert: [],
+};
+
+/** The level's commodities, in the table's own order. */
+export function commoditiesFor(level: Level, all: Iterable<CommodityId>): CommodityId[] {
+  const ids = [...all];
+  if (level === "expert") return ids;
+  const allowed = new Set(LEVEL_COMMODITIES[level]);
+  return ids.filter((id) => allowed.has(id));
+}
+
 export const commodityLabel = (id: CommodityId): string =>
   id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 

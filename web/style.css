@@ -85,7 +85,7 @@ svg.map.panning { cursor: grabbing; }
    the screen with the most numbers on it and the one the player spends longest in. */
 body.expanded main { grid-template-columns: minmax(0, 1fr); }
 body.expanded .map-pane { display: none; }
-body.expanded #panel { flex: 0 1 auto; }
+body.expanded #nations, body.expanded #inspector { display: none; }
 body.expanded table { font-size: 0.95rem; }
 body.expanded td { padding: 0.2rem 0.4rem; }
 body.expanded input[type="number"] { width: 5rem; font-size: 0.95rem; }
@@ -143,7 +143,23 @@ tr.limited td.lim { color: var(--warn); }
 /* The number box is the precise control and the slider the coarse one, so when the pane
    is narrow the slider is what gives way — it is the one that needs width to be useful. */
 td.slider, th.slider { width: auto; min-width: 3.5rem; }
-body:not(.expanded) td.slider, body:not(.expanded) th.slider { display: none; }
+body:not(.expanded) td.slider, body:not(.expanded) th.slider,
+body:not(.expanded) col.c-slider { display: none; }
+
+/* Column widths are declared rather than inferred from content. Left to itself the
+   browser spread the numeric columns across the whole width when expanded, and shifted
+   the factory names every time a lock redrew the table. The slider column takes the
+   slack, so the numbers stay together on the left however wide the pane gets. */
+table.production, table.orders { table-layout: fixed; }
+col.c-name { width: 8.5rem; }
+col.c-num { width: 3.6rem; }
+col.c-short { width: 6.5rem; }
+col.c-order { width: 10rem; }
+col.c-tune { width: 8.4rem; }
+col.c-lock { width: 2rem; }
+col.c-slider { width: auto; }
+body:not(.expanded) col.c-name { width: 7.5rem; }
+td:first-child { overflow: hidden; text-overflow: ellipsis; }
 input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); vertical-align: middle; }
 input[type="number"] {
   width: 3.6rem;
@@ -274,7 +290,7 @@ dl.rank dd { margin: 0; color: var(--ink-soft); }
 dl.rank div.you dt { font-weight: bold; }
 
 /* The nudge buttons belong against the box they nudge, not spread across the row. */
-td.tune { white-space: nowrap; text-align: right; width: 1%; }
+td.tune { white-space: nowrap; text-align: right; width: 1%; padding-right: 0.6rem; }
 td.tune input[type="number"] { margin: 0 0.15rem; }
 td.tune button { padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.35; min-width: 1.4rem; }
 

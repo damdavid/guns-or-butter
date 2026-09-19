@@ -36,6 +36,25 @@ numeric calibration below is derived from it.
 | Intermediate | 4 | larger | extended; terrain matters |
 | Expert | 8 | largest, up to 64 provinces | full set; adds Economic Union phase |
 
+#### Which commodities, measured [C]
+
+The manual says how many but not which. The readings do: `docs/*.csv` leave a cell blank
+wherever a commodity could not be produced at that level, so the blanks name the sets.
+`LEVEL_COMMODITIES` in `src/data.ts` holds the result.
+
+| Level | Count | Adds |
+|---|---|---|
+| Beginner | **12** | Lumber, Sulfur, Iron Ore, Coal, Charcoal, Pig Iron, Gunpowder, Iron, Farm Tools, Iron Plow, Sword, Musket |
+| Intermediate | 19 | Light Metal, Nitrate, Low-Grade Steel, Explosives, Steam Engine, Combine, Rifle |
+| Expert | 33 | Heavy Metal, Petroleum, High-Grade Steel, High Explosives, Wire, Pipe, Electrics, Ball Bearing, Diesel Engine, Instruments, Irrigation, Tractor, Cannon, Tank |
+
+**Beginner measures 12, where §1.1 says 13.** Either the manual's count is off by one
+against what the binary offers, or it counts food among the commodities. The readings are
+the better evidence, so 12 is what is implemented.
+
+Each level's set is closed under inputs — every factory it offers can be fed from within
+the same level — which is asserted in `test/names.test.ts`.
+
 ### 1.2 Turn phases [C]
 
 Strictly sequential; **no going back** once a phase is advanced.
@@ -1641,6 +1660,30 @@ again every turn (§5.3.1). Forty turns of trying left the same twelve provinces
 sixteen. The two brakes on a runaway leader are each defensible, but together they may be
 strong enough to stop anyone winning at all. Worth a decision before the AI is built,
 since an AI will run into the same wall.
+
+#### 10.1.3 Fourth pass
+
+One report worth recording, and one that the levels answered.
+
+- **"Lowering Sulfur by one also lowered Charcoal by one."** True, and the same root as
+  the musket report in §10.1.2. The model stores labour as fractions (§1.2.1), so setting
+  a share and rounding it back into whole workers could take a worker off a factory the
+  player had not touched. The UI now moves **whole workers**: `moveWorkers` in
+  `src/game.ts` gives the difference to, or takes it from, the other unlocked factories
+  pro rata by largest remainder. Raising a factory lowers exactly one other; lowering it
+  raises exactly one other; nothing else moves and the workforce is conserved. Shares are
+  still what gets committed, and the round trip through `workersFor` is exact.
+- **"Intermediate is missing Combine and Rifle; Expert is missing its components."** The
+  production panel had a hardcoded list of twelve commodities and showed it at every
+  level. It now shows the level's own set — see §1.1, which the readings turned out to
+  settle.
+
+The rest of the pass is presentational: the numeric columns are declared rather than
+sized from content, so they stay together when the panel is expanded and the factory
+names no longer jump when a lock redraws the table; the totals read `Population:`,
+`Firepower:` and `Land:` on their own lines with the worker count dropped, since idle
+labour is a row in the table now; Rankings shows only the standings; and selecting a
+nation outlines everything it holds.
 
 ### 10.2 Limits of `balanceAllocation`
 

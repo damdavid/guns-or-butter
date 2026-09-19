@@ -47,7 +47,7 @@ cropped to the continent; province and nation inspectors, with food output withh
 national secret; military orders given by clicking province to province; and an execution
 phase that replays each march across the map rather than cutting to the result.
 Deliberately built before the AI: the UI is where the original lost, and it is the only
-subsystem whose defects are invisible to tests — playing it has found ten so far that the
+subsystem whose defects are invisible to tests — playing it has found twelve so far that the
 unit tests did not. See §10.1.
 
 AI and diplomacy are specified but not yet built. See §10 of the spec.
@@ -55,7 +55,7 @@ AI and diplomacy are specified but not yet built. See §10 of the spec.
 ## Commands
 
     npm run dev       # play it in a browser on localhost:5173
-    npm test          # 234 tests, including the 1990 manual's p.12 reference state
+    npm test          # 244 tests, including the 1990 manual's p.12 reference state
     npm run typecheck
     npm run build     # bundle the browser app to web/dist/
     npm run validate  # score the sim against all 644 measurements

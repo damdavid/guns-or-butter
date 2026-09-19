@@ -211,6 +211,54 @@ export function balanceAllocation(
   return current;
 }
 
+/**
+ * Move one factory to a whole number of workers, taking the difference from the other
+ * unlocked factories pro rata — in whole workers, not in fractions (§3.6).
+ *
+ * `reallocate` works in shares, which is what the model stores, but the player is moving
+ * people. Rounding a share back into integers could take a worker off a factory the
+ * player had not touched while handing two to another, so lowering sulfur by one could
+ * lower charcoal by one as well. Working in integers makes the rule visible: raising a
+ * factory lowers exactly one other, and lowering it raises exactly one other.
+ *
+ * The workforce total is preserved, so labour deliberately left idle stays idle.
+ */
+export function moveWorkers(
+  current: Readonly<Record<CommodityId, number>>,
+  id: CommodityId,
+  want: number,
+  locked: readonly CommodityId[] = [],
+): Record<CommodityId, number> {
+  const pinned = new Set(locked);
+  if (pinned.has(id)) return { ...current };
+
+  const others = Object.keys(current).filter((k) => k !== id && !pinned.has(k));
+  const othersTotal = others.reduce((s, k) => s + (current[k] ?? 0), 0);
+  const target = Math.max(0, Math.min(Math.round(want), (current[id] ?? 0) + othersTotal));
+  const pool = othersTotal - (target - (current[id] ?? 0));
+
+  const next: Record<CommodityId, number> = { ...current, [id]: target };
+  if (others.length === 0) return next;
+
+  // Largest remainder, so the pool is handed out whole and in proportion.
+  const share = others.map((k) => ({
+    k,
+    exact: othersTotal > 0 ? ((current[k] ?? 0) / othersTotal) * pool : pool / others.length,
+  }));
+  let handed = 0;
+  for (const s of share) {
+    next[s.k] = Math.floor(s.exact);
+    handed += next[s.k]!;
+  }
+  const byRemainder = [...share].sort(
+    (a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)),
+  );
+  for (let i = 0; handed < pool && i < byRemainder.length; i++, handed++) {
+    next[byRemainder[i]!.k] = (next[byRemainder[i]!.k] ?? 0) + 1;
+  }
+  return next;
+}
+
 /** Convert labour fractions into the worker counts the economy takes. */
 export function workersFor(
   allocation: Allocation,

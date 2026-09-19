@@ -4,7 +4,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { ANCIENT_NATIONS, nationNames } from "../src/names.ts";
-import { commodityLabel } from "../src/data.ts";
+import { commoditiesFor, commodityLabel } from "../src/data.ts";
 import { makeRng } from "../src/rng.ts";
 import { generateWorld } from "../src/worldgen.ts";
 import { Economy } from "../src/economy.ts";
@@ -73,5 +73,58 @@ describe("naming a world", () => {
   it("falls back to a drawn name when the player does not give one", () => {
     const world = generateWorld("Kittycat", "beginner");
     assert.ok(ANCIENT_NATIONS.includes(world.nations[0]!.name));
+  });
+});
+
+describe("commodity sets per difficulty (§1.1)", () => {
+  const table = [...new Economy().graph.table.keys()];
+  const at = (level: "beginner" | "intermediate" | "expert") => commoditiesFor(level, table);
+
+  it("offers what the measurements say each level offered", () => {
+    // Read off docs/*.csv, where a blank means the commodity could not be made at that
+    // level. §1.1 says 13 for beginner; the readings show 12.
+    assert.equal(at("beginner").length, 12);
+    assert.equal(at("intermediate").length, 19);
+    assert.equal(at("expert").length, table.length);
+    assert.equal(at("expert").length, 33);
+  });
+
+  it("adds Combine and Rifle at intermediate, with the chain that feeds them", () => {
+    for (const id of ["combine", "rifle", "steam-engine", "low-grade-steel", "explosives",
+                      "light-metal", "nitrate"]) {
+      assert.ok(!at("beginner").includes(id), `${id} should not be in the beginner set`);
+      assert.ok(at("intermediate").includes(id), `${id} is missing from intermediate`);
+    }
+  });
+
+  it("holds the heavy industry back for expert", () => {
+    for (const id of ["tank", "tractor", "cannon", "irrigation", "diesel-engine",
+                      "high-grade-steel", "petroleum", "heavy-metal"]) {
+      assert.ok(!at("intermediate").includes(id), `${id} should not be in intermediate`);
+      assert.ok(at("expert").includes(id));
+    }
+  });
+
+  it("nests the levels, and keeps the table's own order", () => {
+    const b = at("beginner"), i = at("intermediate"), e = at("expert");
+    for (const id of b) assert.ok(i.includes(id), `${id} vanished at intermediate`);
+    for (const id of i) assert.ok(e.includes(id), `${id} vanished at expert`);
+    for (const set of [b, i, e]) {
+      const positions = set.map((id) => table.indexOf(id));
+      assert.deepEqual(positions, [...positions].sort((x, y) => x - y), "order should follow the table");
+    }
+  });
+
+  it("can feed every level's own chain from within that level", () => {
+    // A level that offered a factory without its inputs would be unplayable.
+    const { table: t } = new Economy().graph;
+    for (const level of ["beginner", "intermediate", "expert"] as const) {
+      const set = new Set(at(level));
+      for (const id of set) {
+        for (const input of Object.keys(t.get(id)!.inputs)) {
+          assert.ok(set.has(input), `${level}: ${id} needs ${input}, which the level lacks`);
+        }
+      }
+    }
   });
 });

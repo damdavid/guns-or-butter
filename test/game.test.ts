@@ -4,7 +4,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import {
-  Game, balanceAllocation, reallocate, subsistenceAllocation, workersFor,
+  Game, balanceAllocation, moveWorkers, reallocate, subsistenceAllocation, workersFor,
   type Allocation,
 } from "../src/game.ts";
 import { Economy } from "../src/economy.ts";
@@ -265,6 +265,60 @@ describe("labour allocation", () => {
       "balancing should raise sword output, not lower it");
     assert.ok(balanced["sword"]! > 0.1, `swords were drained to ${balanced["sword"]}`);
     assert.ok(after.firepower > before.firepower);
+  });
+});
+
+describe("moving whole workers (§3.6)", () => {
+  const start = { lumber: 33, sulfur: 12, "iron-ore": 33, charcoal: 18, "pig-iron": 30, "farm-tools": 23 };
+  const total = (a: Record<string, number>) => Object.values(a).reduce((s, v) => s + v, 0);
+
+  it("takes from exactly one other factory when a factory is raised", () => {
+    // Reported from play: lowering sulfur by one also lowered charcoal by one. Rounding
+    // a share back into integers could move a factory the player had not touched.
+    const after = moveWorkers(start, "sulfur", 13);
+    assert.equal(after["sulfur"], 13);
+    const up = Object.keys(start).filter((k) => k !== "sulfur" && after[k]! > start[k as keyof typeof start]);
+    const down = Object.keys(start).filter((k) => after[k]! < start[k as keyof typeof start]);
+    assert.deepEqual(up, [], "nothing else may rise when one factory takes workers");
+    assert.equal(down.length, 1, `expected one donor, got ${down.join(",")}`);
+    assert.equal(total(after), total(start), "the workforce is conserved");
+  });
+
+  it("gives to exactly one other factory when a factory is lowered", () => {
+    const after = moveWorkers(start, "sulfur", 11);
+    assert.equal(after["sulfur"], 11);
+    const down = Object.keys(start).filter((k) => k !== "sulfur" && after[k]! < start[k as keyof typeof start]);
+    assert.deepEqual(down, [], "nothing else may fall when one factory releases workers");
+    assert.equal(total(after), total(start));
+  });
+
+  it("stays conserved and monotone over a run of single steps", () => {
+    let current: Record<string, number> = { ...start };
+    for (let i = 0; i < 10; i++) {
+      const next = moveWorkers(current, "sulfur", (current["sulfur"] ?? 0) - 1);
+      for (const k of Object.keys(next)) {
+        if (k === "sulfur") continue;
+        assert.ok(next[k]! >= current[k]!, `${k} fell while sulfur was being emptied`);
+      }
+      assert.equal(total(next), total(start));
+      current = next;
+    }
+    assert.equal(current["sulfur"], 2);
+  });
+
+  it("leaves locked factories exactly where they are", () => {
+    const after = moveWorkers(start, "sulfur", 0, ["lumber", "charcoal"]);
+    assert.equal(after["lumber"], start.lumber);
+    assert.equal(after["charcoal"], start.charcoal);
+    assert.equal(after["sulfur"], 0);
+    assert.equal(total(after), total(start));
+  });
+
+  it("refuses to move a locked factory, and clamps what it is asked for", () => {
+    assert.deepEqual(moveWorkers(start, "sulfur", 5, ["sulfur"]), start);
+    assert.equal(moveWorkers(start, "sulfur", -50)["sulfur"], 0);
+    assert.equal(moveWorkers(start, "sulfur", 9999)["sulfur"], total(start));
+    assert.equal(total(moveWorkers(start, "sulfur", 9999)), total(start));
   });
 });
 
