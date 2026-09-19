@@ -1041,6 +1041,35 @@ directions; counter-attacking the enemy's stripped jumping-off province; screeni
 that counter-attack with reserves. It is cheap to implement and should be preserved
 exactly.
 
+#### 5.6.1 Which army leads [F]
+
+§5.6 fixes that waves resolve in sequence but says nothing about *who goes first*, and
+the answer matters: the leading wave spends itself on the defender's full strength and
+the last one walks into whatever is left.
+
+**The smallest army strikes first, across every battle and regardless of whose it is.
+Equal armies are drawn at random.**
+
+This replaces resolving them in province order, which is what the implementation did by
+accident — the index came from the order worldgen happened to place capitals, so an
+invisible number decided which of your provinces was sacrificed to soften a target for
+another. Nothing in the manual suggests the original did better, but nothing suggests it
+did this either, so it is `[F]`.
+
+Two consequences worth knowing:
+
+- A small force sent alongside a large one is a **screen**: it arrives first, absorbs the
+  defender's strength, and the large one lands on what remains. That is a real tactic
+  rather than a lottery, and it is symmetrical — the same is true of the enemy's forces,
+  and the ordering is global, so a rival's small army can soften a province for *your*
+  large one if you both attack the same place in the same turn.
+- You cannot choose to lead with your strongest. If that turns out to matter, the lever
+  is an explicit order-of-attack control rather than a different automatic rule.
+
+The draw is seeded per world and turn (`<continent>/battle/<turn>`), so a round replays
+identically. A tie-break that moved under `Undo Turn` would let a player re-roll a battle
+by undoing it, which is worse than an arbitrary order rather than better.
+
 ---
 
 ## 6. Diplomacy and economic unions (Expert)

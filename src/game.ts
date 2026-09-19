@@ -20,6 +20,7 @@ import {
   type Orders,
   type Transfer,
 } from "./military.ts";
+import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, World } from "./types.ts";
 
@@ -548,7 +549,13 @@ export class Game {
 
   private resolveMilitaryPhase(): void {
     const orders: Orders = this.orders;
-    const result = resolveMilitary(this.world, orders);
+    // Seeded per world and turn, so the tie-break draw is the same one on a replay after
+    // Undo Turn. A draw that moved under undo would be a worse rule than a fixed order.
+    const result = resolveMilitary(
+      this.world,
+      orders,
+      makeRng(`${this.world.name}/battle/${this.turn}`),
+    );
     this.world = result.world;
     this.transfers = result.transfers;
     this.battles = result.battles;

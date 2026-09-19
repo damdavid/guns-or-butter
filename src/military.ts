@@ -6,6 +6,7 @@
  * innovations, and ch24 calls the military system "its best feature".
  */
 import { tierYield } from "./data.ts";
+import { makeRng, type Rng } from "./rng.ts";
 import type { CommodityId, Province, World } from "./types.ts";
 
 export const COMBAT = {
@@ -175,8 +176,20 @@ export function resolveAssault(
  * Friendly transfers resolve first, so a player who reads an attack coming can shuffle
  * troops in ahead of it (§5.6). Several attacks on one province then resolve in
  * sequence, which is what lets a first wave soften a defender for a second.
+ *
+ * **The smallest army strikes first**, across every battle and regardless of whose it
+ * is, with ties drawn at random (§5.6.1). §5.6 fixes that waves resolve in sequence but
+ * not who leads; resolving them in province order, as this once did, let an invisible
+ * index decide who spent themselves softening a defender for someone else.
+ *
+ * `rng` is seeded by the caller so a turn replays identically — a draw that changed
+ * under `Undo Turn` would be a worse rule than an arbitrary one, not a better.
  */
-export function resolveMilitary(world: World, orders: Orders): MilitaryResult {
+export function resolveMilitary(
+  world: World,
+  orders: Orders,
+  rng: Rng = makeRng("battle"),
+): MilitaryResult {
   const firepower = new Map<number, number>(world.provinces.map((p) => [p.id, p.firepower]));
   const owner = new Map<number, number>(world.provinces.map((p) => [p.id, p.nation]));
   const population = new Map<number, number>(world.provinces.map((p) => [p.id, p.population]));
@@ -211,8 +224,16 @@ export function resolveMilitary(world: World, orders: Orders): MilitaryResult {
     }
   }
 
+  // Smallest first, ties drawn at random. Sorting before the grouping means the battles
+  // themselves also run smallest-first, which is the order the replay then shows.
+  const draw = assaults.map(() => rng.next());
+  const ordered = assaults
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => x.a.force - y.a.force || draw[x.i]! - draw[y.i]!)
+    .map(({ a }) => a);
+
   const byTarget = new Map<number, typeof marching>();
-  for (const a of assaults) {
+  for (const a of ordered) {
     const list = byTarget.get(a.to);
     if (list) list.push(a);
     else byTarget.set(a.to, [a]);

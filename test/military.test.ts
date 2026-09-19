@@ -14,6 +14,7 @@ import {
   type Orders,
 } from "../src/military.ts";
 import { generateWorld } from "../src/worldgen.ts";
+import { makeRng } from "../src/rng.ts";
 import type { World } from "../src/types.ts";
 
 /**
@@ -172,6 +173,69 @@ describe("orders and execution order (§5.4, §5.6)", () => {
     const rough = withFirepower(line([true, false, true]), { 1: 60, 2: 10 });
     assert.equal(resolveMilitary(roaded, { 1: { marchFraction: 1, target: 2 } }).battles[0]!.captured, true);
     assert.equal(resolveMilitary(rough, { 1: { marchFraction: 1, target: 2 } }).battles[0]!.captured, false);
+  });
+});
+
+describe("attack order (§5.6.1)", () => {
+  /** A hub every attacker borders, so several armies can converge on one province. */
+  const hub = (fp: Record<number, number>): World => ({
+    name: "Hub", level: "beginner", width: 600, height: 200, outline: [], terrain: [],
+    provinces: [0, 1, 2, 3, 4].map((id) => ({
+      id,
+      name: `P${id}`,
+      // 4 is the defender; the rest alternate between two attacking nations.
+      nation: id === 4 ? 2 : id % 2,
+      capital: { x: 60 + id * 100, y: 100 },
+      border: [],
+      neighbours: id === 4
+        ? [0, 1, 2, 3].map((q) => ({ province: q, road: true }))
+        : [{ province: 4, road: true }],
+      land: { farmland: 100, forest: 0, mountains: 0, desert: 0 },
+      population: 400,
+      firepower: fp[id] ?? 0,
+      coastal: false,
+    })),
+    nations: [0, 1, 2].map((id) => ({ id, name: `N${id}`, provinces: [] })),
+  });
+  const all: Orders = Object.fromEntries(
+    [0, 1, 2, 3].map((id) => [id, { marchFraction: 1, target: 4 }]),
+  );
+  const order = (r: ReturnType<typeof resolveMilitary>) => r.battles[0]!.waves.map((w) => w.from);
+
+  it("sends the smallest army first, whoever it belongs to", () => {
+    // P0=60 and P2=45 are one nation, P1=20 and P3=30 the other. Nation must not matter.
+    const world = hub({ 0: 60, 1: 20, 2: 45, 3: 30, 4: 200 });
+    assert.deepEqual(order(resolveMilitary(world, all)), [1, 3, 2, 0]);
+  });
+
+  it("so the first wave is the cheapest and the last lands on a softened defender", () => {
+    const world = hub({ 0: 60, 1: 20, 2: 45, 3: 30, 4: 200 });
+    const waves = resolveMilitary(world, all).battles[0]!.waves;
+    for (let i = 1; i < waves.length; i++) {
+      assert.ok(waves[i]!.committed >= waves[i - 1]!.committed, "armies must arrive in size order");
+      assert.ok(waves[i]!.defenceBefore < waves[i - 1]!.defenceBefore, "each wave should soften it");
+    }
+  });
+
+  it("draws at random between equal armies, and the same round draws the same way", () => {
+    const world = hub({ 0: 40, 1: 40, 2: 40, 3: 40, 4: 300 });
+    const drawn = new Set<string>();
+    for (let turn = 1; turn <= 12; turn++) {
+      drawn.add(order(resolveMilitary(world, all, makeRng(`Hub/battle/${turn}`))).join(""));
+    }
+    assert.ok(drawn.size > 1, `ties should not always fall the same way, got ${[...drawn]}`);
+
+    const once = order(resolveMilitary(world, all, makeRng("Hub/battle/7")));
+    const twice = order(resolveMilitary(world, all, makeRng("Hub/battle/7")));
+    assert.deepEqual(once, twice, "a turn must replay identically, or Undo Turn would cheat");
+  });
+
+  it("does not let the order orders were given decide anything", () => {
+    const world = hub({ 0: 60, 1: 20, 2: 45, 3: 30, 4: 200 });
+    const reversed: Orders = Object.fromEntries(
+      [3, 2, 1, 0].map((id) => [id, { marchFraction: 1, target: 4 }]),
+    );
+    assert.deepEqual(order(resolveMilitary(world, all)), order(resolveMilitary(world, reversed)));
   });
 });
 
