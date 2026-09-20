@@ -262,9 +262,9 @@ function applyView(): void {
  * was trying to read — and on a small continent, over the target as well. A fixed corner
  * costs a glance and covers nothing that moves.
  */
-/** What the slider is actually deciding: how much marches and how much stays behind. */
+/** The half of the decision the slider does not already show: what is left behind. */
 function marchTally(cap: number, send: number): string {
-  return `<b>${power(send)}</b> moving &middot; <b>${power(cap - send)}</b> stays`;
+  return `<b>${power(cap - send)}</b> stays`;
 }
 
 /** Production context for a game's player nation, for use before `render` has run. */
@@ -282,16 +282,23 @@ function marchControlHtml(): string {
   const cap = Math.floor(p.firepower);
   const send = sentFrom(ordering);
   // Named at both ends: the control is no longer beside the province it is ordering.
-  return `<span class="who">${p.name} &rarr;
-      ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</span>
-    <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
-    ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
-      aria-label="firepower sent from ${p.name}" /><button
-      type="button" data-mstep="${p.id}" data-by="1">+</button>
-    <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
-    <span class="spare" data-tally="${p.id}">${marchTally(cap, send)}</span>
-    <button type="button" data-act="dismiss" class="dismiss"
-      title="The order stands. The next click on the map starts a new one.">Done</button>`;
+  // Laid out the way the decision reads: what stays on the left, the slider, what goes
+  // on the right. The slider is given real width — at 7rem a province holding hundreds
+  // of firepower moved several units per pixel and no exact figure could be hit.
+  return `<div class="who">${p.name} &rarr;
+      ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</div>
+    <div class="row">
+      <span class="stays" data-tally="${p.id}">${marchTally(cap, send)}</span>
+      <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}"
+        aria-label="firepower sent from ${p.name}" />
+      <span class="moving">
+        <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
+        ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
+          aria-label="firepower sent from ${p.name}" /><button
+          type="button" data-mstep="${p.id}" data-by="1">+</button> moving</span>
+      <button type="button" data-act="dismiss" class="dismiss" aria-label="Done"
+        title="The order stands. The next click on the map starts a new one.">&check;</button>
+    </div>`;
 }
 
 const MIN_VIEW = 80;
@@ -888,7 +895,10 @@ function sentFrom(province: number): number {
   const p = game.world.provinces[province];
   const order = game.orders[province];
   if (!p || !order || order.target === null) return 0;
-  return Math.min(Math.floor(p.firepower), Math.floor(p.firepower * order.marchFraction));
+  // The epsilon is not cosmetic. The order stores a *fraction*, so a slider set to 6 of
+  // 19.4 saves 6/19.4 and reads back 19.4 x that = 5.99999..., which floors to 5. The
+  // exact figure you asked for was the one value you could not get.
+  return Math.min(Math.floor(p.firepower), Math.floor(p.firepower * order.marchFraction + 1e-9));
 }
 
 function ordersPanel(): string {

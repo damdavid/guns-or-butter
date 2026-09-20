@@ -357,11 +357,15 @@ tr.total td { border-top: 1px solid var(--rule); }
 }
 .march-control[hidden] { display: none; }
 .march-control b { color: var(--warn); }
-.march-control input[type="range"] { width: 7rem; }
+.march-control { flex-direction: column; align-items: stretch; gap: 0.2rem; }
+.march-control .row { display: flex; align-items: center; gap: 0.5rem; }
+/* The slider takes the slack, as the factory one does: precision here is width. */
+.march-control input[type="range"] { flex: 1 1 18rem; min-width: 12rem; }
 .march-control input[type="number"] { width: 3.6rem; }
 .march-control button { padding: 0 0.35rem; min-width: 1.4rem; }
-.march-control .who { margin-right: 0.2rem; }
-.march-control .dismiss { margin-left: 0.3rem; font-size: 1rem; line-height: 1; padding: 0 0.3rem; }
+.march-control .stays, .march-control .moving { flex: none; color: var(--ink-soft); }
+.march-control .stays { min-width: 5rem; text-align: right; }
+.march-control .dismiss { font-size: 1rem; line-height: 1; padding: 0 0.4rem; }
 
 /* Affinity, in the nation inspector. */
 h3 { font-size: 0.78rem; margin: 0.8rem 0 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
