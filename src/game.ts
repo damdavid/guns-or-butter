@@ -599,10 +599,10 @@ export class Game {
       to !== null && to !== undefined &&
       from !== to && !canAttack(this.unions, from, to)
     ) {
-      // §6.1: a union member may attack the union's target and nobody else. The UI is
-      // expected to have greyed this out already; refusing it here is what makes that
-      // a rule rather than a suggestion.
-      throw new Error("a union member may only attack the union's target");
+      // A union member may take its own target or an unaligned nation, never a member
+      // of any bloc (§6.1 as relaxed — see `canAttack`). The UI is expected to have
+      // greyed this out already; refusing it here is what makes it a rule.
+      throw new Error("a union member may not attack another union's member");
     }
     this.orders[province] = order;
   }

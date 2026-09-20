@@ -15,6 +15,9 @@
  *   its own closest ally, which reads as nonsense on the screen.
  * - **What a union of one is.** Nothing. A declaration nobody joins is dropped, so the
  *   founder is not left bound by an attack restriction bought for no pooling.
+ * - **How far the attack restriction reaches.** §6.1 says members may attack the target
+ *   and nobody else; `canAttack` lets them also attack anyone in no union at all. See
+ *   there for why.
  * - **How the pooled result is split back.** By population share, for growth and for
  *   firepower alike. §6.1 pools the inputs and is silent on the outputs.
  *
@@ -35,7 +38,7 @@ export const UNION = {
 
 export interface Union {
   founder: number;
-  /** Whom the union is against. Members may attack nobody else (§6.1). */
+  /** Whom the union is against. The one union member a member may attack (§6.1). */
   target: number;
   /** Founder first, then joiners in the order they accepted. */
   members: number[];
@@ -143,18 +146,27 @@ export function unionOf(unions: readonly Union[], nation: number): Union | undef
 }
 
 /**
- * §6.1's attack restriction: members may only attack the union's target, or anyone in
- * a union against them. An unattached nation is unrestricted.
+ * Who a nation may attack. A member may take the union's target, or anyone standing
+ * outside every union; anyone unattached is unrestricted; and whoever a union is
+ * declared against may answer its members whatever else is true.
  *
- * This is the real price of joining. If the target is nowhere near you, you have traded
- * a whole turn's aggression for the pooling — which is what stops unions being free.
+ * **This relaxes §6.1 [F].** Crawford's rule is that members "may *only* attack the
+ * union's target", neutrals included. Taken literally a member whose target lay across
+ * the continent had no legal attack at all, however hostile the neighbour on its own
+ * border — and since almost every nation joins something (§10.4), almost all aggression
+ * was funnelled at two nations who could only answer their own target in turn. Expert
+ * stopped being a war. Unions are still exclusive toward each other, which is what
+ * keeps them meaningful: you cannot raid a rival bloc, only the one nation yours has
+ * named. What you no longer forfeit is the right to defend your own frontier.
  */
 export function canAttack(unions: readonly Union[], from: number, to: number): boolean {
-  const against = unions.find((u) => u.members.includes(to) && u.target === from);
-  if (against) return true;
+  // A coalition declared against you may always be answered, whatever else holds.
+  if (unions.some((u) => u.members.includes(to) && u.target === from)) return true;
   const own = unionOf(unions, from);
   if (!own) return true;
-  return to === own.target;
+  if (to === own.target) return true;
+  // Everyone else is off limits while they are somebody's ally — including your own.
+  return unionOf(unions, to) === undefined;
 }
 
 /** Members' land and population added together, as one economic unit (§6.1). */

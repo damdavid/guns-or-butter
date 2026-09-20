@@ -2141,9 +2141,9 @@ Across 18 games at Expert, 30 turns each:
 | --- | --- |
 | Unions per turn | 2.00 early, 2.00 late — **flat**, which is what §6.4 asks for |
 | Mean size | 3.9 of 8 nations |
-| Nations attached | **93–99%** |
-| Composition changed | **15% of turns** |
-| World population over 30 turns | **x6 to x7.5** |
+| Nations attached | **94–99%** |
+| Composition changed | **14–22% of turns** |
+| World population over 30 turns | **x6 to x7.6** |
 | Games decided in 30 turns | **0 of 6** |
 
 The flat rate is the headline success: Crawford's failure is visibly a decay curve to
@@ -2160,14 +2160,47 @@ prefers almost any founder to almost any target, and joins.
 
 Two consequences follow, and the second is the serious one:
 
-- **Expert stops being a war.** With 95% of nations in a union and each union permitted
-  exactly one target, nearly all aggression is funnelled at two nations who are
-  themselves union members and so may only strike back at their own target. No game
-  reached a winner in 30 turns.
-- **Growth runs away.** Pooling four Expert economies is worth x6–x7.5 world population
+- **Expert stops being a war.** With 99% of nations in a union, almost nobody is free to
+  fight on their own account. No game reached a winner in 30 turns.
+- **Growth runs away.** Pooling four Expert economies is worth x6–x7.6 world population
   in 30 turns, against nations that stagnate at their famine floor alone (§10.3). §6.3
   records unions as the *only* brake on runaway growth; implemented faithfully they are
   an accelerator instead.
+
+None of this is a defect in the code — it is §6.1 doing exactly what it says, which is
+the outcome §6.3 warns about arriving by a different road. The dials, in the order §6.4
+suggests turning them: the underdog `trust` component first, then `joinAt`, then a cap
+on union size, which is the one thing no source mentions and the one most likely to
+restore the churn.
+
+#### Relaxing the attack restriction changes almost nothing [F]
+
+§6.1 says members may attack the union's target and *nobody else*, neutrals included.
+Read literally that leaves a member whose target lies across the continent with no legal
+attack at all, however hostile the neighbour on its own border. `canAttack` therefore
+also permits attacking any nation in no union at all; blocs remain exclusive toward each
+other, and members still may not touch each other.
+
+**It was worth doing and it did not help.** The measured difference at Expert is inside
+the noise:
+
+| | §6.1 literal | relaxed |
+| --- | --- | --- |
+| Unions per turn | 2.00 | 2.03 |
+| Attached | 93–99% | 94–99% |
+| Composition churn | 15% | 14% |
+| World population, 30 turns | x6–x7.5 | x6–x7.6 |
+| Decided in 30 turns | 0 of 6 | 0 of 6 |
+
+The reason is the attachment rate. A permission to attack "anyone unaligned" is worth
+nothing when there is, on average, a tenth of a nation unaligned per turn. Raising
+`joinAt` to 0.45 only brings attachment to 94%, and still decides nothing.
+
+**So the funnel was never the binding constraint — universal membership is.** That
+relocates the problem: the dial to reach for is not the attack rule or the join
+threshold but whatever stops nine nations in ten joining something every single turn.
+§6.4's own candidate is the underdog dividend; a cap on union size is the blunter one,
+and is mentioned in no source.
 
 #### Pooled terrain buys nothing by itself, and costs the modicum [F]
 

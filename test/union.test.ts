@@ -104,26 +104,48 @@ describe("forming a union (§6.1)", () => {
   });
 });
 
-describe("the attack restriction (§6.1)", () => {
+describe("the attack restriction (§6.1, relaxed [F])", () => {
+  // 0 founds a union with 1 against 3; 2 and 4 stand outside everything.
   const unions: Union[] = [{ founder: 0, target: 3, members: [0, 1], formedOn: 1 }];
+  // A second bloc, to check unions are still exclusive toward each other.
+  const two: Union[] = [
+    { founder: 0, target: 3, members: [0, 1], formedOn: 1 },
+    { founder: 5, target: 6, members: [5, 4], formedOn: 1 },
+  ];
 
-  it("lets a member attack the target and nobody else", () => {
+  it("lets a member attack its union's target", () => {
     assert.equal(canAttack(unions, 1, 3), true);
-    assert.equal(canAttack(unions, 1, 2), false);
   });
 
-  it("does not let members attack each other", () => {
+  it("lets a member attack anyone standing outside every union", () => {
+    // §6.1 says "only the target", neutrals included. Taken literally, a member whose
+    // target lay across the continent could not answer a hostile neighbour on its own
+    // border, and with almost everyone joining something (§10.4) the wars stopped.
+    assert.equal(canAttack(unions, 1, 2), true);
+    assert.equal(canAttack(unions, 0, 4), true);
+  });
+
+  it("still does not let members attack each other", () => {
     assert.equal(canAttack(unions, 0, 1), false);
+    assert.equal(canAttack(unions, 1, 0), false);
+  });
+
+  it("still does not let one bloc raid another", () => {
+    assert.equal(canAttack(two, 0, 5), false, "5 is in a union, and not ours to take");
+    assert.equal(canAttack(two, 1, 4), false);
+    assert.equal(canAttack(two, 0, 3), true, "our own target is always fair game");
   });
 
   it("lets the target hit back at anyone in the union against it", () => {
-    assert.equal(canAttack(unions, 3, 0), true);
-    assert.equal(canAttack(unions, 3, 1), true);
+    assert.equal(canAttack(two, 3, 0), true);
+    assert.equal(canAttack(two, 3, 1), true);
+    assert.equal(canAttack(two, 6, 5), true, "even across blocs, if they came for you");
   });
 
   it("leaves an unattached nation unrestricted", () => {
     assert.equal(canAttack(unions, 2, 0), true);
     assert.equal(canAttack(unions, 2, 3), true);
+    assert.equal(canAttack(two, 2, 5), true);
   });
 });
 

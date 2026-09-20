@@ -501,8 +501,9 @@ function unionHtml(founder: number): string {
       <dt><b>Pooled people</b></dt><dd><b>${people(population)}</b></dd>
       ${terrainRows(land)}
     </dl>
-    <p class="hint">${name(union.founder)} allocates the whole of this for the turn, and
-      every member may attack ${nationName(union.target)} and nobody else (§6.1).</p>`;
+    <p class="hint">${name(union.founder)} allocates the whole of this for the turn.
+      Members may attack ${nationName(union.target)}, or any nation in no union at all
+      &mdash; but never each other, and never another bloc.</p>`;
 }
 
 /**
@@ -975,7 +976,7 @@ function unionPanel(): string {
     <p class="hint">The weakest player declares against their worst enemy and the rest
       join or stand aloof. Members pool their people and their land into one economy for
       the turn &mdash; and the founder allocates all of it. Members may attack the
-      union's target and nobody else.</p>
+      union's target, or anyone in no union at all, but never each other.</p>
     ${warning}
     <h3>Declared this turn</h3>
     ${offers || `<p class="hint">Nobody is offering you a place.</p>`}
