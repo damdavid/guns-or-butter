@@ -1128,6 +1128,18 @@ and away from enemies. Anyone inside your circle will join. The UI labels are
 `loves / likes / dislikes / hates`, modified by `a lot / a little`, plus a hard
 `Can attack him / Cannot attack him`.
 
+**The layout was live, not a picture.** Each player declared on their own separate turn,
+and while a declaration stood the others *moved* — drifting toward the circle and back
+out of it again as they watched who else was drifting in, liking or disliking the
+company that was assembling. Joining was therefore a negotiation played out in space:
+you could see a coalition forming and change your mind about it, and your own movement
+was itself a signal to everyone still deciding.
+
+That is a materially different game from a blind vote. It makes membership common
+knowledge as it forms, so the last to commit has the most information, and it gives
+reluctance a way to express itself short of refusal. Nothing else in the design recovers
+it, so it is recorded here even though what is built is the simpler thing — see §6.5.
+
 Affinity deltas [C]:
 
 | Event | Effect |
@@ -1322,6 +1334,27 @@ Log **unions formed per turn** across a full game. Crawford's failure is visibly
 curve reaching zero. You want a roughly flat rate with *changing composition* — track
 membership churn alongside the count. If the rate holds but composition freezes, the
 underdog dividend is too strong relative to the live terms.
+
+### 6.5 Blind vote, for now [F]
+
+What is built is the sequencing of §6.2 without its negotiation. Declarations are taken
+one at a time in order of weakness, exactly as the original did, and each nation still
+unattached answers that declaration on its own. But the answers are **simultaneous and
+hidden**: the candidate list is fixed the moment a declaration is made, so no nation's
+choice can be informed by another's, and a union's membership is a surprise to its own
+members until it forms.
+
+This is a deliberate simplification and not a reading of the original. It was chosen
+because it is a complete, playable rule that needs no new interface, where the drifting
+layout needs both a spatial view and a notion of provisional commitment that can be
+withdrawn. The intent is to build the movement later; until then a UI must not preview
+a likely roster, because that would hand the player the one thing a blind vote withholds
+while giving none of what the live layout offered in exchange.
+
+Worth carrying into that work: under a blind vote the last to answer has no advantage,
+which is why order-of-weakness matters less here than it did in the original. If the
+movement is built, expect the weakest-first order to start doing real work, because the
+information asymmetry it creates is the whole point of going first.
 
 ---
 
@@ -1596,9 +1629,12 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    a utility function over allocations for the economy, an influence map over the
    province graph for the military. §10.3 has what it does, what it got wrong on the
    way, and what it still cannot do.
-7. **Diplomacy** — **done, and needs tuning.** `src/affinity.ts` implements §6.4 whole:
-   both channels, the decay, the saturating updates, the founding-neighbour seed, the
-   live terms and the underdog dividend, with the decision variable `W` exposed as
+7. **Diplomacy** — **done, and needs tuning.** The one piece deliberately left out is
+   §6.2's live cocktail-party layout, where nations drift in and out of a forming union
+   in response to each other; what is built is a blind vote in the same order (§6.5).
+   `src/affinity.ts` implements §6.4 whole: both channels, the decay, the saturating
+   updates, the founding-neighbour seed, the live terms and the underdog dividend, with
+   the decision variable `W` exposed as
    `Game.willingnessFrom`. `src/union.ts` adds §6.1 on top — formation in order of
    weakness, the join rule, pooling, the attack restriction, and the diplomatic bill.
    §6.4's acceptance test is instrumented in `npm run soak`. What it reports is in
