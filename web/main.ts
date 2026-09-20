@@ -519,7 +519,7 @@ function factoryHtml(id: CommodityId): string {
 function unionHtml(founder: number): string {
   const union = game.unionFor(founder);
   if (!union) return "";
-  const { land, population } = poolOf(game.world, union.members);
+  const { land, population, provinces } = poolOf(game.world, union.members);
   const joiners = union.members.filter((n) => n !== union.founder);
   const name = (n: number) => `${nationName(n)}${n === you ? " (you)" : ""}`;
 
@@ -531,6 +531,7 @@ function unionHtml(founder: number): string {
         : "&mdash;"}</dd>
       <dt>Declared against</dt><dd><span class="role foe"></span>${name(union.target)}</dd>
       <dt><b>Pooled people</b></dt><dd><b>${people(population)}</b></dd>
+      <dt><b>Provinces</b></dt><dd><b>${provinces}</b></dd>
       ${terrainRows(land)}
     </dl>
     <p class="hint">${name(union.founder)} allocates the whole of this for the turn.

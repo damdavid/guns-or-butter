@@ -279,9 +279,10 @@ export function canAttack(unions: readonly Union[], from: number, to: number): b
 export function poolOf(
   world: World,
   members: readonly number[],
-): { land: Land; population: number } {
+): { land: Land; population: number; provinces: number } {
   const land: Land = { farmland: 0, forest: 0, mountains: 0, desert: 0 };
   let population = 0;
+  let provinces = 0;
   for (const member of members) {
     const state = nationState(world, member);
     land.farmland += state.land.farmland;
@@ -289,8 +290,9 @@ export function poolOf(
     land.mountains += state.land.mountains;
     land.desert += state.land.desert;
     population += state.population;
+    provinces += world.provinces.filter((p) => p.nation === member).length;
   }
-  return { land, population };
+  return { land, population, provinces };
 }
 
 /**

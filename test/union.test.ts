@@ -200,6 +200,10 @@ describe("pooling", () => {
     const b = nationState(world, 1);
     assert.equal(pooled.land.farmland, a.land.farmland + b.land.farmland);
     assert.ok(Math.abs(pooled.population - (a.population + b.population)) < 1e-9);
+    assert.equal(
+      pooled.provinces,
+      world.provinces.filter((p) => p.nation === 0 || p.nation === 1).length,
+    );
   });
 });
 
