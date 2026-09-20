@@ -193,6 +193,13 @@ function drawMap(): void {
     // A whole nation is outlined in white: at eight provinces the outline is most of the
     // map, and white is the one colour no nation fill or terrain mark uses.
     if (looking.length > 0) {
+      // At Expert, who a nation may attack is a live question every turn rather than a
+      // matter of geography, so the answer is drawn rather than left to be worked out.
+      if (inspect!.kind === "nation" && world.level === "expert") {
+        const prey = attackableBy(inspect!.id);
+        svg.insertAdjacentHTML("beforeend", outline(
+          world.provinces.filter((p) => p.nation !== null && prey.has(p.nation)), "foe"));
+      }
       svg.insertAdjacentHTML("beforeend",
         outline(looking, inspect!.kind === "nation" ? "held" : "inspected"));
     }
@@ -498,6 +505,27 @@ function unionHtml(founder: number): string {
       every member may attack ${nationName(union.target)} and nobody else (§6.1).</p>`;
 }
 
+/**
+ * Nations this one could actually march on: permitted by §6.1's union restriction *and*
+ * sharing a border, since you may only attack an adjacent province (§5.4).
+ *
+ * Both halves matter. A union member is allowed exactly one target, and if that target
+ * is nowhere near them the honest answer is that they can attack nobody — which is the
+ * real price of joining, and worth being able to see on the board.
+ */
+function attackableBy(nation: number): Set<number> {
+  const reachable = new Set<number>();
+  for (const p of game.world.provinces) {
+    if (p.nation !== nation) continue;
+    for (const n of p.neighbours) {
+      const owner = game.world.provinces[n.province]!.nation;
+      if (owner === null || owner === nation) continue;
+      if (game.mayAttack(nation, owner)) reachable.add(owner);
+    }
+  }
+  return reachable;
+}
+
 function inspectorHtml(): string {
   if (!inspect) return "";
   if (inspect.kind === "union") return unionHtml(inspect.id);
@@ -519,6 +547,11 @@ function inspectorHtml(): string {
   const r = game.rankings().find((x) => x.nation === inspect!.id);
   if (!r) return "";
   const own = r.nation === you;
+  // §6.2 puts a hard "Can attack him / Cannot attack him" on the diplomacy screen, and
+  // at Expert that is a live question every turn rather than a matter of geography.
+  const canAttack = [...attackableBy(r.nation)].sort(
+    (a, b) => nationName(a).localeCompare(nationName(b)),
+  );
   return `<h2>${nationName(r.nation)}${own ? " (you)" : ""}
       <span class="right"><button type="button" data-act="close">Close</button></span></h2>
     <dl>
@@ -530,6 +563,10 @@ function inspectorHtml(): string {
       <dd>${own
         ? whole(resolveDraft(draft).agriculture.food)
         : '<span class="secret">a national secret</span>'}</dd>
+      ${game.world.level === "expert" ? `<dt>Can attack</dt><dd>${
+        canAttack.length
+          ? canAttack.map((n) => `<span class="role foe"></span>${nationName(n)}`).join("<br />")
+          : '<span class="secret">nobody this turn</span>'}</dd>` : ""}
     </dl>
     ${affinityHtml(r.nation)}`;
 }
