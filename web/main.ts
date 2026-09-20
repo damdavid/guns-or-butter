@@ -201,6 +201,12 @@ function marchTally(cap: number, send: number): string {
   return `<b>${power(send)}</b> moving &middot; <b>${power(cap - send)}</b> stays`;
 }
 
+/** Production context for a game's player nation, for use before `render` has run. */
+function contextFor(g: Game): { level: Level; land: Land; population: number } {
+  const { land, population } = nationState(g.world, g.human);
+  return { level: g.world.level, land, population };
+}
+
 function marchControlHtml(): string {
   if (ordering === null || game.phase !== "military-orders" || replaying) return "";
   const p = game.world.provinces[ordering];
@@ -779,20 +785,39 @@ function executionPanel(): string {
           .join("")}</ul>`}`;
 }
 
+/**
+ * What a turn moved, in the units the screen is scored in.
+ *
+ * Shown against the figure it belongs to rather than as a column of its own: the
+ * standing is the number that matters, and the change is the reason it moved.
+ */
+function change(now: number, before: number, unit = ""): string {
+  // Against the *displayed* figures, so the arithmetic on screen always adds up.
+  const delta = Math.floor(now) - Math.floor(before);
+  if (delta === 0) return "";
+  const sign = delta > 0 ? "+" : "&minus;";
+  return ` <span class="delta ${delta > 0 ? "up" : "down"}">${sign}${people(Math.abs(delta))}${unit}</span>`;
+}
+
 function rankingsPanel(): string {
+  const opening = new Map(game.openingRankings().map((r) => [r.nation, r]));
   const rows = game
     .rankings()
-    .map((r: Ranking) => `<div class="${r.nation === you ? "you" : ""} ${
-      inspect?.kind === "nation" && inspect.id === r.nation ? "open" : ""
-    }" data-nation="${r.nation}">
+    .map((r: Ranking) => {
+      const was = opening.get(r.nation);
+      return `<div class="${r.nation === you ? "you" : ""} ${
+        inspect?.kind === "nation" && inspect.id === r.nation ? "open" : ""
+      }" data-nation="${r.nation}">
       <dt>${nationName(r.nation)}${r.nation === you ? " (you)" : ""}</dt>
-      <dd>${people(r.population)} people &middot; ${r.provinces} provinces
+      <dd>${people(r.population)} people${was ? change(r.population, was.population) : ""}
+        &middot; ${r.provinces} provinces${was ? change(r.provinces, was.provinces) : ""}
         &middot; ${power(r.firepower)} firepower</dd>
-    </div>`)
+    </div>`;
+    })
     .join("");
   return `<h2>Rankings</h2>
     <p class="hint">Standing is population. Not territory, not firepower &mdash; which is
-      what makes arming yourself expensive.</p>
+      what makes arming yourself expensive. The change is this turn's.</p>
     <dl class="rank">${rows}</dl>`;
 }
 
@@ -1193,7 +1218,13 @@ function offerResume(): void {
 
 function begin(continent: string, nation: string, level: Level): void {
   game = Game.fromWorld(generateWorld(continent, level, { playerNation: nation }), economy);
-  draft = subsistenceAllocation();
+  // Balanced, not raw. `subsistenceAllocation` is a plausible-looking split that falls
+  // straight into the §3.5 priority trap: charcoal is shallower in the graph than farm
+  // tools, so it takes every ton of lumber and the tools make nothing at all. Handing
+  // that to the player as their opening position put them 192 tons of food in deficit
+  // on turn one while the engine's own default for an unallocated nation — the balanced
+  // version, worth +138 on the same ground — went to every AI instead.
+  draft = balanceAllocation(economy, subsistenceAllocation(), contextFor(game), game.locked[you] ?? []);
   view = continentBounds(game.world);
   selected = null;
   ordering = null;

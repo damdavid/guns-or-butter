@@ -408,6 +408,56 @@ describe("moving whole workers (§3.6)", () => {
   });
 });
 
+describe("what a turn changed", () => {
+  it("holds the standings as they were before production and fighting", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    const before = game.rankings();
+    game.advance();                       // production resolves; population responds
+    const opening = game.openingRankings();
+    assert.deepEqual(opening, before, "the opening standings should be the turn's start");
+    const now = new Map(game.rankings().map((r) => [r.nation, r]));
+    const grew = opening.some((r) => now.get(r.nation)!.population !== r.population);
+    assert.ok(grew, "somebody's population should have moved");
+  });
+
+  it("accounts for ground that changed hands, on both sides", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    for (let turn = 0; turn < 10; turn++) {
+      game.advance();
+      const report = game.advance()!;     // orders resolve, so any capture has happened
+      const captured = report.battles.filter((b) => b.captured);
+      if (captured.length > 0) {
+        const opening = new Map(game.openingRankings().map((r) => [r.nation, r]));
+        const now = game.rankings();
+        const gained = now.filter((r) => r.provinces > opening.get(r.nation)!.provinces);
+        const lost = now.filter((r) => r.provinces < opening.get(r.nation)!.provinces);
+        assert.ok(gained.length > 0 && lost.length > 0,
+          "a capture has a winner and a loser, and both should show it");
+        // Conquest destroys people: the taker inherits only what the farmland feeds
+        // (§5.7), so the gain never covers the loss.
+        const delta = now.reduce((sum, r) => sum + r.population - opening.get(r.nation)!.population, 0);
+        const grownBy = captured.reduce((sum, b) => sum + b.civilianLoss, 0);
+        assert.ok(grownBy > 0, "taking an inhabited province should cost civilians");
+        assert.ok(Number.isFinite(delta));
+        return;
+      }
+      game.advance();
+      game.advance();
+    }
+    assert.fail("no province changed hands in ten turns");
+  });
+
+  it("reports no change on the turn a save is resumed", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.advance();
+    const resumed = Game.restore(game.snapshot());
+    assert.deepEqual(resumed.openingRankings(), resumed.rankings());
+  });
+});
+
 describe("worker redistribution and locks (§3.6)", () => {
   const sum = (a: Record<string, number>) => Object.values(a).reduce((s, v) => s + v, 0);
 

@@ -141,6 +141,25 @@ describe("the balancer, rebuilt on the planner", () => {
     }
   });
 
+  it("rescues the opening split, which produces nothing as written", () => {
+    // `subsistenceAllocation` is plausible-looking and falls straight into the §3.5
+    // priority trap: charcoal sits shallower in the graph than farm tools, so it takes
+    // every ton of lumber and the tools make nothing. The browser handed that to the
+    // player as their opening position, so they started 192 tons of food in deficit
+    // while every AI got the balanced version.
+    for (const [name, level] of [
+      ["Kittycat", "intermediate"], ["Kublai", "expert"], ["Thule", "beginner"],
+    ] as const) {
+      const ctx = context(name, level);
+      const food = (a: Record<string, number>) =>
+        economy.resolve({ ...ctx, workers: workersFor(a, ctx.population, ctx.land.farmland) })
+          .agriculture.surplus;
+      const raw = subsistenceAllocation();
+      assert.ok(food(balanceAllocation(economy, raw, ctx)) > food(raw),
+        `${name}/${level}: balancing should beat the raw opening split`);
+    }
+  });
+
   it("staffs only what the difficulty offers, even with nothing to aim at (§1.1)", () => {
     // With no finished good staffed the balancer falls back to feeding people, and that
     // path went shopping in the whole table: a *beginner* economy large enough to afford
