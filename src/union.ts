@@ -108,6 +108,10 @@ interface Pending {
 /**
  * A formation round in progress (§6.1).
  *
+ * Only nations still holding ground take part: a nation conquered out of the game
+ * neither declares nor may be declared against, which is the caller's job to express
+ * by leaving it out of `standings`.
+ *
  * The round is taken one declaration at a time, weakest first, because that is how it
  * reads and because the player has to be able to answer each one on its own. Everyone
  * who might follow decides without knowing what the others chose — the declaration is
@@ -212,7 +216,10 @@ export function runRound(
     } else {
       target = enemiesOf(affinity, founder, standings, turn)[0] ?? null;
     }
-    if (target === null || target === founder) continue;
+    // `standings` carries only nations still holding ground, so this also refuses a
+    // declaration against one that has been conquered out of the game — the player's
+    // answer arrives from a UI and is not trusted to have checked.
+    if (target === null || target === founder || !ids.includes(target)) continue;
 
     pending = {
       founder,

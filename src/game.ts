@@ -502,11 +502,10 @@ export class Game {
   }
 
   willingnessFrom(from: number): { nation: number; willingness: number }[] {
-    const standings: Standing[] = this.rankings().map((r) => ({
-      nation: r.nation,
-      population: r.population,
-      firepower: r.firepower,
-    }));
+    // Live nations only. A nation that has lost every province is out of the game: it
+    // cannot be allied with, declared against, or usefully resented, and this list is
+    // what the union phase offers as targets.
+    const standings = this.standings();
     return standings
       .filter((s) => s.nation !== from)
       .map((s) => ({

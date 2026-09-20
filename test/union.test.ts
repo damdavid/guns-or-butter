@@ -79,6 +79,16 @@ describe("forming a union (§6.1)", () => {
     }
   });
 
+  it("refuses a declaration against a nation that has been conquered away", () => {
+    // The player's answer arrives from a UI, so it is not trusted to have checked.
+    const affinity = flat(4);
+    affinity.trust[1]![0] = 0.5;
+    const live = standings([5, 20, 40]);          // nation 3 is gone: no standing at all
+    const unions = formUnions(affinity, live, 1, { nation: 0, joins: null, declareAgainst: 3 });
+    assert.ok(unions.every((u) => u.target !== 3), "a dead nation cannot be a target");
+    assert.ok(unions.every((u) => u.founder !== 0), "and the declaration is dropped");
+  });
+
   it("keeps the three roles disjoint", () => {
     // The map paints leader, members and target in three colours, which only reads if
     // no nation is two of them at once.
@@ -301,6 +311,32 @@ describe("unions in the game loop", () => {
     assert.throws(() => game.setOrder(from.id, { marchFraction: 1, target: illegal.id }),
       /union/);
     assert.equal(game.mayAttack(member, illegal.nation!), false);
+  });
+
+  it("leaves a conquered nation out of the round entirely", () => {
+    const game = Game.create("Thule", "expert");
+    game.human = -1;
+    // Hand every one of nation 1's provinces to nation 0, so 1 is out of the game.
+    game.world = {
+      ...game.world,
+      provinces: game.world.provinces.map((p) => (p.nation === 1 ? { ...p, nation: 0 } : p)),
+      nations: game.world.nations.map((n) =>
+        n.id === 1 ? { ...n, provinces: [] }
+        : n.id === 0 ? { ...n, provinces: game.world.provinces
+            .filter((p) => p.nation === 0 || p.nation === 1).map((p) => p.id) }
+        : n),
+    };
+    // The round is built from the standings as they are when the phase opens, so play
+    // on to the next one — which is how an elimination reaches it in a real game.
+    while (!(game.turn === 2 && game.phase === "production")) game.advance();
+
+    for (const union of game.unions) {
+      assert.notEqual(union.founder, 1, "a nation with no provinces cannot declare");
+      assert.notEqual(union.target, 1, "nor be declared against");
+      assert.ok(!union.members.includes(1), "nor join");
+    }
+    assert.ok(game.willingnessFrom(0).every((w) => w.nation !== 1),
+      "and it is not offered as a target");
   });
 
   it("keeps a nation's own union out of its own way at lower levels", () => {
