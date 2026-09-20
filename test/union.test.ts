@@ -79,6 +79,17 @@ describe("forming a union (§6.1)", () => {
     }
   });
 
+  it("keeps the three roles disjoint", () => {
+    // The map paints leader, members and target in three colours, which only reads if
+    // no nation is two of them at once.
+    const affinity = seedAffinity(generateWorld("Nineveh", "expert"));
+    for (const union of formUnions(affinity, standings([1, 2, 3, 4, 5, 6, 7, 8]), 1)) {
+      assert.ok(union.members.includes(union.founder), "the founder is a member");
+      assert.ok(!union.members.includes(union.target), "the target is never a member");
+      assert.equal(new Set(union.members).size, union.members.length, "no duplicates");
+    }
+  });
+
   it("lets the player decline, and lets them declare their own", () => {
     const affinity = flat(4);
     affinity.trust[1]![0] = 0.5;

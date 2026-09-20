@@ -24,6 +24,7 @@ import {
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
+import { poolOf } from "../src/union.ts";
 import { compact, grouped } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
 import { generateWorld, nationState } from "../src/worldgen.ts";
@@ -50,7 +51,9 @@ let ordering: number | null = null;
 type Inspecting =
   | { kind: "province"; id: number }
   | { kind: "nation"; id: number }
-  | { kind: "factory"; id: CommodityId };
+  | { kind: "factory"; id: CommodityId }
+  /** `id` is the founder, which is what identifies a union for the turn it exists. */
+  | { kind: "union"; id: number };
 let inspect: Inspecting | null = null;
 let notice = "";
 let expanded = false;
@@ -161,20 +164,38 @@ function drawMap(): void {
   }
   // What the inspector is looking at, outlined separately from the order selection —
   // you are often reading about one province while ordering another.
-  const looking =
-    inspect?.kind === "province"
-      ? world.provinces.filter((p) => p.id === inspect!.id && p.id !== selected)
-      : inspect?.kind === "nation"
-        ? world.provinces.filter((p) => p.nation === inspect!.id)
-        : [];
-  if (looking.length > 0) {
-    // A whole nation is outlined in white: at eight provinces the outline is most of the
-    // map, and white is the one colour no nation fill or terrain mark uses.
-    const kind = inspect!.kind === "nation" ? "held" : "inspected";
-    svg.insertAdjacentHTML("beforeend", looking
+  const outline = (provinces: typeof world.provinces, kind: string) =>
+    provinces
       .map((p) => `<polygon class="highlight ${kind}" fill="none" pointer-events="none" points="${
         p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ")}"/>`)
-      .join(""));
+      .join("");
+
+  if (inspect?.kind === "union") {
+    // Three colours because a union has three roles, and which nation is which is the
+    // thing you are looking at the map to find out: the leader whose economy it is, the
+    // members who handed theirs over, and the one nation they may all attack.
+    const union = game.unionFor(inspect.id);
+    if (union) {
+      const byNation = (test: (n: number) => boolean) =>
+        world.provinces.filter((p) => p.nation !== null && test(p.nation));
+      svg.insertAdjacentHTML("beforeend",
+        outline(byNation((n) => union.members.includes(n) && n !== union.founder), "member") +
+        outline(byNation((n) => n === union.target), "foe") +
+        outline(byNation((n) => n === union.founder), "leader"));
+    }
+  } else {
+    const looking =
+      inspect?.kind === "province"
+        ? world.provinces.filter((p) => p.id === inspect!.id && p.id !== selected)
+        : inspect?.kind === "nation"
+          ? world.provinces.filter((p) => p.nation === inspect!.id)
+          : [];
+    // A whole nation is outlined in white: at eight provinces the outline is most of the
+    // map, and white is the one colour no nation fill or terrain mark uses.
+    if (looking.length > 0) {
+      svg.insertAdjacentHTML("beforeend",
+        outline(looking, inspect!.kind === "nation" ? "held" : "inspected"));
+    }
   }
   el("map-hint").textContent = replaying
     ? "Replaying the turn's marches."
@@ -449,8 +470,37 @@ function factoryHtml(id: CommodityId): string {
            the top of this list takes what it needs before the rest are asked.</p>`}`;
 }
 
+/**
+ * A union's roster and what it adds up to (§6.1).
+ *
+ * The pooled totals are the reason the thing exists, so they are the body of the panel
+ * rather than a footnote: one economy's worth of people and ground, assembled out of
+ * several nations for a single turn.
+ */
+function unionHtml(founder: number): string {
+  const union = game.unionFor(founder);
+  if (!union) return "";
+  const { land, population } = poolOf(game.world, union.members);
+  const joiners = union.members.filter((n) => n !== union.founder);
+  const name = (n: number) => `${nationName(n)}${n === you ? " (you)" : ""}`;
+
+  return `<h2>Union<span class="right"><button type="button" data-act="close">Close</button></span></h2>
+    <dl>
+      <dt>Leader</dt><dd><span class="role leader"></span>${name(union.founder)}</dd>
+      <dt>Members</dt><dd>${joiners.length
+        ? joiners.map((n) => `<span class="role member"></span>${name(n)}`).join("<br />")
+        : "&mdash;"}</dd>
+      <dt>Declared against</dt><dd><span class="role foe"></span>${name(union.target)}</dd>
+      <dt><b>Pooled people</b></dt><dd><b>${people(population)}</b></dd>
+      ${terrainRows(land)}
+    </dl>
+    <p class="hint">${name(union.founder)} allocates the whole of this for the turn, and
+      every member may attack ${nationName(union.target)} and nobody else (§6.1).</p>`;
+}
+
 function inspectorHtml(): string {
   if (!inspect) return "";
+  if (inspect.kind === "union") return unionHtml(inspect.id);
   if (inspect.kind === "factory") return factoryHtml(inspect.id);
   if (inspect.kind === "province") {
     const p = shownWorld().provinces[inspect.id];
@@ -548,8 +598,21 @@ function nationsHtml(): string {
       <span class="num">${people(r.population)} people &middot; ${r.provinces} prov</span>
     </li>`)
     .join("");
+  // Unions only exist at Expert (§1.1), and only for the turn they were declared in.
+  const unions = game.unions
+    .map((u) => `<li class="${inspect?.kind === "union" && inspect.id === u.founder ? "open" : ""}"
+      data-union="${u.founder}">
+      <span class="swatch" style="background:${fill(u.founder)}"></span>
+      ${nationName(u.founder)} <span class="hint">and ${u.members.length - 1} against</span>
+      ${nationName(u.target)}
+      <span class="num">${people(poolOf(game.world, u.members).population)} people</span>
+    </li>`)
+    .join("");
+
   return `<h2>Nations <small>standing by population</small></h2>
     <ul class="nations">${rows}</ul>
+    ${unions ? `<h2 class="sub">Unions <small>this turn</small></h2>
+      <ul class="nations unions">${unions}</ul>` : ""}
     <p class="hint">Click one for its strength and territory. Food output is a national secret.</p>`;
 }
 
@@ -1150,7 +1213,7 @@ document.addEventListener("change", (event) => {
 document.addEventListener("click", (event) => {
   const node = (event.target as HTMLElement).closest<HTMLElement>(
     "[data-act], [data-step], [data-mstep], [data-nation], [data-factory], " +
-    "[data-join], [data-declare], [data-aloof]",
+    "[data-join], [data-declare], [data-aloof], [data-union]",
   );
   if (!node) return;
 
@@ -1187,6 +1250,12 @@ document.addEventListener("click", (event) => {
       game.setOrder(province, { ...order, marchFraction: Math.min(1, Math.max(0, send / power)) });
       render();
     }
+    return;
+  }
+  if (node.dataset.union) {
+    const id = Number(node.dataset.union);
+    inspect = inspect?.kind === "union" && inspect.id === id ? null : { kind: "union", id };
+    render();
     return;
   }
   if (node.dataset.nation) {
