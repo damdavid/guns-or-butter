@@ -411,9 +411,20 @@ table.read-only { opacity: 0.75; }
 
 /* A union has three roles and the map says which is which: the leader whose economy it
    is, the members who handed theirs over, and the one nation they may all attack. */
-svg.map .highlight.leader { stroke: #fff; stroke-width: 4; stroke-linejoin: round; }
-svg.map .highlight.member { stroke: #e0b500; stroke-width: 4; stroke-linejoin: round; }
-svg.map .highlight.foe { stroke: #c0281c; stroke-width: 4; stroke-linejoin: round; }
+svg.map .highlight.leader,
+svg.map .highlight.member,
+svg.map .highlight.foe,
+svg.map .highlight.held {
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+svg.map .highlight.leader { stroke: #fff; }
+svg.map .highlight.member { stroke: #e0b500; }
+svg.map .highlight.foe { stroke: #c0281c; }
+svg.map .highlight.held { stroke: #fff; }
+/* Redrawn over the role colour, so two neighbours wearing the same one still part. */
+svg.map .highlight.seam { stroke: #2f2a24; stroke-width: 2; stroke-linejoin: round; }
 
 .role {
   display: inline-block;

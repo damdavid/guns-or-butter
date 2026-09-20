@@ -27,7 +27,7 @@ import {
 import { poolOf } from "../src/union.ts";
 import { compact, grouped } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
-import { generateWorld, nationState } from "../src/worldgen.ts";
+import { borderSegments, generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
 
 const economy = new Economy();
@@ -164,6 +164,38 @@ function drawMap(): void {
   }
   // What the inspector is looking at, outlined separately from the order selection —
   // you are often reading about one province while ordering another.
+  /**
+   * Ring whole nations along their own frontier, not every province inside them.
+   *
+   * Outlining each province painted the internal province lines too, so several
+   * highlighted nations became one undifferentiated mesh of colour and you could not
+   * see where one ended and the next began. Following only the edges that are already
+   * a national boundary or coast leaves the thin province lines alone, so each nation
+   * keeps its shape — and the black national borders are drawn back over the top
+   * afterwards, which puts a crisp seam between two neighbours wearing the same colour.
+   */
+  const frontier = (nations: ReadonlySet<number>, kind: string) => {
+    if (nations.size === 0) return "";
+    const belongs = (id: number) => {
+      const owner = world.provinces[id]?.nation;
+      return owner !== null && owner !== undefined && nations.has(owner);
+    };
+    const d = borderSegments(world)
+      .filter((e) => e.kind !== "province" && e.owners.some(belongs))
+      .map((e) => `M${e.from.x.toFixed(1)},${e.from.y.toFixed(1)}L${e.to.x.toFixed(1)},${e.to.y.toFixed(1)}`)
+      .join("");
+    return d ? `<path class="highlight ${kind}" fill="none" pointer-events="none" d="${d}"/>` : "";
+  };
+
+  /** The black national borders, redrawn over a highlight so nations stay separable. */
+  const seams = () => {
+    const d = borderSegments(world)
+      .filter((e) => e.kind === "nation")
+      .map((e) => `M${e.from.x.toFixed(1)},${e.from.y.toFixed(1)}L${e.to.x.toFixed(1)},${e.to.y.toFixed(1)}`)
+      .join("");
+    return d ? `<path class="highlight seam" fill="none" pointer-events="none" d="${d}"/>` : "";
+  };
+
   const outline = (provinces: typeof world.provinces, kind: string) =>
     provinces
       .map((p) => `<polygon class="highlight ${kind}" fill="none" pointer-events="none" points="${
@@ -176,12 +208,12 @@ function drawMap(): void {
     // members who handed theirs over, and the one nation they may all attack.
     const union = game.unionFor(inspect.id);
     if (union) {
-      const byNation = (test: (n: number) => boolean) =>
-        world.provinces.filter((p) => p.nation !== null && test(p.nation));
+      const members = new Set(union.members.filter((n) => n !== union.founder));
       svg.insertAdjacentHTML("beforeend",
-        outline(byNation((n) => union.members.includes(n) && n !== union.founder), "member") +
-        outline(byNation((n) => n === union.target), "foe") +
-        outline(byNation((n) => n === union.founder), "leader"));
+        frontier(members, "member") +
+        frontier(new Set([union.target]), "foe") +
+        frontier(new Set([union.founder]), "leader") +
+        seams());
     }
   } else {
     const looking =
@@ -193,15 +225,15 @@ function drawMap(): void {
     // A whole nation is outlined in white: at eight provinces the outline is most of the
     // map, and white is the one colour no nation fill or terrain mark uses.
     if (looking.length > 0) {
-      // At Expert, who a nation may attack is a live question every turn rather than a
-      // matter of geography, so the answer is drawn rather than left to be worked out.
-      if (inspect!.kind === "nation" && world.level === "expert") {
-        const prey = attackableBy(inspect!.id);
-        svg.insertAdjacentHTML("beforeend", outline(
-          world.provinces.filter((p) => p.nation !== null && prey.has(p.nation)), "foe"));
+      if (inspect!.kind === "nation") {
+        // At Expert, who a nation may attack is a live question every turn rather than
+        // a matter of geography, so the answer is drawn rather than left to be worked out.
+        const prey = world.level === "expert" ? attackableBy(inspect!.id) : new Set<number>();
+        svg.insertAdjacentHTML("beforeend",
+          frontier(prey, "foe") + frontier(new Set([inspect!.id]), "held") + seams());
+      } else {
+        svg.insertAdjacentHTML("beforeend", outline(looking, "inspected"));
       }
-      svg.insertAdjacentHTML("beforeend",
-        outline(looking, inspect!.kind === "nation" ? "held" : "inspected"));
     }
   }
   el("map-hint").textContent = replaying
