@@ -662,7 +662,14 @@ export class Game {
     this.production = {};
     this.transfers = [];
     this.battles = [];
-    this.phase = "production";
+    // Back to the turn's *first* phase, which at Expert is the union round (§1.2).
+    // Undoing into production would skip it and leave the turn with no unions at all —
+    // no pooling and no attack restriction — which is a turn that could not legally
+    // have happened. The same declarations come back around: formation is deterministic
+    // given the affinity and standings just restored, and the affinity in the snapshot
+    // predates this turn's formation, so nothing is counted twice.
+    this.phase = phasesFor(this.world.level)[0]!;
+    if (this.phase === "union") this.openUnionRound();
   }
 
   snapshot(): GameSnapshot {
@@ -688,7 +695,16 @@ export class Game {
     game.allocations = structuredClone(snapshot.allocations);
     game.locked = structuredClone(snapshot.locked ?? {});
     if (snapshot.affinity) game.affinity = structuredClone(snapshot.affinity);
+    // A save resumes at the start of its turn, so this turn's unions are re-formed
+    // rather than restored; last turn's are kept, because they are what makes turning
+    // on yesterday's partner a betrayal (§6.4).
+    game.lastUnions = structuredClone(snapshot.lastUnions ?? []);
+    game.unions = [];
     game.startOfTurn = game.snapshot();
+    // The constructor opened a round against the world it was handed. Re-open it now
+    // the saved turn and affinity are in place, or it would be asking last game's
+    // question.
+    if (game.phase === "union") game.openUnionRound();
     return game;
   }
 

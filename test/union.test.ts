@@ -339,6 +339,58 @@ describe("unions in the game loop", () => {
       "and it is not offered as a target");
   });
 
+  const toRankings = (game: Game) => {
+    for (let i = 0; i < 12 && (game.phase as string) !== "rankings"; i++) game.advance();
+  };
+
+  it("undoes back to before the union phase, not past it", () => {
+    const game = Game.create("Thule", "expert");
+    game.human = -1;
+    toRankings(game);
+    assert.ok(game.unions.length > 0, "the turn under test should have formed unions");
+
+    game.undoTurn();
+    assert.equal(game.phase, "union", "an Expert turn starts with the union round (§1.2)");
+  });
+
+  it("undoes to production at levels with no union phase", () => {
+    const game = Game.create("Thule", "intermediate");
+    game.human = -1;
+    toRankings(game);
+    game.undoTurn();
+    assert.equal(game.phase, "production");
+    assert.deepEqual(game.unions, []);
+  });
+
+  it("does not leave an undone turn with no unions to play by", () => {
+    // The bug this pins: undoing into production skipped the round, so the replayed
+    // turn ran with no pooling and no attack restriction at all — a turn that could
+    // not legally have happened.
+    const game = Game.create("Thule", "expert");
+    game.human = -1;
+    toRankings(game);
+    game.undoTurn();
+    assert.ok(game.unions.length > 0, "the replayed turn should have unions of its own");
+  });
+
+  it("replays an undone turn to the same place, counting nothing twice", () => {
+    const game = Game.create("Thule", "expert");
+    game.human = -1;
+    toRankings(game);
+    const once = {
+      unions: structuredClone(game.unions),
+      affinity: structuredClone(game.affinity),
+      rankings: game.rankings(),
+    };
+
+    game.undoTurn();
+    toRankings(game);
+    assert.deepEqual(game.unions, once.unions, "the same declarations should come back");
+    assert.deepEqual(game.affinity, once.affinity,
+      "formation and its grievances must not be applied twice");
+    assert.deepEqual(game.rankings(), once.rankings);
+  });
+
   it("keeps a nation's own union out of its own way at lower levels", () => {
     const game = Game.create("Thule", "intermediate");
     game.human = -1;
