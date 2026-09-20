@@ -4,8 +4,8 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import {
-  canAttack, enemiesOf, formUnions, poolOf, recordFormation, recordSurvival, willJoin,
-  type Union,
+  canAttack, enemiesOf, formUnions, poolOf, recordFormation, recordSurvival, runRound,
+  startRound, willJoin, type Union,
 } from "../src/union.ts";
 import { seedAffinity, type Affinity, type Standing } from "../src/affinity.ts";
 import { Game } from "../src/game.ts";
@@ -88,6 +88,49 @@ describe("forming a union (§6.1)", () => {
       assert.ok(!union.members.includes(union.target), "the target is never a member");
       assert.equal(new Set(union.members).size, union.members.length, "no duplicates");
     }
+  });
+
+  it("asks one declaration at a time, weakest first", () => {
+    const affinity = flat(4);
+    for (const a of [0, 1, 2, 3]) for (const b of [0, 1, 2, 3]) affinity.trust[a]![b] = -0.9;
+    const pops = standings([5, 20, 40, 90]);   // player is 2; 0 and 1 are weaker
+    const asked: string[] = [];
+    let state = startRound(pops);
+    state = runRound(state, affinity, pops, 1, 2);
+    for (let i = 0; i < 8 && !state.done; i++) {
+      asked.push(`${state.ask!.kind}:${state.ask!.kind === "join" ? state.ask!.founder : "-"}`);
+      state = runRound(state, affinity, pops, 1, 2, null);
+    }
+    // Nobody likes anybody, so the player is asked to follow 0, then 1, then to declare.
+    assert.deepEqual(asked, ["join:0", "join:1", "declare:-"]);
+  });
+
+  it("does not reveal who else is following", () => {
+    // The declaration is public and the answers are not: a round paused on a join asks
+    // about the founder and the target, and carries no roster to read.
+    const affinity = flat(4);
+    const pops = standings([5, 20, 40, 90]);
+    const state = runRound(startRound(pops), affinity, pops, 1, 2);
+    assert.equal(state.ask?.kind, "join");
+    assert.deepEqual(Object.keys(state.ask!).sort(), ["founder", "kind", "nation", "target"]);
+  });
+
+  it("lets the player declare against any nation, not only an enemy", () => {
+    const affinity = flat(4);
+    affinity.trust[0]![3] = 0.9;   // 0 is devoted to 3 and would never pick it itself
+    affinity.trust[1]![2] = 0.5;   // but 1 will follow the player
+    const pops = standings([5, 20, 40, 90]);
+    // Player is 0, the weakest, so it declares first — against its own favourite.
+    const unions = formUnions(affinity, pops, 1, { nation: 0, joins: null, declareAgainst: 3 });
+    assert.equal(unions.find((u) => u.founder === 0)?.target, 3);
+  });
+
+  it("treats leaving the question unanswered as declining", () => {
+    const affinity = flat(4);
+    const pops = standings([5, 20, 40, 90]);
+    let state = runRound(startRound(pops), affinity, pops, 1, 2);
+    while (!state.done) state = runRound(state, affinity, pops, 1, 2, null);
+    assert.ok(state.unions.every((u) => !u.members.includes(2)), "declining keeps you out");
   });
 
   it("lets the player decline, and lets them declare their own", () => {

@@ -926,64 +926,60 @@ function change(now: number, before: number, unit = ""): string {
   return ` <span class="delta ${delta > 0 ? "up" : "down"}">${sign}${people(Math.abs(delta))}${unit}</span>`;
 }
 
-/** The player's answer to this turn's union phase, held until they advance. */
-let unionChoice: { joins: number | null; declareAgainst: number | null } | null = null;
-
 /**
- * The Economic Union phase (§6.1, Expert only).
+ * The Economic Union phase (§6.1, Expert only), taken one declaration at a time.
  *
- * The declarations shown are what would happen if you stood aloof. They are a decision
- * aid and not a promise: joining changes who is still unattached when the later
- * declarations are made, so the final membership can differ. Nothing cheaper is honest,
- * because §6.1 forms unions one at a time in order of weakness.
+ * Weakest declares first, everyone else answers, then the next weakest still unattached
+ * declares, and so on. What is deliberately *not* on this screen is who else is joining:
+ * the declaration is public and the answers are not, so a union's membership is a
+ * surprise to its own members until it forms. Showing a predicted roster would hand the
+ * player the one thing the rule says nobody has.
  */
 function unionPanel(): string {
-  const preview = game.unionPreview();
-  const regard = new Map(game.willingnessFrom(you).map((w) => [w.nation, w.willingness]));
-  const inner = (n: number) => nationName(n);
+  const ask = game.unionAsk();
+  const settled = game.unionsSoFar();
+  const name = (n: number) => `${nationName(n)}${n === you ? " (you)" : ""}`;
 
-  const offers = preview
-    .filter((u) => u.target !== you)
-    .map((u) => {
-      const chosen = unionChoice?.joins === u.founder;
-      return `<div class="offer ${chosen ? "chosen" : ""}">
-        <dt>${inner(u.founder)} <span class="hint">against</span> ${inner(u.target)}</dt>
-        <dd>${u.members.map(inner).join(", ")}
-          <span class="hint">&middot; you regard ${inner(u.founder)} at
-            ${(regard.get(u.founder) ?? 0).toFixed(2)}</span></dd>
-        <dd><button type="button" data-join="${u.founder}"
-          ${chosen ? "disabled" : ""}>${chosen ? "Joining" : "Join"}</button></dd>
-      </div>`;
-    })
-    .join("");
-
-  const targeted = preview.find((u) => u.target === you);
-  const warning = targeted
-    ? `<p class="warn-line">${inner(targeted.founder)} is forming a union against you:
-        ${targeted.members.map(inner).join(", ")}.</p>`
+  const formed = settled.length
+    ? `<h3>Formed so far</h3>${settled.map((u) => `<div class="offer">
+        <dt>${name(u.founder)} <span class="hint">and ${u.members.length - 1} against</span>
+          ${name(u.target)}</dt>
+        <dd>${u.members.map(name).join(", ")}</dd>
+      </div>`).join("")}`
     : "";
 
-  // §6.1 lets anyone still unattached declare their own, so this is always offered.
-  const enemies = game.willingnessFrom(you).slice().reverse().slice(0, 3);
-  const declare = enemies
-    .map((e) => `<button type="button" data-declare="${e.nation}"
-      ${unionChoice?.declareAgainst === e.nation ? "disabled" : ""}
-      >${inner(e.nation)} <span class="hint">${e.willingness.toFixed(2)}</span></button>`)
-    .join(" ");
+  let question: string;
+  if (!ask) {
+    question = `<p class="hint">The declarations are finished${settled.length ? "" : " and nobody formed a union"}.</p>`;
+  } else if (ask.kind === "declare") {
+    // "A player can choose any other nation" — so every one of them is offered, worst
+    // regarded first, since that is the order the question is usually answered in.
+    const choices = game.willingnessFrom(you)
+      .map((w) => `<button type="button" data-declare="${w.nation}">${nationName(w.nation)}
+        <span class="hint">${w.willingness.toFixed(2)}</span></button>`)
+      .reverse()
+      .join(" ");
+    question = `<h3>You are the weakest nation still unattached</h3>
+      <p class="hint">Declare a union against any nation. The others will answer one by
+        one, and you will not learn who joined until it forms.</p>
+      <p class="declare">${choices}</p>
+      <p><button type="button" data-aloof="1">Declare nothing</button></p>`;
+  } else {
+    question = `<h3>${nationName(ask.founder)} has declared against ${name(ask.target)}</h3>
+      <p class="hint">Join and you pool your people and land into
+        ${nationName(ask.founder)}'s economy for the turn &mdash; they allocate all of
+        it &mdash; and you may attack ${nationName(ask.target)} or any unaligned nation,
+        but no member of any union. You do not know who else is joining.</p>
+      <p class="declare">
+        <button type="button" data-join="${ask.founder}">Join ${nationName(ask.founder)}</button>
+        <button type="button" data-aloof="1">Stand aloof</button></p>`;
+  }
 
-  const aloof = unionChoice === null;
   return `<h2>Economic Union</h2>
-    <p class="hint">The weakest player declares against their worst enemy and the rest
-      join or stand aloof. Members pool their people and their land into one economy for
-      the turn &mdash; and the founder allocates all of it. Members may attack the
-      union's target, or anyone in no union at all, but never each other.</p>
-    ${warning}
-    <h3>Declared this turn</h3>
-    ${offers || `<p class="hint">Nobody is offering you a place.</p>`}
-    <h3>Or declare your own, against</h3>
-    <p class="declare">${declare}</p>
-    <p><button type="button" data-aloof="1" ${aloof ? "disabled" : ""}
-      >${aloof ? "Standing aloof" : "Stand aloof"}</button></p>`;
+    <p class="hint">The weakest player declares first and the rest answer, then the next
+      weakest still unattached declares, until nobody is left to join.</p>
+    ${question}
+    ${formed}`;
 }
 
 function rankingsPanel(): string {
@@ -1256,12 +1252,8 @@ document.addEventListener("click", (event) => {
   if (!node) return;
 
   if (node.dataset.join || node.dataset.declare || node.dataset.aloof) {
-    unionChoice = node.dataset.join
-      ? { joins: Number(node.dataset.join), declareAgainst: null }
-      : node.dataset.declare
-        ? { joins: null, declareAgainst: Number(node.dataset.declare) }
-        : null;
-    game.setUnionChoice(unionChoice);
+    const answer = node.dataset.join ?? node.dataset.declare;
+    game.answerUnion(answer === undefined ? null : Number(answer));
     render();
     return;
   }
@@ -1356,7 +1348,6 @@ el("advance").addEventListener("click", async () => {
     draft = game.allocations[you] ?? draft;
     replayLog = [];
   }
-  if (game.phase === "union") unionChoice = null;
   selected = null;
   ordering = null;
   render();

@@ -25,8 +25,8 @@ import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type S
 import { affordableTons, bestFoodChain, chainDemand, staffChain } from "./planner.ts";
 import { planOrders, planProduction } from "./ai.ts";
 import {
-  canAttack, formUnions, poolOf, recordFormation, recordSurvival, unionOf,
-  type HumanChoice, type Union,
+  canAttack, poolOf, recordFormation, recordSurvival, runRound, startRound, unionOf,
+  type RoundState, type Union, type UnionAsk,
 } from "./union.ts";
 import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
@@ -418,7 +418,8 @@ export class Game {
 
   /** Last turn's unions, which is what makes turning on a partner a betrayal (§6.4). */
   private lastUnions: Union[] = [];
-  private unionChoice: HumanChoice | null = null;
+  /** The formation round in progress, one declaration at a time (§6.1). */
+  private round: RoundState | null = null;
 
   private production: Record<number, EconomyResult> = {};
   private transfers: Transfer[] = [];
@@ -435,6 +436,7 @@ export class Game {
     // most needs one, since none of them can feed itself alone (§10.3).
     this.phase = world.level === "expert" ? "union" : "production";
     this.startOfTurn = this.snapshot();
+    if (this.phase === "union") this.openUnionRound();
   }
 
   /** What each nation is worth as an ally, to `from` (§6.4). */
@@ -468,25 +470,30 @@ export class Game {
   }
 
   /**
-   * What this turn's declarations would be if the player stood aloof.
+   * What the round is waiting on you to answer, or null if it has nothing to ask.
    *
-   * A decision aid, not a promise: joining changes who is still unattached when the
-   * later declarations are made, so the final membership can differ. Nothing cheaper
-   * is honest, because §6.1 forms unions in sequence by weakness.
+   * Declarations are taken one at a time, weakest first, and everyone who might follow
+   * answers without knowing what the others chose (§6.1). So this is the whole of what
+   * a player is entitled to see: who has declared, and against whom.
    */
-  unionPreview(): Union[] {
-    if (this.world.level !== "expert") return [];
-    return formUnions(this.affinity, this.standings(), this.turn, {
-      nation: this.human,
-      joins: null,
-      declareAgainst: null,
-    });
+  unionAsk(): UnionAsk | null {
+    return this.round?.ask ?? null;
   }
 
-  /** The player's answer to this turn's union phase. Null stands aloof. */
-  setUnionChoice(choice: Omit<HumanChoice, "nation"> | null): void {
+  /** Unions settled so far in this turn's round. */
+  unionsSoFar(): readonly Union[] {
+    return this.round?.unions ?? this.unions;
+  }
+
+  /**
+   * Answer the outstanding question: a nation to declare against, a founder to follow,
+   * or null to decline. Carries the round on to the next question, or to the end.
+   */
+  answerUnion(answer: number | null): void {
     this.requirePhase("union");
-    this.unionChoice = choice ? { ...choice, nation: this.human } : null;
+    if (!this.round?.ask) return;
+    this.round = runRound(this.round, this.affinity, this.standings(), this.turn, this.human, answer);
+    if (this.round.done) this.settleUnions();
   }
 
   /** Whether §6.1's attack restriction allows this. */
@@ -648,6 +655,7 @@ export class Game {
     if (this.startOfTurn.affinity) this.affinity = structuredClone(this.startOfTurn.affinity);
     this.unions = structuredClone(this.startOfTurn.unions ?? []);
     this.lastUnions = structuredClone(this.startOfTurn.lastUnions ?? []);
+    this.round = null;
     // Locks deliberately survive an undo. They are a standing instruction about which
     // allocations to protect, not a move taken this turn, and losing them on undo would
     // defeat the point of having them.
@@ -706,7 +714,7 @@ export class Game {
     recordSurvival(this.affinity, this.unions);
     this.lastUnions = this.unions;
     this.unions = [];
-    this.unionChoice = null;
+    this.round = null;
 
     this.turn++;
     this.orders = {};
@@ -716,17 +724,36 @@ export class Game {
     // The Economic Union phase exists at Expert and nowhere else (§1.1, §1.2).
     this.phase = this.world.level === "expert" ? "union" : "production";
     this.startOfTurn = this.snapshot();
+    if (this.phase === "union") this.openUnionRound();
   }
 
-  /** Phase 0: run §6.1's formation round and book its diplomatic consequences. */
-  private resolveUnions(): void {
-    this.unions = formUnions(
-      this.affinity,
-      this.standings(),
-      this.turn,
-      this.unionChoice ?? { nation: this.human, joins: null, declareAgainst: null },
+  /** Open the round, and carry it as far as it can go without the player. */
+  private openUnionRound(): void {
+    this.round = runRound(
+      startRound(this.standings()), this.affinity, this.standings(), this.turn, this.human,
     );
+    if (this.round.done) this.settleUnions();
+  }
+
+  /** Book the round's result and its diplomatic consequences (§6.4). */
+  private settleUnions(): void {
+    this.unions = [...(this.round?.unions ?? [])];
     recordFormation(this.affinity, this.unions, this.lastUnions);
+    this.round = null;
+  }
+
+  /**
+   * Leaving the union phase with a question outstanding is answering it with a shrug:
+   * you declined. The alternative — refusing to advance — makes the phase a trap for a
+   * player who has stopped caring about diplomacy this turn.
+   */
+  private resolveUnions(): void {
+    while (this.round && !this.round.done) {
+      this.round = runRound(
+        this.round, this.affinity, this.standings(), this.turn, this.human, null,
+      );
+    }
+    if (this.round) this.settleUnions();
   }
 
   /**

@@ -89,6 +89,23 @@ It is phase 0 on every Expert turn including the first, which is the turn a nati
 needs one: none of them can feed itself alone (§10.3). The other levels never enter it,
 so `phasesFor(level)` — not a fixed four — is what a UI should build its tracker from.
 
+**The round is taken one declaration at a time.** The weakest nation declares, everyone
+still unattached answers, then the next weakest still unattached declares, and so on
+until nobody is left to join. `RoundState` carries a round across calls and `runRound`
+advances it to the next question or to the end, so a player answers each declaration on
+its own rather than committing to the whole turn at once. Leaving a question outstanding
+when the phase is advanced counts as declining it — refusing to advance would make the
+phase a trap for a player who has stopped caring about diplomacy this turn.
+
+**Nobody learns who else is joining.** The declaration is public; the answers are not.
+The candidate list is snapshotted when the declaration is made, so no nation's choice
+can be informed by another's, and a union's membership is a surprise to its own members
+until it forms. A UI that previewed a likely roster would hand the player the one thing
+the rule says nobody has.
+
+**A declaring player may name any other nation.** The AI picks its worst enemy by `W`
+(§6.4); a person is offered all of them, worst regarded first.
+
 **Population lives on provinces, but the economy works on nation totals.** Food surplus
 is resolved per nation and then pushed back down in proportion to where the people
 already are, because conquest moves provinces between nations and the two views have to

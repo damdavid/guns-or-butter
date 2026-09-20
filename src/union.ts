@@ -87,14 +87,146 @@ export function willJoin(
   return toFounder > willingness(affinity, joiner, target, standings, turn);
 }
 
+/** What the round is waiting on the player to answer. */
+export type UnionAsk =
+  | { kind: "declare"; nation: number }
+  | { kind: "join"; nation: number; founder: number; target: number };
+
+interface Pending {
+  founder: number;
+  target: number;
+  members: number[];
+  /**
+   * Everyone who may follow, fixed at the moment of declaration. Snapshotting it is
+   * what makes the answers independent: nobody's decision can be informed by anybody
+   * else's, because the candidate list does not shrink as people accept.
+   */
+  eligible: readonly number[];
+  answered: boolean;
+}
+
 /**
- * Run §6.1's formation round.
+ * A formation round in progress (§6.1).
  *
- * The weakest unattached nation declares, everyone still unattached answers, and then
- * the next weakest unattached nation gets its turn to declare — "further unions may
- * form; if you join none, you may declare your own". Declaring is not optional for the
- * weakest in Crawford's text, so only joining is a decision; the human may still
- * decline to name a target, which produces the same outcome as a union nobody joins.
+ * The round is taken one declaration at a time, weakest first, because that is how it
+ * reads and because the player has to be able to answer each one on its own. Everyone
+ * who might follow decides without knowing what the others chose — the declaration is
+ * public, the answers are not — so a union's membership is a surprise to its own
+ * members until it forms.
+ */
+export interface RoundState {
+  /** Nation ids, weakest first. Declarations are offered in this order. */
+  order: readonly number[];
+  /** How far down `order` the declarations have got. */
+  at: number;
+  attached: readonly number[];
+  unions: readonly Union[];
+  pending: Pending | null;
+  /** Set when the round is blocked on the player; null while it can run itself. */
+  ask: UnionAsk | null;
+  done: boolean;
+}
+
+export function startRound(standings: readonly Standing[]): RoundState {
+  return {
+    order: [...standings].sort((a, b) => a.population - b.population).map((s) => s.nation),
+    at: 0,
+    attached: [],
+    unions: [],
+    pending: null,
+    ask: null,
+    done: false,
+  };
+}
+
+/**
+ * Carry the round forward until it needs the player again, or finishes.
+ *
+ * `answer` responds to `state.ask`: a nation to declare against (or null to decline),
+ * or for a join, the founder to follow (or null to stand aloof). Pass `human = -1` and
+ * the round runs start to finish without stopping.
+ */
+export function runRound(
+  state: RoundState,
+  affinity: Affinity,
+  standings: readonly Standing[],
+  turn: number,
+  human: number,
+  answer?: number | null,
+): RoundState {
+  let { at, pending, unions, attached } = {
+    at: state.at,
+    pending: state.pending ? { ...state.pending, members: [...state.pending.members] } : null,
+    unions: [...state.unions],
+    attached: [...state.attached],
+  };
+  let reply = answer;
+  const ids = standings.map((s) => s.nation);
+  const free = (n: number) => !attached.includes(n);
+
+  for (;;) {
+    if (pending) {
+      const { founder, target, eligible } = pending;
+      // The player answers first, so that the AI's independent choices cannot be read
+      // off the board before they commit.
+      if (!pending.answered && human >= 0 && eligible.includes(human)) {
+        if (reply === undefined) {
+          return { ...state, at, attached, unions, pending,
+            ask: { kind: "join", nation: human, founder, target }, done: false };
+        }
+        if (reply === founder) pending.members.push(human);
+        pending.answered = true;
+        reply = undefined;
+      }
+      for (const other of eligible) {
+        if (other === human) continue;
+        if (willJoin(affinity, other, founder, target, standings, turn)) pending.members.push(other);
+      }
+      // One nation is not a union: there is nothing to pool, and it would leave the
+      // founder bound by an attack restriction it bought nothing with.
+      if (pending.members.length >= 2) {
+        attached = [...attached, ...pending.members];
+        unions = [...unions, { founder, target, members: pending.members, formedOn: turn }];
+      }
+      pending = null;
+      continue;
+    }
+
+    while (at < state.order.length && !free(state.order[at]!)) at++;
+    if (at >= state.order.length) {
+      return { ...state, at, attached, unions, pending: null, ask: null, done: true };
+    }
+
+    const founder = state.order[at]!;
+    at++;
+    let target: number | null;
+    if (founder === human) {
+      if (reply === undefined) {
+        return { ...state, at: at - 1, attached, unions, pending: null,
+          ask: { kind: "declare", nation: human }, done: false };
+      }
+      target = reply;
+      reply = undefined;
+      // `at` was rewound for the ask, so step over the declarer now it has answered.
+      at = state.order.indexOf(founder) + 1;
+    } else {
+      target = enemiesOf(affinity, founder, standings, turn)[0] ?? null;
+    }
+    if (target === null || target === founder) continue;
+
+    pending = {
+      founder,
+      target,
+      members: [founder],
+      eligible: ids.filter((n) => n !== founder && n !== target && free(n)),
+      answered: false,
+    };
+  }
+}
+
+/**
+ * Run a whole round at once. Convenience for tests and for games with no player in
+ * them; `choice` supplies the answers a player would have given.
  */
 export function formUnions(
   affinity: Affinity,
@@ -102,42 +234,16 @@ export function formUnions(
   turn: number,
   choice?: HumanChoice,
 ): Union[] {
-  const unions: Union[] = [];
-  const attached = new Set<number>();
-  const weakestFirst = [...standings].sort((a, b) => a.population - b.population);
-
-  for (const candidate of weakestFirst.map((s) => s.nation)) {
-    if (attached.has(candidate)) continue;
-    const enemies = enemiesOf(affinity, candidate, standings, turn);
-    if (enemies.length === 0) continue;
-
-    let target: number;
-    if (choice && candidate === choice.nation) {
-      if (choice.declareAgainst === null) continue;
-      target = choice.declareAgainst;
-    } else {
-      target = enemies[0]!;
-    }
-    if (target === candidate) continue;
-
-    const members = [candidate];
-    for (const other of standings.map((s) => s.nation)) {
-      if (attached.has(other) || other === candidate || other === target) continue;
-      const joins =
-        choice && other === choice.nation
-          ? choice.joins === candidate
-          : willJoin(affinity, other, candidate, target, standings, turn);
-      if (joins) members.push(other);
-    }
-
-    // One nation is not a union: there is nothing to pool, and it would leave the
-    // founder bound by an attack restriction it bought nothing with.
-    if (members.length < 2) continue;
-    for (const member of members) attached.add(member);
-    unions.push({ founder: candidate, target, members, formedOn: turn });
+  const human = choice ? choice.nation : -1;
+  let state = startRound(standings);
+  for (let guard = 0; guard < 64 && !state.done; guard++) {
+    const answer =
+      state.ask === null ? undefined
+      : state.ask.kind === "declare" ? choice!.declareAgainst
+      : choice!.joins;
+    state = runRound(state, affinity, standings, turn, human, answer);
   }
-
-  return unions;
+  return [...state.unions];
 }
 
 /** The union `nation` belongs to this turn, if any. */
