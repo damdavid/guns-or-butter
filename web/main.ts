@@ -196,6 +196,11 @@ function applyView(): void {
  * was trying to read — and on a small continent, over the target as well. A fixed corner
  * costs a glance and covers nothing that moves.
  */
+/** What the slider is actually deciding: how much marches and how much stays behind. */
+function marchTally(cap: number, send: number): string {
+  return `<b>${power(send)}</b> moving &middot; <b>${power(cap - send)}</b> stays`;
+}
+
 function marchControlHtml(): string {
   if (ordering === null || game.phase !== "military-orders" || replaying) return "";
   const p = game.world.provinces[ordering];
@@ -212,7 +217,7 @@ function marchControlHtml(): string {
       aria-label="firepower sent from ${p.name}" /><button
       type="button" data-mstep="${p.id}" data-by="1">+</button>
     <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
-    <span class="spare">of ${power(cap)}</span>
+    <span class="spare" data-tally="${p.id}">${marchTally(cap, send)}</span>
     <button type="button" data-act="dismiss" class="dismiss"
       title="The order stands. The next click on the map starts a new one.">Done</button>`;
 }
@@ -577,7 +582,7 @@ function productionPanel(): string {
     })
     .join("");
 
-  return `<h2>Production <small>turn ${game.turn}</small>
+  return `<h2>Production
       <span class="right"><button type="button" data-act="expand">${expanded ? "Shrink" : "Expand"}</button></span>
     </h2>
     <table class="production">
@@ -746,7 +751,7 @@ function ordersPanel(): string {
     })
     .join("");
 
-  return `<h2>Military orders <small>turn ${game.turn}</small></h2>
+  return `<h2>Military orders</h2>
     ${armed.length === 0
       ? '<p class="spare">No armed provinces. Put workers into swords during production.</p>'
       : `<table class="orders">
@@ -762,7 +767,7 @@ function ordersPanel(): string {
 }
 
 function executionPanel(): string {
-  return `<h2>Execution <small>turn ${game.turn}</small>
+  return `<h2>Execution
       ${replaying ? '<span class="right"><button type="button" data-act="skip">Skip</button></span>' : ""}
     </h2>
     ${replayLog.length === 0
@@ -785,7 +790,7 @@ function rankingsPanel(): string {
         &middot; ${power(r.firepower)} firepower</dd>
     </div>`)
     .join("");
-  return `<h2>Rankings <small>end of turn ${game.turn}</small></h2>
+  return `<h2>Rankings</h2>
     <p class="hint">Standing is population. Not territory, not firepower &mdash; which is
       what makes arming yourself expensive.</p>
     <dl class="rank">${rows}</dl>`;
@@ -915,6 +920,7 @@ function render(): void {
   const index = PHASES.findIndex(([p]) => p === game.phase);
   el("phases").innerHTML = PHASES.map(([p, label], i) =>
     `<span class="${p === game.phase ? "on" : i < index ? "done" : ""}">${label}</span>`).join("");
+  el("turn").textContent = `Turn ${game.turn}`;
 
   const mine = game.rankings().find((r) => r.nation === you);
   el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}
@@ -986,19 +992,21 @@ document.addEventListener("input", (event) => {
     const province = Number(target.dataset.march ?? target.dataset.send);
     const order = game.orders[province];
     if (order && order.target !== null) {
-      const power = game.world.provinces[province]!.firepower;
+      const held = game.world.provinces[province]!.firepower;
       game.setOrder(province, {
         ...order,
-        marchFraction: power > 0 ? Math.min(1, Math.max(0, Number(target.value) / power)) : 0,
+        marchFraction: held > 0 ? Math.min(1, Math.max(0, Number(target.value) / held)) : 0,
       });
       // Siblings follow the order as clamped, not the text as typed: `max` on a number
       // input does not stop someone typing past it.
-      const sent = String(sentFrom(province));
+      const send = sentFrom(province);
       for (const other of document.querySelectorAll<HTMLInputElement>(
         `[data-march="${province}"], [data-send="${province}"]`,
       )) {
-        if (other !== target) other.value = sent;
+        if (other !== target) other.value = String(send);
       }
+      const tally = document.querySelector(`[data-tally="${province}"]`);
+      if (tally) tally.innerHTML = marchTally(Math.floor(held), send);
     }
   }
 });
@@ -1074,7 +1082,7 @@ document.addEventListener("click", (event) => {
       return;
     case "auto": {
       const before = draft;
-      draft = balanceAllocation(economy, draft, context(), 80, game.locked[you] ?? []);
+      draft = balanceAllocation(economy, draft, context(), game.locked[you] ?? []);
       notice = Object.keys(draft).some((id) => Math.abs((draft[id] ?? 0) - (before[id] ?? 0)) > 1e-9)
         ? "Balanced around the locked factories."
         : "Nothing to balance — everything involved is locked.";

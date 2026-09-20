@@ -470,7 +470,7 @@ describe("worker redistribution and locks (§3.6)", () => {
     const { land, population } = nationState(game.world, 0);
     const base = subsistenceAllocation();
     const balanced = balanceAllocation(
-      economy, base, { level: "intermediate", land, population }, 80, ["charcoal"],
+      economy, base, { level: "intermediate", land, population }, ["charcoal"],
     );
     assert.equal(balanced["charcoal"], base["charcoal"]);
   });
@@ -615,6 +615,9 @@ describe("playing on", () => {
 
   it("lets a nation grow when its economy is balanced", () => {
     const game = Game.create("Kublai", "intermediate");
+    // About the economy, so the other nations are left inert: with the AI running they
+    // arm and invade, and this would be measuring the war instead.
+    game.ai = false;
     const before = nationState(game.world, 0).population;
     for (let turn = 0; turn < 10; turn++) {
       playTurn(game);
