@@ -54,6 +54,23 @@ export interface Ranking {
   acres: number;
 }
 
+function rankingsOf(world: World): Ranking[] {
+  return world.nations
+    .map((n) => {
+      const own = world.provinces.filter((p) => p.nation === n.id);
+      const land = nationState(world, n.id).land;
+      return {
+        nation: n.id,
+        population: own.reduce((s, p) => s + p.population, 0),
+        provinces: own.length,
+        firepower: own.reduce((s, p) => s + p.firepower, 0),
+        land,
+        acres: land.farmland + land.forest + land.mountains + land.desert,
+      };
+    })
+    .sort((a, b) => b.population - a.population);
+}
+
 export interface TurnReport {
   turn: number;
   production: Record<number, EconomyResult>;
@@ -433,20 +450,20 @@ export class Game {
    * bite: guns cost you the very thing you are scored on.
    */
   rankings(): Ranking[] {
-    return this.world.nations
-      .map((n) => {
-        const own = this.world.provinces.filter((p) => p.nation === n.id);
-        const land = nationState(this.world, n.id).land;
-        return {
-          nation: n.id,
-          population: own.reduce((s, p) => s + p.population, 0),
-          provinces: own.length,
-          firepower: own.reduce((s, p) => s + p.firepower, 0),
-          land,
-          acres: land.farmland + land.forest + land.mountains + land.desert,
-        };
-      })
-      .sort((a, b) => b.population - a.population);
+    return rankingsOf(this.world);
+  }
+
+  /**
+   * The standings as they were before this turn's production and fighting.
+   *
+   * The snapshot is taken entering the production phase and is what undo restores, so
+   * subtracting it from `rankings()` gives the whole turn's work: growth from the food
+   * surplus and any ground that changed hands. Resuming a save mid-turn reseeds the
+   * snapshot from the position as found, so the first screen after a resume compares
+   * against itself and reports no change.
+   */
+  openingRankings(): Ranking[] {
+    return rankingsOf(this.startOfTurn.world);
   }
 
   setAllocation(nation: number, allocation: Allocation): void {

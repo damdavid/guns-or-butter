@@ -392,3 +392,9 @@ button.link {
 }
 button.link:hover { background: none; color: var(--accent); text-decoration-color: var(--accent); }
 tr.idle button.link { color: inherit; }
+
+/* This turn's movement, beside the figure it explains. Population is the score, so a
+   gain and a loss have to be told apart at a glance and not merely read. */
+.delta { font-size: 0.82em; font-weight: 600; }
+.delta.up { color: var(--good); }
+.delta.down { color: var(--warn); }

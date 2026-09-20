@@ -17,6 +17,7 @@
     "validate": "node test/validate-calibration.ts",
     "map": "node test/render-map.ts",
     "play": "node test/play.ts",
+    "soak": "node test/soak.ts",
     "game": "node test/interactive.ts"
   },
   "devDependencies": {
