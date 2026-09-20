@@ -2169,6 +2169,45 @@ Two consequences follow, and the second is the serious one:
   records unions as the *only* brake on runaway growth; implemented faithfully they are
   an accelerator instead.
 
+#### Pooled terrain buys nothing by itself, and costs the modicum [F]
+
+All four terrain types pool, and every raw in the union draws on the summed acreage, so
+a member with no mountains can put labour into coal that another member's mountains
+support. That much is §6.1 as written, and it is the reason a union can make petroleum
+when no member could alone.
+
+But raw capacity is `(base + m · acres) · L^a` (§2.2) and **the acreage term is linear**,
+so pooling acres multiplies nothing: double the acres and double the workers and the
+`m · acres` part simply scales through. The whole union gain is the labour exponent.
+Terrain decides *what* a union can make, never *how much more* per worker.
+
+There is a consequence worth stating plainly, because it looks like a bug when you meet
+it. `base` is the design dialogue's "modicum of natural resources" — what you extract
+with no favourable ground at all. One economic unit gets **one** modicum, where the
+members separately had one each:
+
+| Raw | `base` | union / separate, 4 members | pure labour gain `4^a` |
+| --- | --- | --- | --- |
+| Iron ore (nations with no mountains) | 0.53 | **1.21x** | 4.85x |
+| Lumber | 0.75 | 2.86x | 4.81x |
+| Sulfur | 0.02 | 10.65x | 11.03x |
+| Petroleum | 0.00 | 21.39x | 22.08x |
+
+Where the intercept is ~0 the union gets the full labour gain; where it dominates, four
+nations pooling get 1.21x the iron ore for 4x the workers. Measured against food
+surplus, giving each member's land its own modicum instead would be worth +40 to +131
+tons on a two-union and +55 to +472 on a four-union — the difference between a
+two-nation union starving and feeding itself on half the continents tested.
+
+**Kept as one modicum per union, deliberately.** The intercept was fitted as a
+per-economy floor across 53 readings, not as a property of any particular acre, so one
+economy taking one floor is the reading the measurement supports. The alternative —
+coefficients summing per member, `sum(base + m · acres_i)` — is defensible on the
+grounds that merging should not destroy natural resources, and it would make pooling
+cleanly equal to the labour exponent everywhere. It is a one-line change through the
+`overrides` hook if the runaway growth above ever needs offsetting in the other
+direction.
+
 None of this is a defect in the code — it is §6.1 doing exactly what it says, which is
 the outcome §6.3 warns about arriving by a different road. The dials, in the order §6.4
 suggests turning them: the underdog `trust` component first, then `joinAt`, then a cap
