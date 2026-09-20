@@ -84,8 +84,10 @@ snapshot taken at the start of the turn, and is available only at Rankings.
 to decide, which is the point: it exists so the marches can be watched. A UI has the
 whole report in hand for its entire duration.
 
-**The Economic Union phase is absent**, because diplomacy is specified but not built.
-It belongs before production, at Expert only.
+**The Economic Union phase runs before production, at Expert only** (`src/union.ts`).
+It is phase 0 on every Expert turn including the first, which is the turn a nation most
+needs one: none of them can feed itself alone (§10.3). The other levels never enter it,
+so `phasesFor(level)` — not a fixed four — is what a UI should build its tracker from.
 
 **Population lives on provinces, but the economy works on nation totals.** Food surplus
 is resolved per nation and then pushed back down in proportion to where the people
@@ -1577,13 +1579,13 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    a utility function over allocations for the economy, an influence map over the
    province graph for the military. §10.3 has what it does, what it got wrong on the
    way, and what it still cannot do.
-7. **Diplomacy** — **affinity done, unions not.** `src/affinity.ts` implements §6.4
-   whole: both channels, the decay, the saturating updates, the founding-neighbour seed,
-   the live terms and the underdog dividend, with the decision variable `W` exposed as
-   `Game.willingnessFrom`. War and the standings drive it today. The union events are
-   specified and implemented but nothing calls them, because unions themselves are the
-   part still missing — as is the acceptance test in §6.4, which measures unions per
-   turn and so cannot run yet.
+7. **Diplomacy** — **done, and needs tuning.** `src/affinity.ts` implements §6.4 whole:
+   both channels, the decay, the saturating updates, the founding-neighbour seed, the
+   live terms and the underdog dividend, with the decision variable `W` exposed as
+   `Game.willingnessFrom`. `src/union.ts` adds §6.1 on top — formation in order of
+   weakness, the join rule, pooling, the attack restriction, and the diplomatic bill.
+   §6.4's acceptance test is instrumented in `npm run soak`. What it reports is in
+   §10.4, and it is not yet the curve §6.4 asks for.
 
 Three oracles are available while you build: the DOS build under emulation, the §8.1
 fixture, and the measurement CSVs via `npm run validate`.
@@ -2127,6 +2129,51 @@ its own, the nudge could not start **at all**. Nothing consumes a sword, so with
 swords staffed no factory had a surplus to donate and it gave up on the first pass. The
 solver has no such state — a finished good on its own is the clearest possible statement
 of what the player wants.
+
+### 10.4 What unions do, measured
+
+§6.1 implemented as written, with §6.4's affinity gating membership, produces unions
+readily — and produces the same shape of union every turn.
+
+Across 18 games at Expert, 30 turns each:
+
+| | |
+| --- | --- |
+| Unions per turn | 2.00 early, 2.00 late — **flat**, which is what §6.4 asks for |
+| Mean size | 3.9 of 8 nations |
+| Nations attached | **93–99%** |
+| Composition changed | **15% of turns** |
+| World population over 30 turns | **x6 to x7.5** |
+| Games decided in 30 turns | **0 of 6** |
+
+The flat rate is the headline success: Crawford's failure is visibly a decay curve to
+zero (§6.3), and this does not decay. The cooperation dividend and the saturating
+updates do their job — distrust never ratchets shut.
+
+**But the composition barely moves, and that is the failure mode §6.4 names**: "if the
+rate holds but composition freezes, the underdog dividend is too strong relative to the
+live terms." The board settles into two blocs of four and stays there. Raising the join
+threshold hardly touches it — at `joinAt` 0.45, attachment only falls from 99% to 93% —
+because the target of a union is by construction the founder's worst enemy, who is
+usually the leader, whom the live terms make everyone dislike. So almost everyone
+prefers almost any founder to almost any target, and joins.
+
+Two consequences follow, and the second is the serious one:
+
+- **Expert stops being a war.** With 95% of nations in a union and each union permitted
+  exactly one target, nearly all aggression is funnelled at two nations who are
+  themselves union members and so may only strike back at their own target. No game
+  reached a winner in 30 turns.
+- **Growth runs away.** Pooling four Expert economies is worth x6–x7.5 world population
+  in 30 turns, against nations that stagnate at their famine floor alone (§10.3). §6.3
+  records unions as the *only* brake on runaway growth; implemented faithfully they are
+  an accelerator instead.
+
+None of this is a defect in the code — it is §6.1 doing exactly what it says, which is
+the outcome §6.3 warns about arriving by a different road. The dials, in the order §6.4
+suggests turning them: the underdog `trust` component first, then `joinAt`, then a cap
+on union size, which is the one thing no source mentions and the one most likely to
+restore the churn.
 
 ### What is still unmeasured
 

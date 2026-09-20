@@ -41,13 +41,9 @@ h1 span { display: block; font-size: 0.8rem; color: var(--ink-soft); font-weight
 
 .turn { font-size: 1rem; font-weight: 600; letter-spacing: 0.03em; }
 
-/* The phase tracker sits above the panel whose phase it names, so the four steps read
-   as a column heading rather than as decoration in the title bar. */
 .phases { display: flex; gap: 0.35rem; flex: none; }
 .phases span {
-  flex: 1 1 0;
-  text-align: center;
-  padding: 0.28rem 0.4rem;
+  padding: 0.24rem 0.6rem;
   border: 1px solid var(--rule);
   border-radius: 2px;
   font-size: 0.78rem;
@@ -99,17 +95,15 @@ body.expanded #nations { display: none; }
 body.expanded .side {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
   overflow: hidden;
 }
-body.expanded #phases { grid-row: 1; grid-column: 1 / -1; }
-body.expanded #panel { grid-row: 2; grid-column: 1; min-height: 0; overflow-y: auto; }
+body.expanded #panel { grid-row: 1; grid-column: 1; min-height: 0; overflow-y: auto; }
 body.expanded #inspector { display: none; }
 body.expanded.inspecting .side { grid-template-columns: minmax(0, 1fr) 26rem; }
 body.expanded.inspecting #inspector {
   display: block;
-  grid-row: 2;
+  grid-row: 1;
   grid-column: 2;
   min-height: 0;
   overflow-y: auto;
@@ -398,3 +392,19 @@ tr.idle button.link { color: inherit; }
 .delta { font-size: 0.82em; font-weight: 600; }
 .delta.up { color: var(--good); }
 .delta.down { color: var(--warn); }
+
+/* The union phase (§6.1). Offers read as a short list of deals on the table. */
+.offer { padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+.offer.chosen { background: #eef3ea; box-shadow: inset 3px 0 0 var(--good); padding-left: 0.5rem; }
+.offer dt { font-weight: 600; }
+.offer dd { margin: 0.15rem 0 0; }
+.declare { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.warn-line { color: var(--warn); font-weight: 600; }
+/* Somebody else is allocating your economy this turn, so say so before they scroll. */
+.union-line {
+  background: #f3efe2;
+  border-left: 3px solid var(--accent);
+  padding: 0.4rem 0.6rem;
+  margin: 0.4rem 0;
+}
+table.read-only { opacity: 0.75; }

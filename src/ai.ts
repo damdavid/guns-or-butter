@@ -93,24 +93,36 @@ export interface Position {
   opening: number;
 }
 
-export function positionOf(world: World, nation: number): Position {
-  const provinces = world.provinces.filter((p) => p.nation === nation);
+/**
+ * Read a nation's position, or a whole union's as if it were one (§6.1).
+ *
+ * A union founder allocates for every member, so its garrison need covers all their
+ * provinces and its frontier is the ground none of them holds. Passing a group rather
+ * than a nation is the only change that needs: everything downstream already works on
+ * "the provinces we hold" rather than on a nation id.
+ */
+export function positionOf(world: World, nation: number | readonly number[]): Position {
+  const group = typeof nation === "number" ? [nation] : nation;
+  const held = new Set(group);
+  const provinces = world.provinces.filter((p) => p.nation !== null && held.has(p.nation));
   const bordering = new Set<number>();
   for (const p of provinces) {
     for (const n of p.neighbours) {
-      if (world.provinces[n.province]!.nation !== nation) bordering.add(n.province);
+      const owner = world.provinces[n.province]!.nation;
+      if (owner === null || !held.has(owner)) bordering.add(n.province);
     }
   }
   let opening = Infinity;
   for (const p of provinces) {
     for (const n of p.neighbours) {
-      if (world.provinces[n.province]!.nation === nation) continue;
+      const owner = world.provinces[n.province]!.nation;
+      if (owner !== null && held.has(owner)) continue;
       opening = Math.min(opening, forceNeeded(world, p.id, n.province));
     }
   }
 
   return {
-    nation,
+    nation: group[0]!,
     provinces: provinces.map((p) => p.id),
     population: provinces.reduce((s, p) => s + p.population, 0),
     pressure: [...bordering].reduce((s, id) => s + world.provinces[id]!.firepower, 0),
@@ -180,8 +192,10 @@ export function planProduction(
   nation: number,
   start: Readonly<Record<CommodityId, number>>,
   temperament = temperamentFor(world, nation),
+  /** Plan for this whole group as one economy, which is what a union founder does. */
+  members?: readonly number[],
 ): Record<CommodityId, number> {
-  const position = positionOf(world, nation);
+  const position = positionOf(world, members ?? nation);
   const land = { farmland: 0, forest: 0, mountains: 0, desert: 0 };
   for (const id of position.provinces) {
     const l = world.provinces[id]!.land;
@@ -512,9 +526,18 @@ function combinedAssault(world: World, nation: number, target: number): number[]
   return null;
 }
 
-export function planOrders(world: World, nation: number): Record<number, MilitaryOrder> {
+export function planOrders(
+  world: World,
+  nation: number,
+  /** §6.1's union restriction. Anything this rejects is not attacked, only held. */
+  mayAttack: (owner: number) => boolean = () => true,
+): Record<number, MilitaryOrder> {
   const { threat, opportunity } = influenceMap(world, nation);
   const orders: Record<number, MilitaryOrder> = {};
+  const attackable = (province: number) => {
+    const owner = world.provinces[province]!.nation;
+    return owner !== null && owner !== nation && mayAttack(owner);
+  };
 
   // Coordinated attacks first, richest target first, so a province committed to one is
   // not also asked to wander off up the gradient.
@@ -522,7 +545,7 @@ export function planOrders(world: World, nation: number): Record<number, Militar
     world.provinces
       .filter((p) => p.nation === nation)
       .flatMap((p) => p.neighbours.map((n) => n.province))
-      .filter((id) => world.provinces[id]!.nation !== nation),
+      .filter(attackable),
   )].sort((a, b) => prizeOf(world, b) - prizeOf(world, a));
 
   for (const target of targets) {
@@ -536,7 +559,7 @@ export function planOrders(world: World, nation: number): Record<number, Militar
 
     // Take the best prize the sums say can be carried alone.
     const takeable = p.neighbours
-      .filter((n) => world.provinces[n.province]!.nation !== nation)
+      .filter((n) => attackable(n.province))
       .filter((n) => canTake(world, p.id, n.province))
       .sort((a, b) => prizeOf(world, b.province) - prizeOf(world, a.province));
     if (takeable.length > 0) {

@@ -18,6 +18,12 @@ import { generateWorld, nationState } from "../src/worldgen.ts";
 
 const economy = new Economy();
 
+/** One whole turn, however many phases the level has (Expert adds the union phase). */
+const playWholeTurn = (game: Game) => {
+  const was = game.turn;
+  for (let guard = 0; guard < 8 && game.turn === was; guard++) game.advance();
+};
+
 describe("temperament", () => {
   it("is seeded, so a continent always faces the same opposition", () => {
     const world = generateWorld("Thule", "intermediate");
@@ -303,7 +309,7 @@ describe("a game the AI plays by itself", () => {
     game.human = -1;
     const before = game.rankings();
     for (let turn = 0; turn < 12; turn++) {
-      game.advance(); game.advance(); game.advance(); game.advance();
+      playWholeTurn(game);
     }
     const after = game.rankings();
     assert.ok(after.some((r) => r.firepower > 0), "somebody should have armed");
@@ -324,7 +330,7 @@ describe("a game the AI plays by itself", () => {
       game.human = -1;
       const start = game.rankings().map((r) => r.provinces).sort((a, b) => a - b);
       for (let turn = 0; turn < 60 && game.winner === null; turn++) {
-        game.advance(); game.advance(); game.advance(); game.advance();
+        playWholeTurn(game);
       }
       if (game.winner !== null) decided++;
       const end = game.rankings().map((r) => r.provinces).sort((a, b) => a - b);
@@ -338,7 +344,7 @@ describe("a game the AI plays by itself", () => {
     const game = Game.create("Thule", "intermediate");
     game.ai = false;
     for (let turn = 0; turn < 6; turn++) {
-      game.advance(); game.advance(); game.advance(); game.advance();
+      playWholeTurn(game);
     }
     assert.ok(
       game.rankings().every((r) => r.firepower === 0),

@@ -11,6 +11,7 @@ import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 
 const playTurn = (game: Game) => {
+  if (game.phase === "union") game.advance(); // Expert only (§1.2)
   game.advance(); // production resolves
   const report = game.advance(); // orders resolve, and execution begins with the report
   game.advance(); // execution -> rankings

@@ -15,10 +15,12 @@ import {
   Game,
   balanceAllocation,
   moveWorkers,
+  phasesFor,
   subsistenceAllocation,
   workersFor,
   type Allocation,
   type GameSnapshot,
+  type Phase,
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
@@ -78,13 +80,17 @@ const nationName = (id: number) => game.world.nations[id]?.name ?? `Nation ${id}
 /** What this difficulty offers (§1.1): beginner 12 commodities, intermediate 19, expert 33. */
 const levelCommodities = () => commoditiesFor(game.world.level, economy.graph.table.keys());
 
+/**
+ * The land and population production runs on. In a union that is the pooled total, not
+ * your own: §6.1 makes the members one economic unit for the turn, and the screen has
+ * to show the economy the player is actually allocating.
+ */
 function context() {
-  const { land, population } = nationState(game.world, you);
-  return { level: game.world.level, land, population };
+  return game.productionContext(you);
 }
 
 const spareWorkers = () => {
-  const { land, population } = nationState(game.world, you);
+  const { land, population } = context();
   return Math.floor(Math.max(0, population - land.farmland));
 };
 
@@ -550,6 +556,20 @@ function nationsHtml(): string {
 // --- production ------------------------------------------------------------------
 
 function productionPanel(): string {
+  const union = game.unionFor(you);
+  const mine = game.controlsEconomy(you);
+  const banner = !union
+    ? ""
+    : mine
+      ? `<p class="union-line">You founded this turn's union against
+          ${nationName(union.target)}. You are allocating for
+          ${union.members.map(nationName).join(", ")} &mdash; their people and land are
+          pooled with yours.</p>`
+      : `<p class="union-line">You joined ${nationName(union.founder)}'s union against
+          ${nationName(union.target)}. They are allocating the pooled economy of
+          ${union.members.map(nationName).join(", ")} this turn, so there is nothing for
+          you to set (§6.1).</p>`;
+
   const result = resolveDraft(draft);
   const spare = spareWorkers();
   const ctx = context();
@@ -564,11 +584,16 @@ function productionPanel(): string {
       if (!c) return "";
       const w = workers[id] ?? 0;
       const locked = game.isLocked(you, id);
+      // In someone else's union the founder allocates the pooled economy (§6.1), so
+      // every control is dead — but the padlocks still show *your* locks, not a screen
+      // full of ticks you did not put there.
+      const frozen = !mine || locked;
       const limited = c.limitingFactor !== "Labor";
       return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""} ${
         c.surplus < -0.5 ? "deficit" : ""
       }" data-row="${id}">
         <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
+          ${!mine ? "disabled" : ""}
           title="Lock this factory against redistribution" /></td>
         <td class="name"><button type="button" class="link" data-factory="${id}"
           >${commodityLabel(id)}</button></td>
@@ -577,13 +602,13 @@ function productionPanel(): string {
         <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
         <td data-cell="lim" class="lim">${c.limitingFactor === "Labor" ? "&mdash;" : commodityLabel(c.limitingFactor)}</td>
         <td class="tune">
-          <button type="button" data-step="${id}" data-by="-1" ${locked ? "disabled" : ""}>&minus;</button
+          <button type="button" data-step="${id}" data-by="-1" ${frozen ? "disabled" : ""}>&minus;</button
           ><input type="number" data-workers="${id}" value="${w}" min="0" max="${spare}" step="1"
-            ${locked ? "disabled" : ""} aria-label="workers in ${commodityLabel(id)}" /><button
-            type="button" data-step="${id}" data-by="1" ${locked ? "disabled" : ""}>+</button>
+            ${frozen ? "disabled" : ""} aria-label="workers in ${commodityLabel(id)}" /><button
+            type="button" data-step="${id}" data-by="1" ${frozen ? "disabled" : ""}>+</button>
         </td>
         <td class="slider"><input type="range" min="0" max="${spare}" value="${w}"
-          data-slider="${id}" ${locked ? "disabled" : ""} /></td>
+          data-slider="${id}" ${frozen ? "disabled" : ""} /></td>
       </tr>`;
     })
     .join("");
@@ -591,7 +616,8 @@ function productionPanel(): string {
   return `<h2>Production
       <span class="right"><button type="button" data-act="expand">${expanded ? "Shrink" : "Expand"}</button></span>
     </h2>
-    <table class="production">
+    ${banner}
+    <table class="production${mine ? "" : " read-only"}">
       <colgroup>
         <col class="c-lock" /><col class="c-name" /><col class="c-num" /><col class="c-num" />
         <col class="c-num" /><col class="c-short" /><col class="c-tune" /><col class="c-slider" />
@@ -799,6 +825,66 @@ function change(now: number, before: number, unit = ""): string {
   return ` <span class="delta ${delta > 0 ? "up" : "down"}">${sign}${people(Math.abs(delta))}${unit}</span>`;
 }
 
+/** The player's answer to this turn's union phase, held until they advance. */
+let unionChoice: { joins: number | null; declareAgainst: number | null } | null = null;
+
+/**
+ * The Economic Union phase (§6.1, Expert only).
+ *
+ * The declarations shown are what would happen if you stood aloof. They are a decision
+ * aid and not a promise: joining changes who is still unattached when the later
+ * declarations are made, so the final membership can differ. Nothing cheaper is honest,
+ * because §6.1 forms unions one at a time in order of weakness.
+ */
+function unionPanel(): string {
+  const preview = game.unionPreview();
+  const regard = new Map(game.willingnessFrom(you).map((w) => [w.nation, w.willingness]));
+  const inner = (n: number) => nationName(n);
+
+  const offers = preview
+    .filter((u) => u.target !== you)
+    .map((u) => {
+      const chosen = unionChoice?.joins === u.founder;
+      return `<div class="offer ${chosen ? "chosen" : ""}">
+        <dt>${inner(u.founder)} <span class="hint">against</span> ${inner(u.target)}</dt>
+        <dd>${u.members.map(inner).join(", ")}
+          <span class="hint">&middot; you regard ${inner(u.founder)} at
+            ${(regard.get(u.founder) ?? 0).toFixed(2)}</span></dd>
+        <dd><button type="button" data-join="${u.founder}"
+          ${chosen ? "disabled" : ""}>${chosen ? "Joining" : "Join"}</button></dd>
+      </div>`;
+    })
+    .join("");
+
+  const targeted = preview.find((u) => u.target === you);
+  const warning = targeted
+    ? `<p class="warn-line">${inner(targeted.founder)} is forming a union against you:
+        ${targeted.members.map(inner).join(", ")}.</p>`
+    : "";
+
+  // §6.1 lets anyone still unattached declare their own, so this is always offered.
+  const enemies = game.willingnessFrom(you).slice().reverse().slice(0, 3);
+  const declare = enemies
+    .map((e) => `<button type="button" data-declare="${e.nation}"
+      ${unionChoice?.declareAgainst === e.nation ? "disabled" : ""}
+      >${inner(e.nation)} <span class="hint">${e.willingness.toFixed(2)}</span></button>`)
+    .join(" ");
+
+  const aloof = unionChoice === null;
+  return `<h2>Economic Union</h2>
+    <p class="hint">The weakest player declares against their worst enemy and the rest
+      join or stand aloof. Members pool their people and their land into one economy for
+      the turn &mdash; and the founder allocates all of it. Members may attack the
+      union's target and nobody else.</p>
+    ${warning}
+    <h3>Declared this turn</h3>
+    ${offers || `<p class="hint">Nobody is offering you a place.</p>`}
+    <h3>Or declare your own, against</h3>
+    <p class="declare">${declare}</p>
+    <p><button type="button" data-aloof="1" ${aloof ? "disabled" : ""}
+      >${aloof ? "Standing aloof" : "Stand aloof"}</button></p>`;
+}
+
 function rankingsPanel(): string {
   const opening = new Map(game.openingRankings().map((r) => [r.nation, r]));
   const rows = game
@@ -934,17 +1020,21 @@ async function replay(before: World, report: TurnReport): Promise<void> {
 
 // --- shell -----------------------------------------------------------------------
 
-const PHASES = [
-  ["production", "Production"],
-  ["military-orders", "Orders"],
-  ["military-execution", "Execution"],
-  ["rankings", "Rankings"],
-] as const;
+const PHASE_LABELS: Record<Phase, string> = {
+  union: "Unions",
+  production: "Production",
+  "military-orders": "Orders",
+  "military-execution": "Execution",
+  rankings: "Rankings",
+};
 
 function render(): void {
-  const index = PHASES.findIndex(([p]) => p === game.phase);
-  el("phases").innerHTML = PHASES.map(([p, label], i) =>
-    `<span class="${p === game.phase ? "on" : i < index ? "done" : ""}">${label}</span>`).join("");
+  // Expert runs a fifth phase the others do not (§1.1), so the tracker is built from
+  // the level's own phase list rather than a fixed four.
+  const phases = phasesFor(game.world.level);
+  const index = phases.indexOf(game.phase);
+  el("phases").innerHTML = phases.map((p, i) =>
+    `<span class="${p === game.phase ? "on" : i < index ? "done" : ""}">${PHASE_LABELS[p]}</span>`).join("");
   el("turn").textContent = `Turn ${game.turn}`;
 
   const mine = game.rankings().find((r) => r.nation === you);
@@ -955,7 +1045,8 @@ function render(): void {
   document.body.classList.toggle("expanded", expanded && game.phase === "production");
 
   el("panel").innerHTML =
-    game.phase === "production" ? productionPanel()
+    game.phase === "union" ? unionPanel()
+    : game.phase === "production" ? productionPanel()
     : game.phase === "military-orders" ? ordersPanel()
     : game.phase === "military-execution" ? executionPanel()
     : rankingsPanel();
@@ -969,12 +1060,14 @@ function render(): void {
   el("nations").innerHTML = nationsHtml();
 
   const advance = el<HTMLButtonElement>("advance");
-  advance.textContent = {
+  const nextLabel: Record<Phase, string> = {
+    union: "Settle the unions",
     production: "Begin military orders",
     "military-orders": "Execute orders",
     "military-execution": "See rankings",
     rankings: "Next turn",
-  }[game.phase];
+  };
+  advance.textContent = nextLabel[game.phase];
   advance.className = "primary";
   advance.disabled = replaying;
   el("undo").hidden = game.phase !== "rankings";
@@ -1056,9 +1149,21 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("click", (event) => {
   const node = (event.target as HTMLElement).closest<HTMLElement>(
-    "[data-act], [data-step], [data-mstep], [data-nation], [data-factory]",
+    "[data-act], [data-step], [data-mstep], [data-nation], [data-factory], " +
+    "[data-join], [data-declare], [data-aloof]",
   );
   if (!node) return;
+
+  if (node.dataset.join || node.dataset.declare || node.dataset.aloof) {
+    unionChoice = node.dataset.join
+      ? { joins: Number(node.dataset.join), declareAgainst: null }
+      : node.dataset.declare
+        ? { joins: null, declareAgainst: Number(node.dataset.declare) }
+        : null;
+    game.setUnionChoice(unionChoice);
+    render();
+    return;
+  }
 
   if (node.dataset.factory) {
     const id = node.dataset.factory as CommodityId;
@@ -1130,7 +1235,8 @@ document.addEventListener("click", (event) => {
 el("advance").addEventListener("click", async () => {
   if (replaying) return;
   notice = "";
-  if (game.phase === "production") game.setAllocation(you, draft);
+  // §6.1: in someone else's union the founder allocates, so there is nothing to submit.
+  if (game.phase === "production" && game.controlsEconomy(you)) game.setAllocation(you, draft);
 
   // Combat resolves on the way into execution, so the replay runs *during* that phase —
   // after Execute orders and before See rankings.
@@ -1143,6 +1249,7 @@ el("advance").addEventListener("click", async () => {
     draft = game.allocations[you] ?? draft;
     replayLog = [];
   }
+  if (game.phase === "union") unionChoice = null;
   selected = null;
   ordering = null;
   render();
