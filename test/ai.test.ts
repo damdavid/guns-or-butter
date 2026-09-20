@@ -270,6 +270,47 @@ describe("production planning", () => {
     }
   });
 
+  it("grows and arms at the same time, rather than trading one away", () => {
+    // Growth is the victory metric (§1.3), but as a fraction of population it scored
+    // 0.026 against a garrison worth 2.0, so the AI drove its food surplus to zero to
+    // post one firepower per province. Both should survive the plan.
+    for (const name of ["Kublai", "Thule", "Nineveh"]) {
+      const world = generateWorld(name, "intermediate");
+      const { land, population } = nationState(world, 0);
+      const state = { level: "intermediate" as const, land, population };
+      const seed = workersFor(
+        balanceAllocation(economy, subsistenceAllocation(), state), population, land.farmland,
+      );
+      const planned = planProduction(economy, world, 0, seed);
+      const result = economy.resolve({ ...state, workers: planned });
+      assert.ok(result.agriculture.surplus > 0, `${name}: gave up growing entirely`);
+      assert.ok(result.firepower >= positionOf(world, 0).provinces.length,
+        `${name}: ${result.firepower} will not garrison the place`);
+    }
+  });
+
+  it("arms freely when the famine floor means starving costs nothing", () => {
+    // An Expert nation sits on its floor, where every depth of deficit yields the same
+    // zero growth. The old utility charged up to -4.59 for a shortfall that takes
+    // nobody, and the nation declined to build anything.
+    const world = generateWorld("Thule", "expert");
+    const { land, population } = nationState(world, 0);
+    const state = { level: "expert" as const, land, population };
+    const planned = planProduction(economy, world, 0, {});
+    const result = economy.resolve({ ...state, workers: planned });
+    assert.ok(result.agriculture.surplus < 0, "the premise: it cannot feed itself (§10.3)");
+    assert.equal(nextPopulation(population, result.agriculture.surplus, land.farmland), population,
+      "the premise: the floor absorbs the deficit");
+    assert.ok(result.firepower > 0, "so there is nothing to lose by arming");
+  });
+
+  it("prices growth above a garrison", () => {
+    assert.ok(AI.growth > AI.garrison,
+      "population is what the game is scored on (§1.3)");
+    assert.ok(AI.hunger < AI.growth,
+      "the famine gradient guides the climb, it does not price the famine");
+  });
+
   it("only staffs what the difficulty offers (§1.1)", () => {
     const world = generateWorld("Thule", "intermediate");
     const { land, population } = nationState(world, 0);

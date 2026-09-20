@@ -2019,9 +2019,16 @@ victory metric (§1.3), so people are the unit of account and firepower is value
 what it protects and takes.
 
 **The economy is a utility AI.** Candidate allocations are scored by a weighted sum —
-garrison, food, growth, parity with whoever is massed against you, and the force to
-carry the cheapest crossing on your own frontier — and the best improving move is taken,
-coarse steps first. A move may be a single worker, or a whole input tree bought at once
+growth, a garrison, parity with whoever is massed against you, and the force to carry
+the cheapest crossing on your own frontier — and the best improving move is taken,
+coarse steps first.
+
+Growth carries the heaviest weight, because population is what the game is scored on
+(§1.3) and it has to be able to defend itself against the military terms. Garrison and
+parity are hard floors — one firepower per province is a garrison whether you post two
+or ten — while growth and the conquest threshold keep paying a little past themselves,
+so that once food is ample the margin splits between more food and more arms instead of
+reverting wholly to one of them. A move may be a single worker, or a whole input tree bought at once
 and proportioned the way the recipes need (§10.2), which is the only kind of move that
 can open a cold chain. The weights encode the same intent a
 priority list would, but they trade off rather than strictly outrank. Only improving
@@ -2068,6 +2075,41 @@ an attack, and the board did not move for sixty turns. The utility had no term f
 *offence*. It now scores the force that would carry the cheapest crossing on its frontier
 (`Position.opening`), weighted by militarism so a peaceable nation still declines to use
 it. The term rises as the neighbour arms, which is the arms race the game is named for.
+
+#### A sixth mistake: the wrong things were expensive
+
+Decomposing the score across the guns-and-butter split found three faults at once, and
+all of them pushed the same way.
+
+- **Growth was priced at a fortieth of a garrison.** As a fraction of population it was
+  worth 0.026 where posting one firepower per province was worth 2.0, so a four-member
+  union at Expert drove its food surplus from +102 to +1 — giving up all 47 people a
+  turn it could have grown — to buy 32 firepower. The victory metric could not defend
+  itself. It is now weighted at 3.0 and is the term the others trade against.
+- **A famine the floor absorbs was charged as though it were real.** A nation sitting on
+  its floor (§4.4.1) grows at zero however deep the shortfall goes, but the utility read
+  the *surplus* and charged up to −4.59 for starving at nobody's expense — which is why
+  every Expert nation sat at 7 to 10 firepower refusing to build. Reading growth instead
+  of surplus fixes this for free, because `nextPopulation` already knows about the
+  floor. A small `hunger` gradient on the raw surplus remains, because growth alone
+  leaves the whole sub-floor region a plateau for the climb to get lost on.
+- **Every need saturated hard.** The moment a garrison was posted the entire margin
+  reverted to food, and the moment food met its target the entire margin reverted to
+  arms. Growth and the conquest threshold now keep paying a log tail past themselves, so
+  the two trade at the margin.
+
+Measured over 30 turns at Expert on six continents, against the same runs before:
+
+| | before | after |
+| --- | --- | --- |
+| Battles per game | 36 | **84** |
+| Composition churn | 14% | **23%** |
+| World population | x7.6 | **x9.5** |
+| Games decided in 20 turns (all levels) | 3 of 12 | **6 of 12** |
+
+More fighting *and* more growth, which is the tell that the two had been competing for
+the same workers rather than trading honestly. Expert still decides no game inside 30
+turns; §10.4 has the reason, and it is not this.
 
 #### Where it stands
 
