@@ -30,7 +30,7 @@ import {
 } from "./union.ts";
 import { makeRng } from "./rng.ts";
 import { generateWorld, nationState } from "./worldgen.ts";
-import type { CommodityId, EconomyResult, Land, Level, World } from "./types.ts";
+import type { CommodityId, EconomyResult, Land, Level, Province, World } from "./types.ts";
 
 /**
  * The Economic Union phase (§6) is absent: diplomacy is specified but not built. When
@@ -804,10 +804,14 @@ export class Game {
       // Every member's screen shows the union's economy, because that is the economy
       // their people are living in this turn.
       this.production[member] = result;
-      const own = nationState(this.world, member).population;
-      const share = own / population;
-      this.applyPopulation(member, own, own + growth * share);
-      this.world = distributeWeapons(this.world, member, result.firepower * share);
+      const state = nationState(this.world, member);
+      // Growth is shared out by farmland for the same reason it is inside a nation: the
+      // member that brought the land takes the people it can feed. Firepower and famine
+      // follow population, which is what each member actually contributed and holds.
+      const byPeople = state.population / population;
+      const share = growth > 0 && land.farmland > 0 ? state.land.farmland / land.farmland : byPeople;
+      this.applyPopulation(member, state.population, state.population + growth * share);
+      this.world = distributeWeapons(this.world, member, result.firepower * byPeople);
     }
   }
 
@@ -862,18 +866,43 @@ export class Game {
   }
 
   /**
-   * Push a nation's population change back down to its provinces, in proportion to
-   * where its people already are. The economy works on nation totals but the map holds
-   * population per province, and conquest moves provinces between nations, so the two
-   * have to be reconciled every turn.
+   * Push a nation's population change back down to its provinces. The economy works on
+   * nation totals but the map holds population per province, and conquest moves
+   * provinces between nations, so the two have to be reconciled every turn.
+   *
+   * **Growth settles in proportion to farmland, not to the people already there.**
+   * Taking a province cuts its population to what its farmland can feed (§5.7), which
+   * leaves it at one person per acre where the rest of the nation sits at about 1.49.
+   * Distributing growth by population kept that gap open forever — every province grew
+   * by the same *percentage*, so the conquered one stayed exactly as far behind as the
+   * day it was taken. By farmland it collects the same absolute share as any equally
+   * fertile province and closes the gap instead, which makes a large food surplus the
+   * thing that repairs a conquest.
+   *
+   * Famine still takes people in proportion to population: hunger kills where the
+   * people are, and distributing a loss by acreage would ask provinces to give up
+   * people they do not have.
    */
   private applyPopulation(nation: number, before: number, after: number): void {
     if (before <= 0) return;
-    const scale = Math.max(0, after) / before;
+    const own = this.world.provinces.filter((p) => p.nation === nation);
+    if (own.length === 0) return;
+    const change = Math.max(0, after) - before;
+    const acres = own.reduce((sum, p) => sum + p.land.farmland, 0);
+
+    // Land with nothing arable on it cannot be where new people go, so a nation holding
+    // no farmland at all falls back to spreading the change over its people.
+    const byLand = change > 0 && acres > 0;
+    const shareOf = (p: Province) =>
+      byLand ? p.land.farmland / acres : p.population / before;
+
+    const moved = new Map<number, number>(
+      own.map((p) => [p.id, Math.max(0, Math.round(p.population + change * shareOf(p)))]),
+    );
     this.world = {
       ...this.world,
       provinces: this.world.provinces.map((p) =>
-        p.nation === nation ? { ...p, population: Math.max(0, Math.round(p.population * scale)) } : p,
+        moved.has(p.id) ? { ...p, population: moved.get(p.id)! } : p,
       ),
     };
   }

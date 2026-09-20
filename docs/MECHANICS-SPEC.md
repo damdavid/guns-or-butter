@@ -107,9 +107,25 @@ the rule says nobody has.
 (§6.4); a person is offered all of them, worst regarded first.
 
 **Population lives on provinces, but the economy works on nation totals.** Food surplus
-is resolved per nation and then pushed back down in proportion to where the people
-already are, because conquest moves provinces between nations and the two views have to
-be reconciled every turn.
+is resolved per nation and then pushed back down to the provinces, because conquest
+moves provinces between nations and the two views have to be reconciled every turn.
+
+**Growth settles in proportion to farmland; famine takes people in proportion to
+population [F].** Taking a province cuts it to what its farmland feeds (§5.7), leaving
+it near one person per acre where the rest of the nation sits at about 1.49. Sharing
+growth out by population held that gap open forever — every province grew by the same
+*percentage*, so the conquered one stayed exactly as far behind as the day it fell, and
+the absolute gap widened as the nation grew. By farmland it takes the same absolute
+share as any equally fertile province, so a food surplus is what repairs a conquest.
+Famine keeps to population because hunger kills where the people are, and a loss shared
+by acreage would ask a province to give up people it does not have.
+
+Note what this converges to. Every acre gains the same number of people, so the
+*absolute* density gap is preserved and the *ratio* closes: measured on Kittycat, a
+province cut to 1.00 people per acre against a nation at 1.49 improves from a ratio of
+1.49 to 1.30 over seven turns and then holds there once the surplus runs out. It
+recovers in proportion and never quite in density. Filling the emptiest land first would
+reach parity instead; it is not what is built.
 
 **Labour is stored as fractions, not worker counts** — matching the original's sliders,
 and necessary because the workforce changes size every turn as population moves.

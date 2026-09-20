@@ -409,6 +409,69 @@ describe("moving whole workers (§3.6)", () => {
   });
 });
 
+describe("where new people appear", () => {
+  const playTo = (game: Game, turn: number) => {
+    while (game.turn < turn) game.advance();
+  };
+
+  it("settles growth on farmland, so equal land gains equally however full it is", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.ai = false;
+    const mine = game.world.provinces.filter((p) => p.nation === 0);
+    // Two provinces with identical farmland, one of them emptied as a conquest would.
+    const [a, b] = [mine[0]!, mine[1]!];
+    game.world = { ...game.world, provinces: game.world.provinces.map((p) =>
+      p.id === a.id ? { ...p, land: { ...p.land, farmland: 60 }, population: 60 }
+      : p.id === b.id ? { ...p, land: { ...p.land, farmland: 60 }, population: 120 }
+      : p) };
+
+    playTo(game, 2);
+    const gainA = game.world.provinces[a.id]!.population - 60;
+    const gainB = game.world.provinces[b.id]!.population - 120;
+    assert.ok(gainA > 0, "the emptied province should grow at all");
+    assert.ok(Math.abs(gainA - gainB) <= 1,
+      `equal farmland should gain equally: ${gainA} against ${gainB}`);
+  });
+
+  it("closes the density gap a conquest opens, rather than holding it", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.ai = false;
+    const victim = game.world.provinces.find((p) => p.nation === 0)!;
+    game.world = { ...game.world, provinces: game.world.provinces.map((p) =>
+      p.id === victim.id ? { ...p, population: p.land.farmland } : p) };
+
+    const ratio = () => {
+      const p = game.world.provinces[victim.id]!;
+      const rest = game.world.provinces.filter((q) => q.nation === 0 && q.id !== p.id);
+      return (rest.reduce((s, q) => s + q.population, 0) / rest.reduce((s, q) => s + q.land.farmland, 0))
+        / (p.population / p.land.farmland);
+    };
+    const before = ratio();
+    playTo(game, 6);
+    assert.ok(ratio() < before - 0.05,
+      `the gap should narrow: ${before.toFixed(3)} -> ${ratio().toFixed(3)}`);
+  });
+
+  it("takes famine from where the people are, not from the acreage", () => {
+    // Distributing a loss by acreage would ask a province to give up people it has not
+    // got. A province with land and nobody on it should lose nobody.
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.ai = false;
+    const mine = game.world.provinces.filter((p) => p.nation === 0);
+    const empty = mine[0]!;
+    game.world = { ...game.world, provinces: game.world.provinces.map((p) =>
+      p.id === empty.id ? { ...p, population: 0 } : p) };
+    // Starve the nation: everything into weapons, nothing into food.
+    game.setAllocation(0, { sword: 1 });
+    playTo(game, 2);
+    assert.equal(game.world.provinces[empty.id]!.population, 0, "nobody left to lose");
+    assert.ok(game.world.provinces.every((p) => p.population >= 0));
+  });
+});
+
 describe("what a turn changed", () => {
   it("holds the standings as they were before production and fighting", () => {
     const game = Game.create("Kittycat", "intermediate");
