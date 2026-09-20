@@ -9,7 +9,7 @@
  * Phases are strictly sequential and there is no going back mid-turn — the original was
  * emphatic about that, and offered `Undo Turn` at the Rankings phase as the one relief.
  */
-import { AGRICULTURE, commoditiesFor } from "./data.ts";
+import { AGRICULTURE, commoditiesFor, tierYield } from "./data.ts";
 import { Economy } from "./economy.ts";
 import {
   conqueror,
@@ -447,6 +447,28 @@ export class Game {
       .map((r) => ({ nation: r.nation, population: r.population, firepower: r.firepower }));
   }
 
+  /**
+   * What a nation's firepower is made of, strongest first.
+   *
+   * Firepower is stored on provinces as a bare number, so the weapon behind it lives
+   * only in the production that made it. Public, unlike food output: §10.1 withholds
+   * that because it says exactly when a rival is about to grow, where this only
+   * describes strength already on display.
+   */
+  weaponsOf(nation: number): { id: CommodityId; tons: number; firepower: number }[] {
+    const result = this.production[nation];
+    if (!result) return [];
+    return [...this.economy.graph.table.values()]
+      .filter((c) => c.kind === "weapon")
+      .map((c) => ({
+        id: c.id,
+        tons: result.commodities[c.id]?.output ?? 0,
+        firepower: (result.commodities[c.id]?.output ?? 0) * tierYield(c.tier!),
+      }))
+      .filter((w) => w.firepower > 0)
+      .sort((a, b) => b.firepower - a.firepower);
+  }
+
   /** The union this nation belongs to this turn, if any. */
   unionFor(nation: number): Union | undefined {
     return unionOf(this.unions, nation);
@@ -733,7 +755,9 @@ export class Game {
 
     this.turn++;
     this.orders = {};
-    this.production = {};
+    // Production is deliberately *not* cleared. The firepower standing on the map was
+    // made by it, so it is the only record of what those armies are armed with, and it
+    // is replaced wholesale the moment production next resolves.
     this.transfers = [];
     this.battles = [];
     // The Economic Union phase exists at Expert and nowhere else (§1.1, §1.2).

@@ -567,6 +567,19 @@ function attackableBy(nation: number): Set<number> {
   return reachable;
 }
 
+/**
+ * What a nation's firepower is made of. Public: §10.1 withholds food output alone,
+ * because that is the number that says when a rival is about to grow; this only
+ * describes strength the map is already showing.
+ */
+function armedWith(nation: number): string {
+  const weapons = game.weaponsOf(nation);
+  if (weapons.length === 0) return `<span class="secret">nothing</span>`;
+  return weapons
+    .map((w) => `${commodityLabel(w.id)} <span class="hint">${power(w.firepower)}</span>`)
+    .join("<br />");
+}
+
 function inspectorHtml(): string {
   if (!inspect) return "";
   if (inspect.kind === "union") return unionHtml(inspect.id);
@@ -597,6 +610,7 @@ function inspectorHtml(): string {
       <span class="right"><button type="button" data-act="close">Close</button></span></h2>
     <dl>
       <dt>Military strength</dt><dd>${power(r.firepower)}</dd>
+      <dt>Armed with</dt><dd>${armedWith(r.nation)}</dd>
       <dt>Population</dt><dd>${people(r.population)}</dd>
       <dt>Provinces</dt><dd>${r.provinces}</dd>
       ${terrainRows(r.land)}

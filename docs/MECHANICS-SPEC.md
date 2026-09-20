@@ -1705,6 +1705,14 @@ change turned out to need:
   the purpose. Clicking a nation gives its strength, population, provinces and territory.
   **Food output is withheld for every nation but your own**, as a national secret; it is
   the one number that would tell you exactly when a rival is about to grow.
+- **What an army is armed with is public**, for every nation. Firepower is stored on
+  provinces as a bare number (§5.1), so the weapon behind it survives only in the
+  production that made it — which is why the production record is carried across the
+  turn boundary rather than cleared with the rest: the armies standing on the map were
+  armed last turn. It is shown rather than withheld because the secrecy rule above is
+  narrow and reasoned. Food says when a rival is *about to* grow; a weapon type only
+  describes strength the map is already displaying, and a tier tells you no more than
+  the firepower total already does.
 - **Execution replays the turn.** Each march travels from capital to capital and the map
   updates as it lands, because the ordering rules are invisible otherwise — that marching
   forces leave home before anything resolves (§5.6), and that waves on one province

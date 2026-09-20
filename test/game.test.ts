@@ -409,6 +409,50 @@ describe("moving whole workers (§3.6)", () => {
   });
 });
 
+describe("what an army is armed with", () => {
+  it("adds up to exactly the firepower on the map", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.human = -1;
+    game.advance();
+    for (const nation of game.world.nations) {
+      const weapons = game.weaponsOf(nation.id);
+      const held = game.rankings().find((r) => r.nation === nation.id)!.firepower;
+      const sum = weapons.reduce((total, w) => total + w.firepower, 0);
+      assert.ok(Math.abs(sum - held) < 0.01,
+        `nation ${nation.id}: weapons total ${sum} against ${held} on the map`);
+    }
+  });
+
+  it("names every weapon in a mixed arsenal, strongest first", () => {
+    const economy = new Economy();
+    const game = Game.create("Kublai", "intermediate");
+    game.ai = false;
+    const { land, population } = nationState(game.world, 0);
+    const context = { level: "intermediate" as const, land, population };
+    // Ask for two weapons at once and let the balancer staff both chains.
+    game.setAllocation(0, balanceAllocation(economy, { sword: 0.5, musket: 0.5 }, context));
+    game.advance();
+
+    const weapons = game.weaponsOf(0);
+    assert.ok(weapons.length >= 2, `expected a mixed arsenal, got ${JSON.stringify(weapons)}`);
+    for (let i = 1; i < weapons.length; i++) {
+      assert.ok(weapons[i - 1]!.firepower >= weapons[i]!.firepower, "strongest first");
+    }
+    assert.ok(weapons.every((w) => w.firepower > 0), "a weapon nobody made is not listed");
+  });
+
+  it("still knows the arsenal at the start of the next turn", () => {
+    // The firepower standing on the map was made last turn, so clearing the production
+    // record with the turn would leave those armies carrying nothing identifiable.
+    const game = Game.create("Kublai", "intermediate");
+    game.human = -1;
+    while (game.turn < 2) game.advance();
+    assert.equal(game.phase, "production");
+    const armed = game.world.nations.filter((n) => game.weaponsOf(n.id).length > 0);
+    assert.ok(armed.length > 0, "the arsenal should survive into the next turn");
+  });
+});
+
 describe("where new people appear", () => {
   const playTo = (game: Game, turn: number) => {
     while (game.turn < turn) game.advance();
