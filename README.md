@@ -78,6 +78,21 @@ The game takes `?continent=`, `?level=`, `?nation=` and `?caps=original` query
 parameters, so `localhost:5173/play.html?continent=Kublai&level=expert` skips the start
 screen and opens a particular world.
 
+## Deploying
+
+The game is entirely static — no server, no API, saves in `localStorage` — so it is
+served as files from the edge.
+
+    npm run build:site   # assemble site/ : pages, styles, art, minified bundle
+    npm run deploy       # assemble, then push it to Cloudflare Workers
+
+`wrangler.jsonc` declares `gb.mitchthefat.com` as a custom domain. The zone is already
+on Cloudflare DNS, so the first deploy creates the record and its certificate; there is
+nothing to set up in the dashboard. Authenticate once with `npx wrangler login`.
+
+`site/` is assembled rather than committed: `web/` mixes source and output, and a host
+should not be handed `main.ts`.
+
 Developed and verified on Node 26.8.2, which `.nvmrc` pins — `nvm use` picks it up.
 Node runs the TypeScript directly, with no build step for anything outside `web/`.
 

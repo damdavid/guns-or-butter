@@ -1,0 +1,18 @@
+{
+  // A static site: no Worker script at all, just the assembled `site/` directory.
+  // Workers serves it from the edge, and because mitchthefat.com is already on
+  // Cloudflare DNS the custom domain below provisions its own record and certificate.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "guns-or-butter",
+  "compatibility_date": "2026-09-21",
+  "assets": {
+    "directory": "./site",
+    // `/play` serves play.html, and a bad path gets a 404 rather than the home page —
+    // there is no client-side router here for it to hand off to.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "gb.mitchthefat.com", "custom_domain": true }
+  ]
+}

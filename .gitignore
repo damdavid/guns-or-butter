@@ -10,3 +10,6 @@ docs/gb-manual.pdf
 docs/gb-manual.txt
 docs/crawford-ch24-guns-and-butter.txt
 web/dist/
+
+# Assembled for deploy; rebuilt by `npm run build:site`.
+site/
