@@ -1,38 +1,15 @@
 /**
- * Economic unions (§6.1), Expert only.
+ * Economic unions (§6.1), Expert only. §6.5 records what this module decides where
+ * §6.1 is silent; §10.4 records what it does in play.
  *
- * Crawford's mechanic verbatim: the weakest player declares a union against their worst
- * enemy, everyone else joins or stands aloof, the founder takes control of every
- * member's economy for the turn, and members' populations and terrain pool into a
- * single economic unit. Given superlinear productivity (§3.4) that pooling is the whole
- * point — and at Expert it is not an efficiency gain but survival, because no nation
- * there can feed itself alone (§10.3).
- *
- * What §6.1 leaves unsaid, and what this module decides:
- *
- * - **Who joins.** `willingness` (§6.4) gates it, and a joiner must regard the founder
- *   better than the target. Without that second test a nation will join a mob against
- *   its own closest ally, which reads as nonsense on the screen.
- * - **What a union of one is.** Nothing. A declaration nobody joins is dropped, so the
- *   founder is not left bound by an attack restriction bought for no pooling.
- * - **How far the attack restriction reaches.** §6.1 says members may attack the target
- *   and nobody else; `canAttack` lets them also attack anyone in no union at all. See
- *   there for why.
- * - **How the pooled result is split back.** By population share, for growth and for
- *   firepower alike. §6.1 pools the inputs and is silent on the outputs.
- *
- * Unions last exactly one turn (§6.1), so this runs afresh every turn.
+ * A union lasts one turn, so the round runs afresh every turn.
  */
 import { EVENTS, applyEvent, willingness, type Affinity, type Standing } from "./affinity.ts";
 import { nationState } from "./worldgen.ts";
 import type { Land, World } from "./types.ts";
 
 export const UNION = {
-  /**
-   * A joiner must at least tolerate the founder. Zero is neutral regard, which at the
-   * start of a game is roughly where unrelated nations sit and a little below where
-   * founding neighbours do (§6.4).
-   */
+  /** Neutral regard: a joiner must at least tolerate the founder (§6.4). */
   joinAt: 0,
 } as const;
 
@@ -96,27 +73,16 @@ interface Pending {
   founder: number;
   target: number;
   members: number[];
-  /**
-   * Everyone who may follow, fixed at the moment of declaration. Snapshotting it is
-   * what makes the answers independent: nobody's decision can be informed by anybody
-   * else's, because the candidate list does not shrink as people accept.
-   */
+  /** Fixed when the declaration is made, which is what keeps the answers blind (§6.5). */
   eligible: readonly number[];
   answered: boolean;
 }
 
 /**
- * A formation round in progress (§6.1).
+ * A formation round in progress: one declaration at a time, weakest first (§6.5).
  *
- * Only nations still holding ground take part: a nation conquered out of the game
- * neither declares nor may be declared against, which is the caller's job to express
- * by leaving it out of `standings`.
- *
- * The round is taken one declaration at a time, weakest first, because that is how it
- * reads and because the player has to be able to answer each one on its own. Everyone
- * who might follow decides without knowing what the others chose — the declaration is
- * public, the answers are not — so a union's membership is a surprise to its own
- * members until it forms.
+ * Only nations still holding ground take part, which the caller expresses by leaving
+ * the conquered out of `standings`.
  */
 export interface RoundState {
   /** Nation ids, weakest first. Declarations are offered in this order. */
@@ -144,11 +110,9 @@ export function startRound(standings: readonly Standing[]): RoundState {
 }
 
 /**
- * Carry the round forward until it needs the player again, or finishes.
- *
- * `answer` responds to `state.ask`: a nation to declare against (or null to decline),
- * or for a join, the founder to follow (or null to stand aloof). Pass `human = -1` and
- * the round runs start to finish without stopping.
+ * Carry the round to the next question, or to the end. `answer` responds to
+ * `state.ask` — a target, a founder to follow, or null to decline. `human = -1` runs
+ * the whole round without stopping.
  */
 export function runRound(
   state: RoundState,
@@ -231,10 +195,7 @@ export function runRound(
   }
 }
 
-/**
- * Run a whole round at once. Convenience for tests and for games with no player in
- * them; `choice` supplies the answers a player would have given.
- */
+/** Run a whole round at once; `choice` supplies the answers a player would give. */
 export function formUnions(
   affinity: Affinity,
   standings: readonly Standing[],
@@ -259,18 +220,11 @@ export function unionOf(unions: readonly Union[], nation: number): Union | undef
 }
 
 /**
- * Who a nation may attack. A member may take the union's target, or anyone standing
- * outside every union; anyone unattached is unrestricted; and whoever a union is
- * declared against may answer its members whatever else is true.
+ * Who a nation may attack: its union's target, anyone in no union, and anyone in a
+ * union declared against it. Unattached nations are unrestricted.
  *
- * **This relaxes §6.1 [F].** Crawford's rule is that members "may *only* attack the
- * union's target", neutrals included. Taken literally a member whose target lay across
- * the continent had no legal attack at all, however hostile the neighbour on its own
- * border — and since almost every nation joins something (§10.4), almost all aggression
- * was funnelled at two nations who could only answer their own target in turn. Expert
- * stopped being a war. Unions are still exclusive toward each other, which is what
- * keeps them meaningful: you cannot raid a rival bloc, only the one nation yours has
- * named. What you no longer forfeit is the right to defend your own frontier.
+ * Relaxes §6.1's "the target and nobody else" [F] — see §10.4 for why and for what
+ * measuring it changed.
  */
 export function canAttack(unions: readonly Union[], from: number, to: number): boolean {
   // A coalition declared against you may always be answered, whatever else holds.
@@ -303,17 +257,8 @@ export function poolOf(
 }
 
 /**
- * Record the diplomatic consequences of a union forming (§6.4).
- *
- * The grievance the target takes is split 70/30 between founder and joiners rather than
- * landing at full strength on each. That single edit is what stops one union poisoning
- * seven edges at once, which is the arithmetic behind the collapse Crawford describes
- * in §6.3.
- *
- * Turning on someone you stood with last turn is betrayal, and costs trust an order of
- * magnitude more than ordinary hostility: −0.45 against −0.10. Because a union lasts
- * only one turn there is no standing pact to walk out of, so joining a union against
- * yesterday's ally is the form defection takes here.
+ * The diplomatic bill for a union forming (§6.4): the target's grievance split 70/30
+ * between founder and joiners, and betrayal for anyone turning on last turn's partner.
  */
 export function recordFormation(
   affinity: Affinity,
@@ -338,11 +283,7 @@ export function recordFormation(
   }
 }
 
-/**
- * The cooperation dividend (§6.4): every pair that held a union together warms to each
- * other a little. It is the only positive inflow the original lacked entirely, and the
- * whole reason distrust does not ratchet to Crawford's dead end.
- */
+/** The cooperation dividend (§6.4), and the only positive inflow the model has. */
 export function recordSurvival(affinity: Affinity, unions: readonly Union[]): void {
   for (const union of unions) {
     for (const a of union.members) {

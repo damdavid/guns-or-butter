@@ -1,10 +1,8 @@
 /**
  * World generation (§2). `capitals -> spokes -> provinces -> roads -> terrain -> nations`.
  *
- * The shape of the algorithm is Crawford's, from ch24 and the design dialogue. The
- * quantities are calibrated against the 11 nations recorded in the measurement CSV:
- * ~8.2 provinces per nation, ~42 acres of farmland per province, ~7 acres of other
- * terrain, and starting population at a strikingly tight 1.4933x farmland.
+ * Crawford's algorithm, with the quantities calibrated against the 11 nations in the
+ * measurement CSV.
  */
 import { clipToRect, dualPolygons, edgeKey, edges, polygonArea, ringOfGhosts, triangulate } from "./delaunay.ts";
 import { nationNames, uniqueNames } from "./names.ts";
@@ -43,16 +41,11 @@ export const WORLDGEN = {
 const TERRAIN_TYPES = ["forest", "mountains", "desert"] as const satisfies readonly Exclude<Terrain, "farmland">[];
 
 /**
- * The landmass, as a union of overlapping lobes.
+ * The landmass, as a union of overlapping lobes — a single radius per bearing is
+ * star-shaped and can only make a wobbly oval, never an isthmus or a peninsula.
  *
- * An earlier version used a single radius that varied with bearing, `r(theta)`. That is
- * star-shaped by construction — one radius per direction — so it could only ever make a
- * wobbly oval, never a peninsula that reaches out past a bay beside it. A union of
- * lobes has no such limit: where two lobes barely touch you get an isthmus, and a lobe
- * hanging off the side is a peninsula.
- *
- * Each lobe is placed to overlap the one before it, which keeps the continent in one
- * piece. Naval movement was cut from the original, so an island would be unreachable.
+ * Each lobe overlaps the one before, which keeps the continent in one piece: naval
+ * movement was cut, so an island would be unreachable.
  */
 interface Lobe {
   cx: number;
@@ -153,9 +146,8 @@ interface Continent {
  * Sow capitals across the whole map, then keep only those inside the coastline.
  *
  * The ones left out at sea are not wasted: they bound the dual cells of the coastal
- * provinces, which is what gives the continent an irregular edge. An earlier version
- * clipped every province to the map rectangle instead, which made the continent a
- * rectangle — boxier even than the original, whose squareness Crawford regretted.
+ * provinces, which is what gives the continent an irregular edge rather than the
+ * rectangle that clipping to the map produces.
  */
 function placeContinent(rng: Rng, count: number): Continent {
   const { width, height } = WORLDGEN;
@@ -184,12 +176,9 @@ function placeContinent(rng: Rng, count: number): Continent {
   // Offshore capitals hugging the coast, so no coastal province runs to the map edge for
   // want of a neighbour seaward of it. Sampled just outside the mask rather than on a
   // circle, which is what lets the bays keep their shape.
-  // Ocean capitals, spaced like the land ones and covering the whole sea rather than a
-  // coastal band. Two failure modes bracket this spacing: too fine and the sea points
-  // crowd land capitals out of each other's Delaunay neighbourhood, severing the
-  // adjacency graph (one beginner world left 15 of 16 provinces unreachable); too
-  // sparse, or confined to the coast, and a province with open water beyond it runs to
-  // the map border and is cut flat there.
+  // Ocean capitals over the whole sea, not a coastal band. Two failure modes bracket
+  // the spacing: too fine and sea points sever the land adjacency graph; too sparse
+  // and a coastal province runs to the map border and is cut flat there.
   const sea: Point[] = [];
   const step = Math.max(14, minDist * 0.8);
   for (let y = step / 2; y < height; y += step) {
@@ -377,10 +366,9 @@ function staysContiguous(
 /**
  * Even out nation sizes after growth.
  *
- * Growing from seeds leaves a nation that gets boxed in early stranded — on one
- * beginner continent a nation ended with 4 provinces against its neighbour's 12, and no
- * growth order fixes that, because by the time it is enclosed it has nowhere to expand.
- * Transfers are only taken where the donor stays in one piece.
+ * Growing from seeds strands a nation boxed in early — 4 provinces against a
+ * neighbour's 12 — and no growth order fixes it, because by then it has nowhere to
+ * expand. Transfers are only taken where the donor stays in one piece.
  */
 function rebalance(adjacency: number[][], owner: number[], count: number, rng: Rng): void {
   const sizes = () => {
@@ -729,20 +717,13 @@ export function borderSegments(world: World): BorderSegment[] {
   });
 }
 
-/** A nation's economy inputs, summed over the provinces it holds (§2.1, §3.1). */
 /**
  * Hold every nation's frontier below `maxBorderRoadFraction` road, trading each demoted
  * border road for an interior one so the continent keeps its half-of-everything.
  *
- * Two measures, because they are not the same thing and only the second is what a player
- * sees. The first bounds the share of *frontier spokes* that are paved. The second bounds
- * the share of each nation's *border provinces* that have any road out at all — a nation
- * can sit under the spoke cap and still have a road on six of its seven border
- * provinces, which is the case that prompted the rule.
- *
- * A road is the difference between a 20-firepower threshold and a 50-firepower one
- * (§5.5), so a province with a road out is a province an enemy can take cheaply. At least
- * a third of every nation's frontier is now approachable only cross-country.
+ * Two measures, because a nation can sit under a cap on paved *spokes* and still have
+ * a road out of six of its seven border *provinces* — which is what a player sees, and
+ * what prompted the rule. A road is a 20-firepower threshold against 50 (§5.5).
  */
 function capBorderRoads(
   shuffled: readonly [number, number][],
@@ -803,6 +784,7 @@ function capBorderRoads(
   }
 }
 
+/** A nation's economy inputs, summed over the provinces it holds (§2.1, §3.1). */
 export function nationState(world: World, nation: number): { land: Land; population: number } {
   const own = world.provinces.filter((p) => p.nation === nation);
   const land: Land = { farmland: 0, forest: 0, mountains: 0, desert: 0 };

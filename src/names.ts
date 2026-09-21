@@ -1,11 +1,6 @@
 /**
- * Province names.
- *
- * Crawford: "I worked long and hard on a clever little algorithm to create province
- * names ... they all seem to have a certain flavor to them. But how many people will
- * notice?" The shipped game also carries a `MONGOL.NAM` word list, which is not
- * redistributable, so this is a syllable generator in the same Central Asian register
- * rather than a copy of his data.
+ * Province names. A syllable generator in the same Central Asian register as
+ * Crawford's, rather than a copy: the shipped `MONGOL.NAM` list is not redistributable.
  */
 import type { Rng } from "./rng.ts";
 

@@ -77,29 +77,13 @@ export function firepowerOf(output: Readonly<Record<CommodityId, number>>, tiers
 }
 
 /**
- * Reconcile a nation's provinces with the military power it can field this turn (§5.3).
+ * Reconcile a nation's provinces with the power it can field this turn (§5.3). The
+ * provinces always sum to this turn's weapon production, which makes an army a flow
+ * rather than a stock (§5.3.1): you cannot arm once and coast.
  *
- * The nation's total is this turn's weapon production, and the provinces always sum to
- * it. Which way it moves decides how:
- *
- * - **Falling**, including to nothing: every province is scaled by the same factor, so
- *   the shape of the deployment survives the cut and nothing is thrown away. 66 and 33
- *   against a national 100 become 33 and 16 at a national 50. A province is drawn from in
- *   proportion to what it holds, and at zero national power every province is zero.
- * - **Rising**: the increase is handed out, a flat 1 to each province first and the
- *   remainder in proportion to what each already holds — the original's rule (§5.3),
- *   which rewards concentrating.
- *
- * The flat grant applies only to the increase. On a drawdown a province's share simply
- * *is* what it holds, and granting a floor there would quietly flatten the concentration
- * the player built up, which is the thing §5.3 exists to reward.
- *
- * Nothing is cleared and rebuilt: a province's firepower is scaled or added to, so what
- * it held last turn carries through. Note this makes an army a flow rather than a stock
- * (§5.3.1) — the total tracks production, so you cannot arm once and coast.
- *
- * With nothing held anywhere — the opening turn — the increase spreads evenly, since the
- * proportional rule has nothing to work from.
+ * Falling scales every province alike, so the deployment keeps its shape. Rising gives
+ * a flat 1 each and the remainder in proportion, which rewards concentrating — and
+ * only to the increase, or a drawdown would quietly flatten what the player built.
  */
 export function distributeWeapons(world: World, nation: number, firepower: number): World {
   const own = world.provinces.filter((p) => p.nation === nation);
@@ -141,15 +125,8 @@ function areAdjacent(world: World, from: number, to: number): boolean {
 }
 
 /**
- * One assault against a province's current defence (§5.5).
- *
- * The attacker loses a flat 10 on arrival and is quartered if not coming down a road;
- * the defender fights with a flat +10. Both thresholds Appendix B quotes fall out of
- * this: an undefended province needs more than 20 firepower by road, more than 50
- * across anything else.
- *
- * The +10 is a modifier rather than real firepower, so a defender who holds is left
- * with its own strength less what actually reached it, not less the bonus as well.
+ * One assault against a province's current defence (§5.5). The +10 is a modifier, not
+ * real firepower, so a defender who holds keeps its own strength less what reached it.
  */
 export function resolveAssault(
   attack: number,
@@ -171,19 +148,11 @@ export function resolveAssault(
 }
 
 /**
- * Execute a turn's military orders.
+ * Execute a turn's military orders. Friendly transfers first, so troops can be shuffled
+ * in ahead of an attack (§5.6); then waves in sequence, smallest army first with ties
+ * drawn at random (§5.6.1).
  *
- * Friendly transfers resolve first, so a player who reads an attack coming can shuffle
- * troops in ahead of it (§5.6). Several attacks on one province then resolve in
- * sequence, which is what lets a first wave soften a defender for a second.
- *
- * **The smallest army strikes first**, across every battle and regardless of whose it
- * is, with ties drawn at random (§5.6.1). §5.6 fixes that waves resolve in sequence but
- * not who leads; resolving them in province order, as this once did, let an invisible
- * index decide who spent themselves softening a defender for someone else.
- *
- * `rng` is seeded by the caller so a turn replays identically — a draw that changed
- * under `Undo Turn` would be a worse rule than an arbitrary one, not a better.
+ * `rng` is seeded by the caller so a turn replays identically under `Undo Turn`.
  */
 export function resolveMilitary(
   world: World,

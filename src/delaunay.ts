@@ -1,12 +1,7 @@
 /**
- * Delaunay triangulation (Bowyer-Watson), and the centroid dual used to turn it into
- * provinces.
- *
- * Crawford's spoke graph needed to "minimize the total lengths of all spokes" — he
- * found the exact solve intractable at 64 cities and used a heuristic (§2). Delaunay is
- * the natural stand-in: it is planar, contains the Euclidean minimum spanning tree, and
- * its dual tiles the plane, which is what lets provinces be built as the spec describes
- * — "connect the midpoints of the spokes".
+ * Delaunay triangulation (Bowyer-Watson) and the centroid dual that turns it into
+ * provinces. It stands in for Crawford's minimal spoke graph (§2): planar, contains
+ * the Euclidean MST, and its dual tiles the plane.
  */
 import type { Point } from "./types.ts";
 

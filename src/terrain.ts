@@ -1,16 +1,10 @@
 /**
- * Raw extraction capacity as a function of terrain (§2.2).
+ * Raw extraction capacity as a function of terrain (§2.2):
+ * `capacity = (base + m * acres) * L^a`, all three measured per (commodity, level).
  *
- * `capacity = (base + m * acres) * L^a`, all three measured per (commodity, level)
- * from 53 readings. Three findings drive this shape:
- *
- * - The response is NOT shared across raws. Coal gains far more per mountain acre,
- *   relative to its own base, than Iron Ore does.
- * - There is no `max()` floor. An earlier draft inferred one from three points; with
- *   five points per series a plain line fits, and the non-zero intercept is what the
- *   design dialogue's "modicum of natural resources" actually is.
- * - Advanced raws have an intercept of ~0. Without desert you get no petroleum at any
- *   labour, which is why the modicum only shows up on the early-tier raws.
+ * A plain line, with no floor — the non-zero intercept *is* the dialogue's "modicum of
+ * natural resources", and it is ~0 on advanced raws, so no desert means no petroleum
+ * at any labour.
  */
 import { RAW_PARAMS, type RawParams } from "./calibration.ts";
 import type { Commodity, Land, Level, Terrain } from "./types.ts";

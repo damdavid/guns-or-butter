@@ -3,15 +3,12 @@
  */
 
 /**
- * Compact form for large quantities: plain up to four digits, then k, m, b, t.
+ * Compact form: plain up to four digits, then k, m, b, t.
  *
  *     9999 -> 9999      10000 -> 10k      2000000 -> 2000k      20000000 -> 20m
  *
- * The unit changes only when the mantissa would reach five digits, which keeps four
- * significant figures rather than the one or two that SI-style notation leaves. That
- * matters here: `Intl.NumberFormat`'s compact notation would render 1200 and 1249 both
- * as "1.2K", and the difference between two armies that size decides the battle between
- * them. Rounds down, like every other quantity on screen.
+ * Four significant figures, not the one or two SI-style notation leaves — 1200 and
+ * 1249 both reading "1.2K" would hide which of two armies wins. Rounds down.
  */
 export function compact(n: number, decimals = 0): string {
   const sign = n < 0 ? "-" : "";
@@ -39,11 +36,8 @@ export function compact(n: number, decimals = 0): string {
 }
 
 /**
- * Whole people, grouped in thousands: 18500 reads 18,500.
- *
- * Grouped rather than compacted, because population is the victory metric (§1.3) and
- * the standings are read by comparing them — "2,412,077" against "2,411,962" is a
- * different fact from both of them reading "2412k". Commas explicitly rather than
+ * Whole people, grouped in thousands. Grouped rather than compacted because the
+ * standings are read by comparing them (§1.3), and commas explicitly rather than
  * `toLocaleString`, which would put full stops in for half the world.
  */
 export function grouped(n: number): string {
@@ -53,13 +47,8 @@ export function grouped(n: number): string {
 }
 
 /**
- * Whether a tonnage reads as short, spare, or neither — decided on the figure the
- * player can see, not on the one behind it.
- *
- * Displays floor (§10.1), so a surplus of -0.3 shows as "-1". Judging the raw value
- * against a half-ton threshold meant that row read as a deficit and was not
- * highlighted: a minus sign on screen with nothing to mark it. Floor first, then judge,
- * and the colour always agrees with the number beside it.
+ * Whether a tonnage reads as short or spare, judged on the floored figure the player
+ * sees rather than the raw one — or -0.3 displays as "-1" and is not highlighted.
  */
 export function standing(tons: number): "short" | "spare" | "" {
   const shown = Math.floor(tons);

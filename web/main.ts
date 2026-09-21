@@ -1,13 +1,6 @@
 /**
- * Browser front end.
- *
- * No framework: the whole of the state is one `Game`, and each phase renders its own
- * panel. Two things are worth care. The production screen shows the pro-rata
- * redistribution *as you change it* — §3.6 notes that the original's confusion was a UI
- * failure rather than a mechanical one, so the mechanic is kept and made visible. And the
- * execution phase replays the turn's marches one at a time rather than cutting straight
- * to the result, because the ordering rules (§5.6, and waves within a battle) are
- * invisible otherwise.
+ * Browser front end. No framework: the state is one `Game` and each phase renders its
+ * own panel. §10.1 records what playing it found.
  */
 import { ORIGINAL_PRODUCTION_CAP, commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
 import { Economy } from "../src/economy.ts";
@@ -40,12 +33,9 @@ let draft: Allocation = subsistenceAllocation();
 /** Province awaiting a target click, in the orders phase. */
 let selected: number | null = null;
 /**
- * Province whose placed order the control is showing.
- *
- * Kept apart from `selected` so that placing an order *ends* the selection. While a
- * province was still selected afterwards, a click on one of its neighbours quietly
- * retargeted the march instead of starting a new one, and there was no way to tell
- * which a click would do.
+ * Province whose placed order the control is showing. Kept apart from `selected` so
+ * that placing an order ends the selection, rather than the next click silently
+ * retargeting the march.
  */
 let ordering: number | null = null;
 /** What the inspector is showing. */
@@ -166,14 +156,9 @@ function drawMap(): void {
   // What the inspector is looking at, outlined separately from the order selection —
   // you are often reading about one province while ordering another.
   /**
-   * Ring whole nations along their own frontier, not every province inside them.
-   *
-   * Outlining each province painted the internal province lines too, so several
-   * highlighted nations became one undifferentiated mesh of colour and you could not
-   * see where one ended and the next began. Following only the edges that are already
-   * a national boundary or coast leaves the thin province lines alone, so each nation
-   * keeps its shape — and the black national borders are drawn back over the top
-   * afterwards, which puts a crisp seam between two neighbours wearing the same colour.
+   * Ring whole nations along their own frontier, not every province inside them, or
+   * several highlighted nations become one undifferentiated mesh. The black national
+   * borders go back on top, which seams two neighbours wearing the same colour.
    */
   const frontier = (nations: ReadonlySet<number>, kind: string) => {
     if (nations.size === 0) return "";
@@ -256,13 +241,6 @@ function applyView(): void {
   );
 }
 
-/**
- * The march control, docked in the corner of the map.
- *
- * It first sat on the province it was ordering, which put it over the ground the player
- * was trying to read — and on a small continent, over the target as well. A fixed corner
- * costs a glance and covers nothing that moves.
- */
 /** The half of the decision the slider does not already show: what is left behind. */
 function marchTally(cap: number, send: number): string {
   return `<b>${power(cap - send)}</b> stays`;
@@ -274,6 +252,7 @@ function contextFor(g: Game): { level: Level; land: Land; population: number } {
   return { level: g.world.level, land, population };
 }
 
+/** The march control, docked in a corner so it covers no ground the player is reading. */
 function marchControlHtml(): string {
   if (ordering === null || game.phase !== "military-orders" || replaying) return "";
   const p = game.world.provinces[ordering];
@@ -432,11 +411,8 @@ const terrainRows = (land: Land) => `
   <dt><b>Total land</b></dt><dd><b>${whole(acresOf(land))} acres</b></dd>`;
 
 /**
- * A factory's recipe and where its output goes.
- *
- * The production table says a factory is short of something; this says how much of it
- * the factory wanted and how much arrived, which is the part §3.5 makes hard to work out
- * by eye — a shallower consumer can take the whole supply before this one is asked.
+ * A factory's recipe and where its output goes: how much of each input it wanted
+ * against how much arrived, which §3.5 makes hard to work out by eye.
  */
 function factoryHtml(id: CommodityId): string {
   const c = economy.graph.table.get(id);
@@ -548,12 +524,9 @@ function unionHtml(founder: number): string {
 }
 
 /**
- * Nations this one could actually march on: permitted by §6.1's union restriction *and*
- * sharing a border, since you may only attack an adjacent province (§5.4).
- *
- * Both halves matter. A union member is allowed exactly one target, and if that target
- * is nowhere near them the honest answer is that they can attack nobody — which is the
- * real price of joining, and worth being able to see on the board.
+ * Nations this one could actually march on: allowed by §6.1 *and* sharing a border
+ * (§5.4). Both halves matter — a member whose target is far away can attack nobody,
+ * which is the real price of joining.
  */
 function attackableBy(nation: number): Set<number> {
   const reachable = new Set<number>();
@@ -637,13 +610,9 @@ function temper(w: number): { label: string; cls: string } {
 }
 
 /**
- * How a nation regards the others (§6.4).
- *
- * Shown for every nation, not just your own: the standings are public, and the live
- * terms are computed from them, so most of this is inferable anyway. What it does give
- * away is the stored history — who has been attacked by whom, and who has been poor
- * together. Whether that should be a national secret like food output is an open
- * question (§10.1.7).
+ * How a nation regards the others (§6.4). Public, because the live terms are computed
+ * from public standings anyway; whether the stored history should be secret is open
+ * (§10.1.7).
  */
 function affinityHtml(nation: number): string {
   const others = game.willingnessFrom(nation).filter((x) =>
@@ -836,13 +805,9 @@ function totalsHtml(result: EconomyResult, land: Land): string {
 }
 
 /**
- * Refresh the numbers in place while a control is being used.
- *
- * Re-rendering the panel would tear the input out from under the pointer, and the whole
- * point is to watch the other factories move as this one is changed.
- *
- * `editing` is the one control not to write back to — the box being typed into, whose
- * value is already what the user meant.
+ * Refresh the numbers in place while a control is being used: re-rendering would tear
+ * the input out from under the pointer. `editing` is the one control not written back
+ * to, being the box already holding what the user meant.
  */
 function refreshNumbers(editing?: Element | null): void {
   const result = resolveDraft(draft);
@@ -880,10 +845,9 @@ function refreshNumbers(editing?: Element | null): void {
  * Move one factory to a worker count, redistributing the rest pro rata (§3.6).
  *
  * The share is nudged until the rounding actually lands on the count asked for. Worker
- * counts come from a largest-remainder split of the whole workforce, so setting a share
- * of `n / spare` does not reliably yield `n` — and when it did not, the spare worker went
- * to some unrelated factory, which is what made adding one worker to muskets look like it
- * was raising the gunpowder surplus.
+ * counts come from a largest-remainder split of the whole workforce, so setting a
+ * share of `n / spare` does not reliably yield `n`, and the stray worker lands on an
+ * unrelated factory (§10.1).
  */
 function setWorkers(id: CommodityId, count: number): void {
   const spare = spareWorkers();
@@ -987,11 +951,9 @@ function change(now: number, before: number, unit = ""): string {
 /**
  * The Economic Union phase (§6.1, Expert only), taken one declaration at a time.
  *
- * Weakest declares first, everyone else answers, then the next weakest still unattached
- * declares, and so on. What is deliberately *not* on this screen is who else is joining:
- * the declaration is public and the answers are not, so a union's membership is a
- * surprise to its own members until it forms. Showing a predicted roster would hand the
- * player the one thing the rule says nobody has.
+ * Deliberately *not* on this screen: who else is joining. The declaration is public
+ * and the answers are not (§6.5), so a predicted roster would hand the player the one
+ * thing the rule withholds.
  */
 function unionPanel(): string {
   const ask = game.unionAsk();
@@ -1443,11 +1405,9 @@ interface Saved {
 }
 
 /**
- * Autosave, so a refresh resumes rather than starts over.
- *
- * `GameSnapshot` holds the world, the turn and the allocations but not the phase or the
- * orders, so a resume lands at the start of the saved turn. That is the honest thing to
- * restore: half a turn of orders is not a state the game has a name for.
+ * Autosave, so a refresh resumes rather than starts over. The snapshot holds no phase
+ * or orders, so a resume lands at the start of the saved turn — half a turn of orders
+ * is not a state the game has a name for.
  */
 function save(): void {
   try {
@@ -1488,12 +1448,8 @@ function begin(continent: string, nation: string, level: Level, caps: boolean): 
   });
   economy = economyFor(world);
   game = Game.fromWorld(world, economy);
-  // Balanced, not raw. `subsistenceAllocation` is a plausible-looking split that falls
-  // straight into the §3.5 priority trap: charcoal is shallower in the graph than farm
-  // tools, so it takes every ton of lumber and the tools make nothing at all. Handing
-  // that to the player as their opening position put them 192 tons of food in deficit
-  // on turn one while the engine's own default for an unallocated nation — the balanced
-  // version, worth +138 on the same ground — went to every AI instead.
+  // Balanced, not raw: the raw split falls into the §3.5 priority trap and would open
+  // the player 192 tons in deficit where every AI gets the balanced one (§10.1).
   draft = balanceAllocation(economy, subsistenceAllocation(), contextFor(game), game.locked[you] ?? []);
   view = continentBounds(game.world);
   selected = null;
