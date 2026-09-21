@@ -4,6 +4,9 @@ A reimplementation of Chris Crawford's *The Global Dilemma: Guns or Butter* (199
 rebuilt from the original manual, Crawford's design retrospective, and measurements
 taken from the DOS binary running under emulation.
 
+**Play it at [gb.mitchthefat.com](https://gb.mitchthefat.com)** — it runs in the
+browser, needs no install, and saves your game in the page.
+
 No source code for the game survives — Crawford's own
 [source-release page](https://www.erasmatazz.com/library/source-code/index.html) notes
 he does not think he has anything on this title — so the design is reconstructed rather
