@@ -18,6 +18,12 @@ import { generateWorld, nationState } from "../src/worldgen.ts";
 
 const economy = new Economy();
 
+/** One whole turn, however many phases the level has (Expert adds the union phase). */
+const playWholeTurn = (game: Game) => {
+  const was = game.turn;
+  for (let guard = 0; guard < 8 && game.turn === was; guard++) game.advance();
+};
+
 describe("temperament", () => {
   it("is seeded, so a continent always faces the same opposition", () => {
     const world = generateWorld("Thule", "intermediate");
@@ -264,6 +270,47 @@ describe("production planning", () => {
     }
   });
 
+  it("grows and arms at the same time, rather than trading one away", () => {
+    // Growth is the victory metric (§1.3), but as a fraction of population it scored
+    // 0.026 against a garrison worth 2.0, so the AI drove its food surplus to zero to
+    // post one firepower per province. Both should survive the plan.
+    for (const name of ["Kublai", "Thule", "Nineveh"]) {
+      const world = generateWorld(name, "intermediate");
+      const { land, population } = nationState(world, 0);
+      const state = { level: "intermediate" as const, land, population };
+      const seed = workersFor(
+        balanceAllocation(economy, subsistenceAllocation(), state), population, land.farmland,
+      );
+      const planned = planProduction(economy, world, 0, seed);
+      const result = economy.resolve({ ...state, workers: planned });
+      assert.ok(result.agriculture.surplus > 0, `${name}: gave up growing entirely`);
+      assert.ok(result.firepower >= positionOf(world, 0).provinces.length,
+        `${name}: ${result.firepower} will not garrison the place`);
+    }
+  });
+
+  it("arms freely when the famine floor means starving costs nothing", () => {
+    // An Expert nation sits on its floor, where every depth of deficit yields the same
+    // zero growth. The old utility charged up to -4.59 for a shortfall that takes
+    // nobody, and the nation declined to build anything.
+    const world = generateWorld("Thule", "expert");
+    const { land, population } = nationState(world, 0);
+    const state = { level: "expert" as const, land, population };
+    const planned = planProduction(economy, world, 0, {});
+    const result = economy.resolve({ ...state, workers: planned });
+    assert.ok(result.agriculture.surplus < 0, "the premise: it cannot feed itself (§10.3)");
+    assert.equal(nextPopulation(population, result.agriculture.surplus, land.farmland), population,
+      "the premise: the floor absorbs the deficit");
+    assert.ok(result.firepower > 0, "so there is nothing to lose by arming");
+  });
+
+  it("prices growth above a garrison", () => {
+    assert.ok(AI.growth > AI.garrison,
+      "population is what the game is scored on (§1.3)");
+    assert.ok(AI.hunger < AI.growth,
+      "the famine gradient guides the climb, it does not price the famine");
+  });
+
   it("only staffs what the difficulty offers (§1.1)", () => {
     const world = generateWorld("Thule", "intermediate");
     const { land, population } = nationState(world, 0);
@@ -303,7 +350,7 @@ describe("a game the AI plays by itself", () => {
     game.human = -1;
     const before = game.rankings();
     for (let turn = 0; turn < 12; turn++) {
-      game.advance(); game.advance(); game.advance(); game.advance();
+      playWholeTurn(game);
     }
     const after = game.rankings();
     assert.ok(after.some((r) => r.firepower > 0), "somebody should have armed");
@@ -324,7 +371,7 @@ describe("a game the AI plays by itself", () => {
       game.human = -1;
       const start = game.rankings().map((r) => r.provinces).sort((a, b) => a - b);
       for (let turn = 0; turn < 60 && game.winner === null; turn++) {
-        game.advance(); game.advance(); game.advance(); game.advance();
+        playWholeTurn(game);
       }
       if (game.winner !== null) decided++;
       const end = game.rankings().map((r) => r.provinces).sort((a, b) => a - b);
@@ -338,7 +385,7 @@ describe("a game the AI plays by itself", () => {
     const game = Game.create("Thule", "intermediate");
     game.ai = false;
     for (let turn = 0; turn < 6; turn++) {
-      game.advance(); game.advance(); game.advance(); game.advance();
+      playWholeTurn(game);
     }
     assert.ok(
       game.rankings().every((r) => r.firepower === 0),

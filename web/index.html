@@ -27,6 +27,14 @@
           <option value="intermediate" selected>Intermediate &mdash; 4 nations</option>
           <option value="expert">Expert &mdash; 8 nations</option>
         </select>
+        <label for="f-caps">Production</label>
+        <select id="f-caps" name="caps">
+          <option value="standard" selected>Standard &mdash; no ceiling</option>
+          <option value="original">Original production caps &mdash; 32,640 tons a factory</option>
+        </select>
+        <p class="hint">The shipped game could not store more than 32,640 tons in one
+          factory. That is a limit of the machine rather than the design, so it is
+          offered rather than assumed.</p>
         <button type="submit" class="primary">Begin</button>
         <button id="resume" type="button" hidden>Resume</button>
       </form>
@@ -47,6 +55,7 @@
     <header>
       <h1>The Global Dilemma<span>Guns or Butter</span></h1>
       <div id="turn" class="turn"></div>
+      <div id="phases" class="phases"></div>
       <div id="standing" class="standing"></div>
     </header>
 
@@ -62,10 +71,11 @@
         <div id="march-control" class="march-control" hidden></div>
       </section>
 
+      <!-- Top to bottom: what this phase is asking of you, then whatever you have
+           clicked on to read about, then the standings. -->
       <section class="side">
-        <div id="phases" class="phases"></div>
-        <div id="inspector" class="pane inspect" hidden></div>
         <div id="panel" class="pane"></div>
+        <div id="inspector" class="pane inspect" hidden></div>
         <div id="nations" class="pane"></div>
       </section>
     </main>

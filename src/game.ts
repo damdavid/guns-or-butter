@@ -9,7 +9,7 @@
  * Phases are strictly sequential and there is no going back mid-turn — the original was
  * emphatic about that, and offered `Undo Turn` at the Rankings phase as the one relief.
  */
-import { AGRICULTURE, commoditiesFor } from "./data.ts";
+import { AGRICULTURE, commoditiesFor, tierYield } from "./data.ts";
 import { Economy } from "./economy.ts";
 import {
   conqueror,
@@ -24,22 +24,32 @@ import { agePairs, applyAttack, seedAffinity, willingness, type Affinity, type S
   from "./affinity.ts";
 import { affordableTons, bestFoodChain, chainDemand, staffChain } from "./planner.ts";
 import { planOrders, planProduction } from "./ai.ts";
+import {
+  canAttack, poolOf, recordFormation, recordSurvival, runRound, startRound, unionOf,
+  type RoundState, type Union, type UnionAsk,
+} from "./union.ts";
 import { makeRng } from "./rng.ts";
-import { generateWorld, nationState } from "./worldgen.ts";
-import type { CommodityId, EconomyResult, Land, Level, World } from "./types.ts";
+import { generateWorld, nationState, type WorldgenOptions } from "./worldgen.ts";
+import type { CommodityId, EconomyResult, Land, Level, Province, World } from "./types.ts";
 
 /**
  * The Economic Union phase (§6) is absent: diplomacy is specified but not built. When
  * it arrives it runs before production, and only at Expert.
  */
-export type Phase = "production" | "military-orders" | "military-execution" | "rankings";
+/**
+ * `union` is phase 0 and runs at Expert only (§1.2), which is where the Economic Union
+ * exists at all (§1.1). `beginTurn` skips it at the other levels rather than making
+ * every caller special-case an empty phase.
+ */
+export type Phase = "union" | "production" | "military-orders" | "military-execution" | "rankings";
 
-export const PHASE_ORDER: Phase[] = [
-  "production",
-  "military-orders",
-  "military-execution",
-  "rankings",
-];
+/** The phases a level actually runs. The union phase is Expert only (§1.1, §1.2). */
+export function phasesFor(level: Level): Phase[] {
+  const rest: Phase[] = ["production", "military-orders", "military-execution", "rankings"];
+  return level === "expert" ? ["union", ...rest] : rest;
+}
+
+export const PHASE_ORDER: Phase[] = phasesFor("intermediate");
 
 /** Labour as fractions of the workforce, which is what the original's sliders set. */
 export type Allocation = Readonly<Record<CommodityId, number>>;
@@ -86,6 +96,9 @@ export interface GameSnapshot {
   locked: Record<number, CommodityId[]>;
   /** Absent in saves written before §6.4 existed; reseeded from the world if so. */
   affinity?: Affinity;
+  /** Absent in saves written before §6.1 existed, which is the same as none in force. */
+  unions?: Union[];
+  lastUnions?: Union[];
 }
 
 /**
@@ -384,6 +397,15 @@ export function workersFor(
   return workers;
 }
 
+/**
+ * The economy a world is played under. The production ceiling is a game setting that
+ * has to survive a save, so it rides on the world and the economy is rebuilt from it
+ * rather than being passed around alongside.
+ */
+export function economyFor(world: World): Economy {
+  return new Economy({ productionCap: world.productionCap });
+}
+
 export class Game {
   world: World;
   turn = 1;
@@ -400,6 +422,13 @@ export class Game {
   human = 0;
   /** Set false to leave the other nations inert, which isolates the economy in a test. */
   ai = true;
+  /** Unions in force this turn (§6.1). Always empty below Expert (§1.1). */
+  unions: Union[] = [];
+
+  /** Last turn's unions, which is what makes turning on a partner a betrayal (§6.4). */
+  private lastUnions: Union[] = [];
+  /** The formation round in progress, one declaration at a time (§6.1). */
+  private round: RoundState | null = null;
 
   private production: Record<number, EconomyResult> = {};
   private transfers: Transfer[] = [];
@@ -412,16 +441,102 @@ export class Game {
     this.world = world;
     this.economy = economy;
     this.affinity = seedAffinity(world);
+    // Turn one gets its union phase like any other: it is the turn an Expert nation
+    // most needs one, since none of them can feed itself alone (§10.3).
+    this.phase = world.level === "expert" ? "union" : "production";
     this.startOfTurn = this.snapshot();
+    if (this.phase === "union") this.openUnionRound();
   }
 
   /** What each nation is worth as an ally, to `from` (§6.4). */
+  /** Standings in the shape §6.4's affinity maths wants. */
+  private standings(): Standing[] {
+    return this.rankings()
+      .filter((r) => r.provinces > 0)
+      .map((r) => ({ nation: r.nation, population: r.population, firepower: r.firepower }));
+  }
+
+  /**
+   * What a nation's firepower is made of, strongest first.
+   *
+   * Firepower is stored on provinces as a bare number, so the weapon behind it lives
+   * only in the production that made it. Public, unlike food output: §10.1 withholds
+   * that because it says exactly when a rival is about to grow, where this only
+   * describes strength already on display.
+   */
+  weaponsOf(nation: number): { id: CommodityId; tons: number; firepower: number }[] {
+    const result = this.production[nation];
+    if (!result) return [];
+    return [...this.economy.graph.table.values()]
+      .filter((c) => c.kind === "weapon")
+      .map((c) => ({
+        id: c.id,
+        tons: result.commodities[c.id]?.output ?? 0,
+        firepower: (result.commodities[c.id]?.output ?? 0) * tierYield(c.tier!),
+      }))
+      .filter((w) => w.firepower > 0)
+      .sort((a, b) => b.firepower - a.firepower);
+  }
+
+  /** The union this nation belongs to this turn, if any. */
+  unionFor(nation: number): Union | undefined {
+    return unionOf(this.unions, nation);
+  }
+
+  /**
+   * Whether this nation sets its own labour split. False for a union member who is not
+   * the founder: §6.1 hands the founder control of every member's economy for the turn,
+   * and that loss of control is what makes joining a decision rather than free food.
+   */
+  controlsEconomy(nation: number): boolean {
+    const union = this.unionFor(nation);
+    return !union || union.founder === nation;
+  }
+
+  /** The land and population this nation's production runs on — pooled, in a union. */
+  productionContext(nation: number): { level: Level; land: Land; population: number } {
+    const union = this.unionFor(nation);
+    const state = union ? poolOf(this.world, union.members) : nationState(this.world, nation);
+    return { level: this.world.level, land: state.land, population: state.population };
+  }
+
+  /**
+   * What the round is waiting on you to answer, or null if it has nothing to ask.
+   *
+   * Declarations are taken one at a time, weakest first, and everyone who might follow
+   * answers without knowing what the others chose (§6.1). So this is the whole of what
+   * a player is entitled to see: who has declared, and against whom.
+   */
+  unionAsk(): UnionAsk | null {
+    return this.round?.ask ?? null;
+  }
+
+  /** Unions settled so far in this turn's round. */
+  unionsSoFar(): readonly Union[] {
+    return this.round?.unions ?? this.unions;
+  }
+
+  /**
+   * Answer the outstanding question: a nation to declare against, a founder to follow,
+   * or null to decline. Carries the round on to the next question, or to the end.
+   */
+  answerUnion(answer: number | null): void {
+    this.requirePhase("union");
+    if (!this.round?.ask) return;
+    this.round = runRound(this.round, this.affinity, this.standings(), this.turn, this.human, answer);
+    if (this.round.done) this.settleUnions();
+  }
+
+  /** Whether §6.1's attack restriction allows this. */
+  mayAttack(from: number, to: number): boolean {
+    return canAttack(this.unions, from, to);
+  }
+
   willingnessFrom(from: number): { nation: number; willingness: number }[] {
-    const standings: Standing[] = this.rankings().map((r) => ({
-      nation: r.nation,
-      population: r.population,
-      firepower: r.firepower,
-    }));
+    // Live nations only. A nation that has lost every province is out of the game: it
+    // cannot be allied with, declared against, or usefully resented, and this list is
+    // what the union phase offers as targets.
+    const standings = this.standings();
     return standings
       .filter((s) => s.nation !== from)
       .map((s) => ({
@@ -431,11 +546,12 @@ export class Game {
       .sort((a, b) => b.willingness - a.willingness);
   }
 
-  static create(continent: string, level: Level): Game {
-    return new Game(generateWorld(continent, level), new Economy());
+  static create(continent: string, level: Level, options: WorldgenOptions = {}): Game {
+    const world = generateWorld(continent, level, options);
+    return new Game(world, economyFor(world));
   }
 
-  static fromWorld(world: World, economy = new Economy()): Game {
+  static fromWorld(world: World, economy = economyFor(world)): Game {
     return new Game(world, economy);
   }
 
@@ -514,6 +630,18 @@ export class Game {
 
   setOrder(province: number, order: MilitaryOrder): void {
     this.requirePhase("military-orders");
+    const from = this.world.provinces[province]?.nation;
+    const to = order.target === null ? null : this.world.provinces[order.target]?.nation;
+    if (
+      from !== null && from !== undefined &&
+      to !== null && to !== undefined &&
+      from !== to && !canAttack(this.unions, from, to)
+    ) {
+      // A union member may take its own target or an unaligned nation, never a member
+      // of any bloc (§6.1 as relaxed — see `canAttack`). The UI is expected to have
+      // greyed this out already; refusing it here is what makes it a rule.
+      throw new Error("a union member may not attack another union's member");
+    }
     this.orders[province] = order;
   }
 
@@ -524,6 +652,10 @@ export class Game {
    */
   advance(): TurnReport | null {
     switch (this.phase) {
+      case "union":
+        this.resolveUnions();
+        this.phase = "production";
+        return null;
       case "production":
         this.resolveProduction();
         this.phase = "military-orders";
@@ -552,6 +684,9 @@ export class Game {
     this.turn = this.startOfTurn.turn;
     this.allocations = structuredClone(this.startOfTurn.allocations);
     if (this.startOfTurn.affinity) this.affinity = structuredClone(this.startOfTurn.affinity);
+    this.unions = structuredClone(this.startOfTurn.unions ?? []);
+    this.lastUnions = structuredClone(this.startOfTurn.lastUnions ?? []);
+    this.round = null;
     // Locks deliberately survive an undo. They are a standing instruction about which
     // allocations to protect, not a move taken this turn, and losing them on undo would
     // defeat the point of having them.
@@ -559,7 +694,14 @@ export class Game {
     this.production = {};
     this.transfers = [];
     this.battles = [];
-    this.phase = "production";
+    // Back to the turn's *first* phase, which at Expert is the union round (§1.2).
+    // Undoing into production would skip it and leave the turn with no unions at all —
+    // no pooling and no attack restriction — which is a turn that could not legally
+    // have happened. The same declarations come back around: formation is deterministic
+    // given the affinity and standings just restored, and the affinity in the snapshot
+    // predates this turn's formation, so nothing is counted twice.
+    this.phase = phasesFor(this.world.level)[0]!;
+    if (this.phase === "union") this.openUnionRound();
   }
 
   snapshot(): GameSnapshot {
@@ -569,6 +711,8 @@ export class Game {
       allocations: this.allocations,
       locked: this.locked,
       affinity: this.affinity,
+      unions: this.unions,
+      lastUnions: this.lastUnions,
     });
   }
 
@@ -577,13 +721,22 @@ export class Game {
     return `${this.world.name.trim().toUpperCase()}-${this.world.level}`;
   }
 
-  static restore(snapshot: GameSnapshot, economy = new Economy()): Game {
+  static restore(snapshot: GameSnapshot, economy = economyFor(snapshot.world)): Game {
     const game = new Game(structuredClone(snapshot.world), economy);
     game.turn = snapshot.turn;
     game.allocations = structuredClone(snapshot.allocations);
     game.locked = structuredClone(snapshot.locked ?? {});
     if (snapshot.affinity) game.affinity = structuredClone(snapshot.affinity);
+    // A save resumes at the start of its turn, so this turn's unions are re-formed
+    // rather than restored; last turn's are kept, because they are what makes turning
+    // on yesterday's partner a betrayal (§6.4).
+    game.lastUnions = structuredClone(snapshot.lastUnions ?? []);
+    game.unions = [];
     game.startOfTurn = game.snapshot();
+    // The constructor opened a round against the world it was handed. Re-open it now
+    // the saved turn and affinity are in place, or it would be asking last game's
+    // question.
+    if (game.phase === "union") game.openUnionRound();
     return game;
   }
 
@@ -602,19 +755,124 @@ export class Game {
       .map((r) => r.nation);
     agePairs(this.affinity, bottom);
 
+    // The cooperation dividend, paid to every pair that held a union together. It is
+    // §6.4's only positive inflow, and the reason distrust does not ratchet to the dead
+    // end §6.3 records.
+    recordSurvival(this.affinity, this.unions);
+    this.lastUnions = this.unions;
+    this.unions = [];
+    this.round = null;
+
     this.turn++;
     this.orders = {};
-    this.production = {};
+    // Production is deliberately *not* cleared. The firepower standing on the map was
+    // made by it, so it is the only record of what those armies are armed with, and it
+    // is replaced wholesale the moment production next resolves.
     this.transfers = [];
     this.battles = [];
-    this.phase = "production";
+    // The Economic Union phase exists at Expert and nowhere else (§1.1, §1.2).
+    this.phase = this.world.level === "expert" ? "union" : "production";
     this.startOfTurn = this.snapshot();
+    if (this.phase === "union") this.openUnionRound();
+  }
+
+  /** Open the round, and carry it as far as it can go without the player. */
+  private openUnionRound(): void {
+    this.round = runRound(
+      startRound(this.standings()), this.affinity, this.standings(), this.turn, this.human,
+    );
+    if (this.round.done) this.settleUnions();
+  }
+
+  /** Book the round's result and its diplomatic consequences (§6.4). */
+  private settleUnions(): void {
+    this.unions = [...(this.round?.unions ?? [])];
+    recordFormation(this.affinity, this.unions, this.lastUnions);
+    this.round = null;
+  }
+
+  /**
+   * Leaving the union phase with a question outstanding is answering it with a shrug:
+   * you declined. The alternative — refusing to advance — makes the phase a trap for a
+   * player who has stopped caring about diplomacy this turn.
+   */
+  private resolveUnions(): void {
+    while (this.round && !this.round.done) {
+      this.round = runRound(
+        this.round, this.affinity, this.standings(), this.turn, this.human, null,
+      );
+    }
+    if (this.round) this.settleUnions();
+  }
+
+  /**
+   * A union's economy, run once over the pooled land and population (§6.1).
+   *
+   * The founder's allocation drives all of it, and the food *requirement* pools along
+   * with everything else, so a member that cannot feed itself is fed by one that can.
+   * At Expert that is not a nicety: no nation there can feed itself alone (§10.3).
+   *
+   * §6.1 pools the inputs and says nothing about the outputs, so growth and firepower
+   * are split back by population share — the members share the gain in the proportion
+   * they brought the people.
+   */
+  private resolveUnionProduction(union: Union): void {
+    const { land, population } = poolOf(this.world, union.members);
+    if (population <= 0) return;
+    const context = { level: this.world.level, land, population };
+
+    let allocation: Allocation;
+    if (union.founder === this.human && this.ai) {
+      allocation =
+        this.allocations[union.founder] ??
+        balanceAllocation(this.economy, subsistenceAllocation(), context, this.locked[union.founder] ?? []);
+    } else {
+      const spare = Math.floor(Math.max(0, population - land.farmland));
+      const seed = this.allocations[union.founder] ??
+        balanceAllocation(this.economy, subsistenceAllocation(), context);
+      const planned = planProduction(
+        this.economy,
+        this.world,
+        union.founder,
+        workersFor(seed, population, land.farmland),
+        undefined,
+        union.members,
+      );
+      allocation = spare > 0
+        ? Object.fromEntries(Object.entries(planned).map(([k, v]) => [k, v / spare]))
+        : {};
+      this.allocations[union.founder] = allocation;
+    }
+
+    const result = this.economy.resolve({
+      ...context,
+      workers: workersFor(allocation, population, land.farmland),
+    });
+    const growth = result.nextPopulation - population;
+
+    for (const member of union.members) {
+      // Every member's screen shows the union's economy, because that is the economy
+      // their people are living in this turn.
+      this.production[member] = result;
+      const state = nationState(this.world, member);
+      // Growth is shared out by farmland for the same reason it is inside a nation: the
+      // member that brought the land takes the people it can feed. Firepower and famine
+      // follow population, which is what each member actually contributed and holds.
+      const byPeople = state.population / population;
+      const share = growth > 0 && land.farmland > 0 ? state.land.farmland / land.farmland : byPeople;
+      this.applyPopulation(member, state.population, state.population + growth * share);
+      this.world = distributeWeapons(this.world, member, result.firepower * byPeople);
+    }
   }
 
   private resolveProduction(): void {
     this.production = {};
+    // Unions run first and as one economic unit (§6.1), then everyone still on their own.
+    for (const union of this.unions) this.resolveUnionProduction(union);
+    const pooled = new Set(this.unions.flatMap((u) => u.members));
+
     for (const nation of this.world.nations) {
-      if (nation.provinces.length === 0) continue;
+      if (nation.provinces.length === 0 || pooled.has(nation.id)) continue;
       const { land, population } = nationState(this.world, nation.id);
       const spare = Math.floor(Math.max(0, population - land.farmland));
       let allocation: Allocation;
@@ -658,18 +916,43 @@ export class Game {
   }
 
   /**
-   * Push a nation's population change back down to its provinces, in proportion to
-   * where its people already are. The economy works on nation totals but the map holds
-   * population per province, and conquest moves provinces between nations, so the two
-   * have to be reconciled every turn.
+   * Push a nation's population change back down to its provinces. The economy works on
+   * nation totals but the map holds population per province, and conquest moves
+   * provinces between nations, so the two have to be reconciled every turn.
+   *
+   * **Growth settles in proportion to farmland, not to the people already there.**
+   * Taking a province cuts its population to what its farmland can feed (§5.7), which
+   * leaves it at one person per acre where the rest of the nation sits at about 1.49.
+   * Distributing growth by population kept that gap open forever — every province grew
+   * by the same *percentage*, so the conquered one stayed exactly as far behind as the
+   * day it was taken. By farmland it collects the same absolute share as any equally
+   * fertile province and closes the gap instead, which makes a large food surplus the
+   * thing that repairs a conquest.
+   *
+   * Famine still takes people in proportion to population: hunger kills where the
+   * people are, and distributing a loss by acreage would ask provinces to give up
+   * people they do not have.
    */
   private applyPopulation(nation: number, before: number, after: number): void {
     if (before <= 0) return;
-    const scale = Math.max(0, after) / before;
+    const own = this.world.provinces.filter((p) => p.nation === nation);
+    if (own.length === 0) return;
+    const change = Math.max(0, after) - before;
+    const acres = own.reduce((sum, p) => sum + p.land.farmland, 0);
+
+    // Land with nothing arable on it cannot be where new people go, so a nation holding
+    // no farmland at all falls back to spreading the change over its people.
+    const byLand = change > 0 && acres > 0;
+    const shareOf = (p: Province) =>
+      byLand ? p.land.farmland / acres : p.population / before;
+
+    const moved = new Map<number, number>(
+      own.map((p) => [p.id, Math.max(0, Math.round(p.population + change * shareOf(p)))]),
+    );
     this.world = {
       ...this.world,
       provinces: this.world.provinces.map((p) =>
-        p.nation === nation ? { ...p, population: Math.max(0, Math.round(p.population * scale)) } : p,
+        moved.has(p.id) ? { ...p, population: moved.get(p.id)! } : p,
       ),
     };
   }
@@ -682,7 +965,8 @@ export class Game {
     if (!this.ai) return;
     for (const nation of this.world.nations) {
       if (nation.id === this.human || nation.provinces.length === 0) continue;
-      for (const [province, order] of Object.entries(planOrders(this.world, nation.id))) {
+      const allowed = (owner: number) => canAttack(this.unions, nation.id, owner);
+      for (const [province, order] of Object.entries(planOrders(this.world, nation.id, allowed))) {
         this.orders[Number(province)] = order;
       }
     }

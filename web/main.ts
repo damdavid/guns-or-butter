@@ -9,25 +9,29 @@
  * to the result, because the ordering rules (§5.6, and waves within a battle) are
  * invisible otherwise.
  */
-import { commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
+import { ORIGINAL_PRODUCTION_CAP, commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
 import { Economy } from "../src/economy.ts";
 import {
   Game,
   balanceAllocation,
+  economyFor,
   moveWorkers,
+  phasesFor,
   subsistenceAllocation,
   workersFor,
   type Allocation,
   type GameSnapshot,
+  type Phase,
   type Ranking,
   type TurnReport,
 } from "../src/game.ts";
+import { poolOf } from "../src/union.ts";
 import { compact, grouped } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
-import { generateWorld, nationState } from "../src/worldgen.ts";
+import { borderSegments, generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
 
-const economy = new Economy();
+let economy = new Economy();
 const you = 0;
 
 let game: Game;
@@ -48,7 +52,9 @@ let ordering: number | null = null;
 type Inspecting =
   | { kind: "province"; id: number }
   | { kind: "nation"; id: number }
-  | { kind: "factory"; id: CommodityId };
+  | { kind: "factory"; id: CommodityId }
+  /** `id` is the founder, which is what identifies a union for the turn it exists. */
+  | { kind: "union"; id: number };
 let inspect: Inspecting | null = null;
 let notice = "";
 let expanded = false;
@@ -78,13 +84,17 @@ const nationName = (id: number) => game.world.nations[id]?.name ?? `Nation ${id}
 /** What this difficulty offers (§1.1): beginner 12 commodities, intermediate 19, expert 33. */
 const levelCommodities = () => commoditiesFor(game.world.level, economy.graph.table.keys());
 
+/**
+ * The land and population production runs on. In a union that is the pooled total, not
+ * your own: §6.1 makes the members one economic unit for the turn, and the screen has
+ * to show the economy the player is actually allocating.
+ */
 function context() {
-  const { land, population } = nationState(game.world, you);
-  return { level: game.world.level, land, population };
+  return game.productionContext(you);
 }
 
 const spareWorkers = () => {
-  const { land, population } = nationState(game.world, you);
+  const { land, population } = context();
   return Math.floor(Math.max(0, population - land.farmland));
 };
 
@@ -155,20 +165,77 @@ function drawMap(): void {
   }
   // What the inspector is looking at, outlined separately from the order selection —
   // you are often reading about one province while ordering another.
-  const looking =
-    inspect?.kind === "province"
-      ? world.provinces.filter((p) => p.id === inspect!.id && p.id !== selected)
-      : inspect?.kind === "nation"
-        ? world.provinces.filter((p) => p.nation === inspect!.id)
-        : [];
-  if (looking.length > 0) {
-    // A whole nation is outlined in white: at eight provinces the outline is most of the
-    // map, and white is the one colour no nation fill or terrain mark uses.
-    const kind = inspect!.kind === "nation" ? "held" : "inspected";
-    svg.insertAdjacentHTML("beforeend", looking
+  /**
+   * Ring whole nations along their own frontier, not every province inside them.
+   *
+   * Outlining each province painted the internal province lines too, so several
+   * highlighted nations became one undifferentiated mesh of colour and you could not
+   * see where one ended and the next began. Following only the edges that are already
+   * a national boundary or coast leaves the thin province lines alone, so each nation
+   * keeps its shape — and the black national borders are drawn back over the top
+   * afterwards, which puts a crisp seam between two neighbours wearing the same colour.
+   */
+  const frontier = (nations: ReadonlySet<number>, kind: string) => {
+    if (nations.size === 0) return "";
+    const belongs = (id: number) => {
+      const owner = world.provinces[id]?.nation;
+      return owner !== null && owner !== undefined && nations.has(owner);
+    };
+    const d = borderSegments(world)
+      .filter((e) => e.kind !== "province" && e.owners.some(belongs))
+      .map((e) => `M${e.from.x.toFixed(1)},${e.from.y.toFixed(1)}L${e.to.x.toFixed(1)},${e.to.y.toFixed(1)}`)
+      .join("");
+    return d ? `<path class="highlight ${kind}" fill="none" pointer-events="none" d="${d}"/>` : "";
+  };
+
+  /** The black national borders, redrawn over a highlight so nations stay separable. */
+  const seams = () => {
+    const d = borderSegments(world)
+      .filter((e) => e.kind === "nation")
+      .map((e) => `M${e.from.x.toFixed(1)},${e.from.y.toFixed(1)}L${e.to.x.toFixed(1)},${e.to.y.toFixed(1)}`)
+      .join("");
+    return d ? `<path class="highlight seam" fill="none" pointer-events="none" d="${d}"/>` : "";
+  };
+
+  const outline = (provinces: typeof world.provinces, kind: string) =>
+    provinces
       .map((p) => `<polygon class="highlight ${kind}" fill="none" pointer-events="none" points="${
         p.border.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ")}"/>`)
-      .join(""));
+      .join("");
+
+  if (inspect?.kind === "union") {
+    // Three colours because a union has three roles, and which nation is which is the
+    // thing you are looking at the map to find out: the leader whose economy it is, the
+    // members who handed theirs over, and the one nation they may all attack.
+    const union = game.unionFor(inspect.id);
+    if (union) {
+      const members = new Set(union.members.filter((n) => n !== union.founder));
+      svg.insertAdjacentHTML("beforeend",
+        frontier(members, "member") +
+        frontier(new Set([union.target]), "foe") +
+        frontier(new Set([union.founder]), "leader") +
+        seams());
+    }
+  } else {
+    const looking =
+      inspect?.kind === "province"
+        ? world.provinces.filter((p) => p.id === inspect!.id && p.id !== selected)
+        : inspect?.kind === "nation"
+          ? world.provinces.filter((p) => p.nation === inspect!.id)
+          : [];
+    // A whole nation is outlined in white: at eight provinces the outline is most of the
+    // map, and white is the one colour no nation fill or terrain mark uses.
+    if (looking.length > 0) {
+      if (inspect!.kind === "nation") {
+        // At Expert, who a nation may attack is a live question every turn rather than
+        // a matter of geography, so the answer is drawn rather than left to be worked out.
+        const prey = world.level === "expert" ? attackableBy(inspect!.id) : new Set<number>();
+        svg.insertAdjacentHTML("beforeend",
+          frontier(prey, "foe") + frontier(new Set([inspect!.id]), "held") + seams());
+      } else {
+        svg.insertAdjacentHTML("beforeend", outline(looking, "inspected"));
+      }
+    }
   }
   el("map-hint").textContent = replaying
     ? "Replaying the turn's marches."
@@ -196,9 +263,9 @@ function applyView(): void {
  * was trying to read — and on a small continent, over the target as well. A fixed corner
  * costs a glance and covers nothing that moves.
  */
-/** What the slider is actually deciding: how much marches and how much stays behind. */
+/** The half of the decision the slider does not already show: what is left behind. */
 function marchTally(cap: number, send: number): string {
-  return `<b>${power(send)}</b> moving &middot; <b>${power(cap - send)}</b> stays`;
+  return `<b>${power(cap - send)}</b> stays`;
 }
 
 /** Production context for a game's player nation, for use before `render` has run. */
@@ -216,16 +283,23 @@ function marchControlHtml(): string {
   const cap = Math.floor(p.firepower);
   const send = sentFrom(ordering);
   // Named at both ends: the control is no longer beside the province it is ordering.
-  return `<span class="who">${p.name} &rarr;
-      ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</span>
-    <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
-    ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
-      aria-label="firepower sent from ${p.name}" /><button
-      type="button" data-mstep="${p.id}" data-by="1">+</button>
-    <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}" />
-    <span class="spare" data-tally="${p.id}">${marchTally(cap, send)}</span>
-    <button type="button" data-act="dismiss" class="dismiss"
-      title="The order stands. The next click on the map starts a new one.">Done</button>`;
+  // Laid out the way the decision reads: what stays on the left, the slider, what goes
+  // on the right. The slider is given real width — at 7rem a province holding hundreds
+  // of firepower moved several units per pixel and no exact figure could be hit.
+  return `<div class="who">${p.name} &rarr;
+      ${target.nation === you ? "reinforce" : "<b>attack</b>"} ${target.name}</div>
+    <div class="row">
+      <span class="stays" data-tally="${p.id}">${marchTally(cap, send)}</span>
+      <input type="range" min="0" max="${cap}" value="${send}" data-march="${p.id}"
+        aria-label="firepower sent from ${p.name}" />
+      <span class="moving">
+        <button type="button" data-mstep="${p.id}" data-by="-1">&minus;</button
+        ><input type="number" data-send="${p.id}" value="${send}" min="0" max="${cap}" step="1"
+          aria-label="firepower sent from ${p.name}" /><button
+          type="button" data-mstep="${p.id}" data-by="1">+</button> moving</span>
+      <button type="button" data-act="dismiss" class="dismiss" aria-label="Done"
+        title="The order stands. The next click on the map starts a new one.">&check;</button>
+    </div>`;
 }
 
 const MIN_VIEW = 80;
@@ -443,8 +517,73 @@ function factoryHtml(id: CommodityId): string {
            the top of this list takes what it needs before the rest are asked.</p>`}`;
 }
 
+/**
+ * A union's roster and what it adds up to (§6.1).
+ *
+ * The pooled totals are the reason the thing exists, so they are the body of the panel
+ * rather than a footnote: one economy's worth of people and ground, assembled out of
+ * several nations for a single turn.
+ */
+function unionHtml(founder: number): string {
+  const union = game.unionFor(founder);
+  if (!union) return "";
+  const { land, population, provinces } = poolOf(game.world, union.members);
+  const joiners = union.members.filter((n) => n !== union.founder);
+  const name = (n: number) => `${nationName(n)}${n === you ? " (you)" : ""}`;
+
+  return `<h2>Union<span class="right"><button type="button" data-act="close">Close</button></span></h2>
+    <dl>
+      <dt>Leader</dt><dd><span class="role leader"></span>${name(union.founder)}</dd>
+      <dt>Members</dt><dd>${joiners.length
+        ? joiners.map((n) => `<span class="role member"></span>${name(n)}`).join("<br />")
+        : "&mdash;"}</dd>
+      <dt>Declared against</dt><dd><span class="role foe"></span>${name(union.target)}</dd>
+      <dt><b>Pooled people</b></dt><dd><b>${people(population)}</b></dd>
+      <dt><b>Provinces</b></dt><dd><b>${provinces}</b></dd>
+      ${terrainRows(land)}
+    </dl>
+    <p class="hint">${name(union.founder)} allocates the whole of this for the turn.
+      Members may attack ${nationName(union.target)}, or any nation in no union at all
+      &mdash; but never each other, and never another bloc.</p>`;
+}
+
+/**
+ * Nations this one could actually march on: permitted by §6.1's union restriction *and*
+ * sharing a border, since you may only attack an adjacent province (§5.4).
+ *
+ * Both halves matter. A union member is allowed exactly one target, and if that target
+ * is nowhere near them the honest answer is that they can attack nobody — which is the
+ * real price of joining, and worth being able to see on the board.
+ */
+function attackableBy(nation: number): Set<number> {
+  const reachable = new Set<number>();
+  for (const p of game.world.provinces) {
+    if (p.nation !== nation) continue;
+    for (const n of p.neighbours) {
+      const owner = game.world.provinces[n.province]!.nation;
+      if (owner === null || owner === nation) continue;
+      if (game.mayAttack(nation, owner)) reachable.add(owner);
+    }
+  }
+  return reachable;
+}
+
+/**
+ * What a nation's firepower is made of. Public: §10.1 withholds food output alone,
+ * because that is the number that says when a rival is about to grow; this only
+ * describes strength the map is already showing.
+ */
+function armedWith(nation: number): string {
+  const weapons = game.weaponsOf(nation);
+  if (weapons.length === 0) return `<span class="secret">nothing</span>`;
+  return weapons
+    .map((w) => `${commodityLabel(w.id)} <span class="hint">${power(w.firepower)}</span>`)
+    .join("<br />");
+}
+
 function inspectorHtml(): string {
   if (!inspect) return "";
+  if (inspect.kind === "union") return unionHtml(inspect.id);
   if (inspect.kind === "factory") return factoryHtml(inspect.id);
   if (inspect.kind === "province") {
     const p = shownWorld().provinces[inspect.id];
@@ -463,10 +602,16 @@ function inspectorHtml(): string {
   const r = game.rankings().find((x) => x.nation === inspect!.id);
   if (!r) return "";
   const own = r.nation === you;
+  // §6.2 puts a hard "Can attack him / Cannot attack him" on the diplomacy screen, and
+  // at Expert that is a live question every turn rather than a matter of geography.
+  const canAttack = [...attackableBy(r.nation)].sort(
+    (a, b) => nationName(a).localeCompare(nationName(b)),
+  );
   return `<h2>${nationName(r.nation)}${own ? " (you)" : ""}
       <span class="right"><button type="button" data-act="close">Close</button></span></h2>
     <dl>
       <dt>Military strength</dt><dd>${power(r.firepower)}</dd>
+      <dt>Armed with</dt><dd>${armedWith(r.nation)}</dd>
       <dt>Population</dt><dd>${people(r.population)}</dd>
       <dt>Provinces</dt><dd>${r.provinces}</dd>
       ${terrainRows(r.land)}
@@ -474,6 +619,10 @@ function inspectorHtml(): string {
       <dd>${own
         ? whole(resolveDraft(draft).agriculture.food)
         : '<span class="secret">a national secret</span>'}</dd>
+      ${game.world.level === "expert" ? `<dt>Can attack</dt><dd>${
+        canAttack.length
+          ? canAttack.map((n) => `<span class="role foe"></span>${nationName(n)}`).join("<br />")
+          : '<span class="secret">nobody this turn</span>'}</dd>` : ""}
     </dl>
     ${affinityHtml(r.nation)}`;
 }
@@ -542,14 +691,41 @@ function nationsHtml(): string {
       <span class="num">${people(r.population)} people &middot; ${r.provinces} prov</span>
     </li>`)
     .join("");
+  // Unions only exist at Expert (§1.1), and only for the turn they were declared in.
+  const unions = game.unions
+    .map((u) => `<li class="${inspect?.kind === "union" && inspect.id === u.founder ? "open" : ""}"
+      data-union="${u.founder}">
+      <span class="swatch" style="background:${fill(u.founder)}"></span>
+      ${nationName(u.founder)} <span class="hint">and ${u.members.length - 1} against</span>
+      ${nationName(u.target)}
+      <span class="num">${people(poolOf(game.world, u.members).population)} people</span>
+    </li>`)
+    .join("");
+
   return `<h2>Nations <small>standing by population</small></h2>
     <ul class="nations">${rows}</ul>
+    ${unions ? `<h2 class="sub">Unions <small>this turn</small></h2>
+      <ul class="nations unions">${unions}</ul>` : ""}
     <p class="hint">Click one for its strength and territory. Food output is a national secret.</p>`;
 }
 
 // --- production ------------------------------------------------------------------
 
 function productionPanel(): string {
+  const union = game.unionFor(you);
+  const mine = game.controlsEconomy(you);
+  const banner = !union
+    ? ""
+    : mine
+      ? `<p class="union-line">You founded this turn's union against
+          ${nationName(union.target)}. You are allocating for
+          ${union.members.map(nationName).join(", ")} &mdash; their people and land are
+          pooled with yours.</p>`
+      : `<p class="union-line">You joined ${nationName(union.founder)}'s union against
+          ${nationName(union.target)}. They are allocating the pooled economy of
+          ${union.members.map(nationName).join(", ")} this turn, so there is nothing for
+          you to set (§6.1).</p>`;
+
   const result = resolveDraft(draft);
   const spare = spareWorkers();
   const ctx = context();
@@ -564,11 +740,16 @@ function productionPanel(): string {
       if (!c) return "";
       const w = workers[id] ?? 0;
       const locked = game.isLocked(you, id);
+      // In someone else's union the founder allocates the pooled economy (§6.1), so
+      // every control is dead — but the padlocks still show *your* locks, not a screen
+      // full of ticks you did not put there.
+      const frozen = !mine || locked;
       const limited = c.limitingFactor !== "Labor";
       return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""} ${
         c.surplus < -0.5 ? "deficit" : ""
       }" data-row="${id}">
         <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
+          ${!mine ? "disabled" : ""}
           title="Lock this factory against redistribution" /></td>
         <td class="name"><button type="button" class="link" data-factory="${id}"
           >${commodityLabel(id)}</button></td>
@@ -577,13 +758,13 @@ function productionPanel(): string {
         <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
         <td data-cell="lim" class="lim">${c.limitingFactor === "Labor" ? "&mdash;" : commodityLabel(c.limitingFactor)}</td>
         <td class="tune">
-          <button type="button" data-step="${id}" data-by="-1" ${locked ? "disabled" : ""}>&minus;</button
+          <button type="button" data-step="${id}" data-by="-1" ${frozen ? "disabled" : ""}>&minus;</button
           ><input type="number" data-workers="${id}" value="${w}" min="0" max="${spare}" step="1"
-            ${locked ? "disabled" : ""} aria-label="workers in ${commodityLabel(id)}" /><button
-            type="button" data-step="${id}" data-by="1" ${locked ? "disabled" : ""}>+</button>
+            ${frozen ? "disabled" : ""} aria-label="workers in ${commodityLabel(id)}" /><button
+            type="button" data-step="${id}" data-by="1" ${frozen ? "disabled" : ""}>+</button>
         </td>
         <td class="slider"><input type="range" min="0" max="${spare}" value="${w}"
-          data-slider="${id}" ${locked ? "disabled" : ""} /></td>
+          data-slider="${id}" ${frozen ? "disabled" : ""} /></td>
       </tr>`;
     })
     .join("");
@@ -591,7 +772,8 @@ function productionPanel(): string {
   return `<h2>Production
       <span class="right"><button type="button" data-act="expand">${expanded ? "Shrink" : "Expand"}</button></span>
     </h2>
-    <table class="production">
+    ${banner}
+    <table class="production${mine ? "" : " read-only"}">
       <colgroup>
         <col class="c-lock" /><col class="c-name" /><col class="c-num" /><col class="c-num" />
         <col class="c-num" /><col class="c-short" /><col class="c-tune" /><col class="c-slider" />
@@ -728,7 +910,10 @@ function sentFrom(province: number): number {
   const p = game.world.provinces[province];
   const order = game.orders[province];
   if (!p || !order || order.target === null) return 0;
-  return Math.min(Math.floor(p.firepower), Math.floor(p.firepower * order.marchFraction));
+  // The epsilon is not cosmetic. The order stores a *fraction*, so a slider set to 6 of
+  // 19.4 saves 6/19.4 and reads back 19.4 x that = 5.99999..., which floors to 5. The
+  // exact figure you asked for was the one value you could not get.
+  return Math.min(Math.floor(p.firepower), Math.floor(p.firepower * order.marchFraction + 1e-9));
 }
 
 function ordersPanel(): string {
@@ -797,6 +982,62 @@ function change(now: number, before: number, unit = ""): string {
   if (delta === 0) return "";
   const sign = delta > 0 ? "+" : "&minus;";
   return ` <span class="delta ${delta > 0 ? "up" : "down"}">${sign}${people(Math.abs(delta))}${unit}</span>`;
+}
+
+/**
+ * The Economic Union phase (§6.1, Expert only), taken one declaration at a time.
+ *
+ * Weakest declares first, everyone else answers, then the next weakest still unattached
+ * declares, and so on. What is deliberately *not* on this screen is who else is joining:
+ * the declaration is public and the answers are not, so a union's membership is a
+ * surprise to its own members until it forms. Showing a predicted roster would hand the
+ * player the one thing the rule says nobody has.
+ */
+function unionPanel(): string {
+  const ask = game.unionAsk();
+  const settled = game.unionsSoFar();
+  const name = (n: number) => `${nationName(n)}${n === you ? " (you)" : ""}`;
+
+  const formed = settled.length
+    ? `<h3>Formed so far</h3>${settled.map((u) => `<div class="offer">
+        <dt>${name(u.founder)} <span class="hint">and ${u.members.length - 1} against</span>
+          ${name(u.target)}</dt>
+        <dd>${u.members.map(name).join(", ")}</dd>
+      </div>`).join("")}`
+    : "";
+
+  let question: string;
+  if (!ask) {
+    question = `<p class="hint">The declarations are finished${settled.length ? "" : " and nobody formed a union"}.</p>`;
+  } else if (ask.kind === "declare") {
+    // "A player can choose any other nation" — so every one of them is offered, worst
+    // regarded first, since that is the order the question is usually answered in.
+    const choices = game.willingnessFrom(you)
+      .map((w) => `<button type="button" data-declare="${w.nation}">${nationName(w.nation)}
+        <span class="hint">${w.willingness.toFixed(2)}</span></button>`)
+      .reverse()
+      .join(" ");
+    question = `<h3>You are the weakest nation still unattached</h3>
+      <p class="hint">Declare a union against any nation. The others will answer one by
+        one, and you will not learn who joined until it forms.</p>
+      <p class="declare">${choices}</p>
+      <p><button type="button" data-aloof="1">Declare nothing</button></p>`;
+  } else {
+    question = `<h3>${nationName(ask.founder)} has declared against ${name(ask.target)}</h3>
+      <p class="hint">Join and you pool your people and land into
+        ${nationName(ask.founder)}'s economy for the turn &mdash; they allocate all of
+        it &mdash; and you may attack ${nationName(ask.target)} or any unaligned nation,
+        but no member of any union. You do not know who else is joining.</p>
+      <p class="declare">
+        <button type="button" data-join="${ask.founder}">Join ${nationName(ask.founder)}</button>
+        <button type="button" data-aloof="1">Stand aloof</button></p>`;
+  }
+
+  return `<h2>Economic Union</h2>
+    <p class="hint">The weakest player declares first and the rest answer, then the next
+      weakest still unattached declares, until nobody is left to join.</p>
+    ${question}
+    ${formed}`;
 }
 
 function rankingsPanel(): string {
@@ -934,28 +1175,35 @@ async function replay(before: World, report: TurnReport): Promise<void> {
 
 // --- shell -----------------------------------------------------------------------
 
-const PHASES = [
-  ["production", "Production"],
-  ["military-orders", "Orders"],
-  ["military-execution", "Execution"],
-  ["rankings", "Rankings"],
-] as const;
+const PHASE_LABELS: Record<Phase, string> = {
+  union: "Unions",
+  production: "Production",
+  "military-orders": "Orders",
+  "military-execution": "Execution",
+  rankings: "Rankings",
+};
 
 function render(): void {
-  const index = PHASES.findIndex(([p]) => p === game.phase);
-  el("phases").innerHTML = PHASES.map(([p, label], i) =>
-    `<span class="${p === game.phase ? "on" : i < index ? "done" : ""}">${label}</span>`).join("");
+  // Expert runs a fifth phase the others do not (§1.1), so the tracker is built from
+  // the level's own phase list rather than a fixed four.
+  const phases = phasesFor(game.world.level);
+  const index = phases.indexOf(game.phase);
+  el("phases").innerHTML = phases.map((p, i) =>
+    `<span class="${p === game.phase ? "on" : i < index ? "done" : ""}">${PHASE_LABELS[p]}</span>`).join("");
   el("turn").textContent = `Turn ${game.turn}`;
 
   const mine = game.rankings().find((r) => r.nation === you);
-  el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}
+  const capped = game.world.productionCap !== undefined;
+  el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}${
+    capped ? " &middot; original caps" : ""}
        &middot; you are <b>${nationName(you)}</b> &middot; ${people(mine?.population ?? 0)} people,
        ${mine?.provinces ?? 0} provinces`;
 
   document.body.classList.toggle("expanded", expanded && game.phase === "production");
 
   el("panel").innerHTML =
-    game.phase === "production" ? productionPanel()
+    game.phase === "union" ? unionPanel()
+    : game.phase === "production" ? productionPanel()
     : game.phase === "military-orders" ? ordersPanel()
     : game.phase === "military-execution" ? executionPanel()
     : rankingsPanel();
@@ -969,12 +1217,14 @@ function render(): void {
   el("nations").innerHTML = nationsHtml();
 
   const advance = el<HTMLButtonElement>("advance");
-  advance.textContent = {
+  const nextLabel: Record<Phase, string> = {
+    union: "Settle the unions",
     production: "Begin military orders",
     "military-orders": "Execute orders",
     "military-execution": "See rankings",
     rankings: "Next turn",
-  }[game.phase];
+  };
+  advance.textContent = nextLabel[game.phase];
   advance.className = "primary";
   advance.disabled = replaying;
   el("undo").hidden = game.phase !== "rankings";
@@ -1056,9 +1306,17 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("click", (event) => {
   const node = (event.target as HTMLElement).closest<HTMLElement>(
-    "[data-act], [data-step], [data-mstep], [data-nation], [data-factory]",
+    "[data-act], [data-step], [data-mstep], [data-nation], [data-factory], " +
+    "[data-join], [data-declare], [data-aloof], [data-union]",
   );
   if (!node) return;
+
+  if (node.dataset.join || node.dataset.declare || node.dataset.aloof) {
+    const answer = node.dataset.join ?? node.dataset.declare;
+    game.answerUnion(answer === undefined ? null : Number(answer));
+    render();
+    return;
+  }
 
   if (node.dataset.factory) {
     const id = node.dataset.factory as CommodityId;
@@ -1082,6 +1340,12 @@ document.addEventListener("click", (event) => {
       game.setOrder(province, { ...order, marchFraction: Math.min(1, Math.max(0, send / power)) });
       render();
     }
+    return;
+  }
+  if (node.dataset.union) {
+    const id = Number(node.dataset.union);
+    inspect = inspect?.kind === "union" && inspect.id === id ? null : { kind: "union", id };
+    render();
     return;
   }
   if (node.dataset.nation) {
@@ -1130,7 +1394,8 @@ document.addEventListener("click", (event) => {
 el("advance").addEventListener("click", async () => {
   if (replaying) return;
   notice = "";
-  if (game.phase === "production") game.setAllocation(you, draft);
+  // §6.1: in someone else's union the founder allocates, so there is nothing to submit.
+  if (game.phase === "production" && game.controlsEconomy(you)) game.setAllocation(you, draft);
 
   // Combat resolves on the way into execution, so the replay runs *during* that phase —
   // after Execute orders and before See rankings.
@@ -1216,8 +1481,13 @@ function offerResume(): void {
 
 // --- start and finish ------------------------------------------------------------
 
-function begin(continent: string, nation: string, level: Level): void {
-  game = Game.fromWorld(generateWorld(continent, level, { playerNation: nation }), economy);
+function begin(continent: string, nation: string, level: Level, caps: boolean): void {
+  const world = generateWorld(continent, level, {
+    playerNation: nation,
+    ...(caps ? { productionCap: ORIGINAL_PRODUCTION_CAP } : {}),
+  });
+  economy = economyFor(world);
+  game = Game.fromWorld(world, economy);
   // Balanced, not raw. `subsistenceAllocation` is a plausible-looking split that falls
   // straight into the §3.5 priority trap: charcoal is shallower in the graph than farm
   // tools, so it takes every ton of lumber and the tools make nothing at all. Handing
@@ -1244,6 +1514,7 @@ el<HTMLFormElement>("start-form").addEventListener("submit", (event) => {
     String(data.get("continent") ?? "").trim() || "Kittycat",
     String(data.get("nation") ?? "").trim() || "Babylon",
     (String(data.get("level")) || "intermediate") as Level,
+    data.get("caps") === "original",
   );
 });
 
@@ -1292,6 +1563,7 @@ if (params.get("continent")) {
     params.get("continent")!,
     params.get("nation") ?? "Babylon",
     (params.get("level") ?? "intermediate") as Level,
+    params.get("caps") === "original",
   );
 } else {
   offerResume();

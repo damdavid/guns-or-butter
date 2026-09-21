@@ -27,8 +27,28 @@ import type { CommodityId, Land, World } from "./types.ts";
 export const AI = {
   /** Weight on holding a garrison in every province. */
   garrison: 2.0,
-  /** Weight on feeding the growth a nation is aiming for. */
-  food: 1.6,
+  /**
+   * Weight on population growth, which is the victory metric (§1.3) and so has to be
+   * able to defend itself against the military terms. Expressed as a fraction of
+   * population it was worth 0.026 against a garrison worth 2.0, and the AI duly traded
+   * away every person it could grow in order to post one firepower per province.
+   */
+  growth: 3.0,
+  /**
+   * A gentle pull out of famine. Growth alone cannot guide the climb there: at the
+   * famine floor every depth of deficit yields exactly zero growth, so the whole region
+   * is a plateau and no single move improves anything (§10.3). This is a gradient, not
+   * a cost — it is deliberately small, because below the floor the deficit charges
+   * nobody.
+   */
+  hunger: 0.4,
+  /**
+   * How much a need keeps paying once it is met. Hard saturation meant that the moment
+   * a garrison was posted the whole margin reverted to food, and the moment food hit
+   * its target the whole margin reverted to arms. A log tail lets the two trade at the
+   * margin instead, which is what "balanced" means here.
+   */
+  tail: 0.35,
   /** Weight on matching the force massed against you. */
   parity: 1.4,
   /** How far influence carries, and how much it loses per province crossed. */
@@ -93,24 +113,36 @@ export interface Position {
   opening: number;
 }
 
-export function positionOf(world: World, nation: number): Position {
-  const provinces = world.provinces.filter((p) => p.nation === nation);
+/**
+ * Read a nation's position, or a whole union's as if it were one (§6.1).
+ *
+ * A union founder allocates for every member, so its garrison need covers all their
+ * provinces and its frontier is the ground none of them holds. Passing a group rather
+ * than a nation is the only change that needs: everything downstream already works on
+ * "the provinces we hold" rather than on a nation id.
+ */
+export function positionOf(world: World, nation: number | readonly number[]): Position {
+  const group = typeof nation === "number" ? [nation] : nation;
+  const held = new Set(group);
+  const provinces = world.provinces.filter((p) => p.nation !== null && held.has(p.nation));
   const bordering = new Set<number>();
   for (const p of provinces) {
     for (const n of p.neighbours) {
-      if (world.provinces[n.province]!.nation !== nation) bordering.add(n.province);
+      const owner = world.provinces[n.province]!.nation;
+      if (owner === null || !held.has(owner)) bordering.add(n.province);
     }
   }
   let opening = Infinity;
   for (const p of provinces) {
     for (const n of p.neighbours) {
-      if (world.provinces[n.province]!.nation === nation) continue;
+      const owner = world.provinces[n.province]!.nation;
+      if (owner !== null && held.has(owner)) continue;
       opening = Math.min(opening, forceNeeded(world, p.id, n.province));
     }
   }
 
   return {
-    nation,
+    nation: group[0]!,
     provinces: provinces.map((p) => p.id),
     population: provinces.reduce((s, p) => s + p.population, 0),
     pressure: [...bordering].reduce((s, id) => s + world.provinces[id]!.firepower, 0),
@@ -124,9 +156,11 @@ export function positionOf(world: World, nation: number): Position {
  * Score an allocation. Higher is better; the units are deliberately mixed and the
  * weights are what reconciles them.
  *
- * The three saturating terms are the priorities — each contributes its weight once met
- * and nothing more, so there is no gain in overshooting a floor. Growth is the only
- * unbounded term, which is what makes population the thing ultimately maximised.
+ * Population is the victory metric (§1.3), so growth carries the heaviest weight and is
+ * what the rest trade against. Garrison and parity are floors — one firepower per
+ * province is a garrison whether you post two or ten — while growth and the conquest
+ * threshold keep paying a little past themselves, so that once food is ample the margin
+ * splits between more food and more arms instead of reverting wholly to one of them.
  */
 export function score(
   economy: Economy,
@@ -143,26 +177,37 @@ export function score(
   const foodNeed = Math.max(1, surplusForGrowth(state.population, temperament.growthTarget));
   const matchNeed = position.pressure > firepower * AI.matchAt ? position.pressure : garrisonNeed;
 
-  // Saturating above, but *not* clamped below: a starving nation has to be able to see
-  // that less starving is better. Clamping the shortfall at zero left the whole region
-  // scoring the same, and a hill climb on a plateau does nothing — measured, a nation
-  // sat at -217 tons of food and 0 firepower for 140 turns without moving a worker.
+  // A floor, for the things there is no point overshooting: one firepower per province
+  // is a garrison whether you post two or ten.
   const met = (have: number, need: number) => Math.min(1, have / need);
+  // A floor that keeps paying a little past itself, for the things where more is still
+  // worth something. Linear below the need, so shortfalls hurt in proportion and
+  // partial progress is visible to the climb; a log tail above it.
+  const reach = (have: number, need: number) => {
+    const ratio = have / need;
+    return ratio <= 1 ? ratio : 1 + AI.tail * Math.log(ratio);
+  };
+
+  // Growth rather than surplus, which also settles what to do about a deficit the
+  // famine floor absorbs: `nextPopulation` already knows about the floor, so a nation
+  // sitting on it reads as growing at zero however deep the shortfall goes — which is
+  // the truth. It was previously charged up to -4.59 for starving at no cost to anyone.
   const growth = state.population > 0
     ? (result.nextPopulation - state.population) / state.population
     : 0;
 
-  // Enough to garrison every province *and* mass the cheapest crossing. Both other
+  // Enough to garrison every province *and* mass the cheapest crossing. The other two
   // military terms are met by a bare garrison, so this is the only one that pays for an
-  // army big enough to attack with, and it rises as the neighbour arms.
+  // army big enough to attack with, and it rises as the neighbour arms. Massing is the
+  // marching phase's job (§5.6): no single province has to carry a crossing alone.
   const conquestNeed = garrisonNeed + position.opening;
 
   return (
     AI.garrison * met(firepower, garrisonNeed) +
-    AI.food * met(surplus, foodNeed) +
-    growth +
+    AI.growth * reach(growth, temperament.growthTarget) +
+    AI.hunger * Math.min(0, surplus / foodNeed) +
     temperament.militarism * AI.parity * met(firepower, matchNeed) +
-    temperament.militarism * AI.conquest * met(firepower, conquestNeed)
+    temperament.militarism * AI.conquest * reach(firepower, conquestNeed)
   );
 }
 
@@ -180,8 +225,10 @@ export function planProduction(
   nation: number,
   start: Readonly<Record<CommodityId, number>>,
   temperament = temperamentFor(world, nation),
+  /** Plan for this whole group as one economy, which is what a union founder does. */
+  members?: readonly number[],
 ): Record<CommodityId, number> {
-  const position = positionOf(world, nation);
+  const position = positionOf(world, members ?? nation);
   const land = { farmland: 0, forest: 0, mountains: 0, desert: 0 };
   for (const id of position.provinces) {
     const l = world.provinces[id]!.land;
@@ -512,9 +559,18 @@ function combinedAssault(world: World, nation: number, target: number): number[]
   return null;
 }
 
-export function planOrders(world: World, nation: number): Record<number, MilitaryOrder> {
+export function planOrders(
+  world: World,
+  nation: number,
+  /** §6.1's union restriction. Anything this rejects is not attacked, only held. */
+  mayAttack: (owner: number) => boolean = () => true,
+): Record<number, MilitaryOrder> {
   const { threat, opportunity } = influenceMap(world, nation);
   const orders: Record<number, MilitaryOrder> = {};
+  const attackable = (province: number) => {
+    const owner = world.provinces[province]!.nation;
+    return owner !== null && owner !== nation && mayAttack(owner);
+  };
 
   // Coordinated attacks first, richest target first, so a province committed to one is
   // not also asked to wander off up the gradient.
@@ -522,7 +578,7 @@ export function planOrders(world: World, nation: number): Record<number, Militar
     world.provinces
       .filter((p) => p.nation === nation)
       .flatMap((p) => p.neighbours.map((n) => n.province))
-      .filter((id) => world.provinces[id]!.nation !== nation),
+      .filter(attackable),
   )].sort((a, b) => prizeOf(world, b) - prizeOf(world, a));
 
   for (const target of targets) {
@@ -536,7 +592,7 @@ export function planOrders(world: World, nation: number): Record<number, Militar
 
     // Take the best prize the sums say can be carried alone.
     const takeable = p.neighbours
-      .filter((n) => world.provinces[n.province]!.nation !== nation)
+      .filter((n) => attackable(n.province))
       .filter((n) => canTake(world, p.id, n.province))
       .sort((a, b) => prizeOf(world, b.province) - prizeOf(world, a.province));
     if (takeable.length > 0) {

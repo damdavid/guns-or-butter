@@ -140,4 +140,11 @@ export interface World {
   terrain: TerrainFeature[];
   provinces: Province[];
   nations: Nation[];
+  /**
+   * Ceiling on a single factory's output, in tons. Absent means no ceiling.
+   *
+   * A game setting rather than geography, but it lives here so it survives a save: the
+   * snapshot carries the world, and the economy is rebuilt from it on restore.
+   */
+  productionCap?: number;
 }

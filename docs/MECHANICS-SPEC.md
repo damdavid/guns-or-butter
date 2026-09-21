@@ -84,13 +84,48 @@ snapshot taken at the start of the turn, and is available only at Rankings.
 to decide, which is the point: it exists so the marches can be watched. A UI has the
 whole report in hand for its entire duration.
 
-**The Economic Union phase is absent**, because diplomacy is specified but not built.
-It belongs before production, at Expert only.
+**The Economic Union phase runs before production, at Expert only** (`src/union.ts`).
+It is phase 0 on every Expert turn including the first, which is the turn a nation most
+needs one: none of them can feed itself alone (§10.3). The other levels never enter it,
+so `phasesFor(level)` — not a fixed four — is what a UI should build its tracker from.
+
+**The round is taken one declaration at a time.** The weakest nation declares, everyone
+still unattached answers, then the next weakest still unattached declares, and so on
+until nobody is left to join. `RoundState` carries a round across calls and `runRound`
+advances it to the next question or to the end, so a player answers each declaration on
+its own rather than committing to the whole turn at once. Leaving a question outstanding
+when the phase is advanced counts as declining it — refusing to advance would make the
+phase a trap for a player who has stopped caring about diplomacy this turn.
+
+**Nobody learns who else is joining.** The declaration is public; the answers are not.
+The candidate list is snapshotted when the declaration is made, so no nation's choice
+can be informed by another's, and a union's membership is a surprise to its own members
+until it forms. A UI that previewed a likely roster would hand the player the one thing
+the rule says nobody has.
+
+**A declaring player may name any other nation.** The AI picks its worst enemy by `W`
+(§6.4); a person is offered all of them, worst regarded first.
 
 **Population lives on provinces, but the economy works on nation totals.** Food surplus
-is resolved per nation and then pushed back down in proportion to where the people
-already are, because conquest moves provinces between nations and the two views have to
-be reconciled every turn.
+is resolved per nation and then pushed back down to the provinces, because conquest
+moves provinces between nations and the two views have to be reconciled every turn.
+
+**Growth settles in proportion to farmland; famine takes people in proportion to
+population [F].** Taking a province cuts it to what its farmland feeds (§5.7), leaving
+it near one person per acre where the rest of the nation sits at about 1.49. Sharing
+growth out by population held that gap open forever — every province grew by the same
+*percentage*, so the conquered one stayed exactly as far behind as the day it fell, and
+the absolute gap widened as the nation grew. By farmland it takes the same absolute
+share as any equally fertile province, so a food surplus is what repairs a conquest.
+Famine keeps to population because hunger kills where the people are, and a loss shared
+by acreage would ask a province to give up people it does not have.
+
+Note what this converges to. Every acre gains the same number of people, so the
+*absolute* density gap is preserved and the *ratio* closes: measured on Kittycat, a
+province cut to 1.00 people per acre against a nation at 1.49 improves from a ratio of
+1.49 to 1.30 over seven turns and then holds there once the surplus runs out. It
+recovers in proportion and never quite in density. Filling the emptiest land first would
+reach parity instead; it is not what is built.
 
 **Labour is stored as fractions, not worker counts** — matching the original's sliders,
 and necessary because the workforce changes size every turn as population moves.
@@ -734,6 +769,36 @@ terms the allocation is already fully committed.
 
 ---
 
+### 3.7 The original production ceiling [C], offered as an option [F]
+
+The shipped game could not hold more than **32,640 tons** in one factory. That is
+255 x 128 — a byte of mantissa against a 128-ton quantum — so it is the shape of a
+DOS-era fixed-point store rather than a number anyone chose. Nothing else in §3 knows
+about it, and the measured productivity parameters were fitted well below it.
+
+It is therefore **off by default and offered as a setting on the start screen**, beside
+the continent name and the difficulty: *Standard* has no ceiling, *Original production
+caps* applies 32,640. The setting rides on the `World`, so it survives a save and the
+economy is rebuilt from it on restore rather than being carried alongside.
+
+**The ceiling is applied to capacity, not to output.** A factory that cannot exceed it
+should not be demanding inputs for tonnage it will never make: capping the output alone
+would leave the labour and raws above it ordered and wasted, which is §3.5 working
+against the player for no reason.
+
+When it bites, measured over 40-turn Expert games on three continents:
+
+| | Standard | Original caps |
+| --- | --- | --- |
+| Peak single-factory output | 49,008 (petroleum, turn 39) | 32,640 (coal, turn 37) |
+| Factory-turns at or above 32,640 | 29 | 17 |
+| Final world population | 37,968 / 38,516 / 39,377 | 37,968 / 38,516 / 39,377 |
+
+So it does bind, late, on a handful of raws — and changes nothing that matters. The
+populations are identical to the person, because the commodities that hit the ceiling
+were not the ones limiting food. Worth knowing before anyone tunes against it: at
+present this is a faithfulness setting, not a balance one.
+
 ## 4. Agriculture and population
 
 The cleanest-derived part of the model — every number below closes exactly against
@@ -1109,6 +1174,18 @@ and away from enemies. Anyone inside your circle will join. The UI labels are
 `loves / likes / dislikes / hates`, modified by `a lot / a little`, plus a hard
 `Can attack him / Cannot attack him`.
 
+**The layout was live, not a picture.** Each player declared on their own separate turn,
+and while a declaration stood the others *moved* — drifting toward the circle and back
+out of it again as they watched who else was drifting in, liking or disliking the
+company that was assembling. Joining was therefore a negotiation played out in space:
+you could see a coalition forming and change your mind about it, and your own movement
+was itself a signal to everyone still deciding.
+
+That is a materially different game from a blind vote. It makes membership common
+knowledge as it forms, so the last to commit has the most information, and it gives
+reluctance a way to express itself short of refusal. Nothing else in the design recovers
+it, so it is recorded here even though what is built is the simpler thing — see §6.5.
+
 Affinity deltas [C]:
 
 | Event | Effect |
@@ -1303,6 +1380,27 @@ Log **unions formed per turn** across a full game. Crawford's failure is visibly
 curve reaching zero. You want a roughly flat rate with *changing composition* — track
 membership churn alongside the count. If the rate holds but composition freezes, the
 underdog dividend is too strong relative to the live terms.
+
+### 6.5 Blind vote, for now [F]
+
+What is built is the sequencing of §6.2 without its negotiation. Declarations are taken
+one at a time in order of weakness, exactly as the original did, and each nation still
+unattached answers that declaration on its own. But the answers are **simultaneous and
+hidden**: the candidate list is fixed the moment a declaration is made, so no nation's
+choice can be informed by another's, and a union's membership is a surprise to its own
+members until it forms.
+
+This is a deliberate simplification and not a reading of the original. It was chosen
+because it is a complete, playable rule that needs no new interface, where the drifting
+layout needs both a spatial view and a notion of provisional commitment that can be
+withdrawn. The intent is to build the movement later; until then a UI must not preview
+a likely roster, because that would hand the player the one thing a blind vote withholds
+while giving none of what the live layout offered in exchange.
+
+Worth carrying into that work: under a blind vote the last to answer has no advantage,
+which is why order-of-weakness matters less here than it did in the original. If the
+movement is built, expect the weakest-first order to start doing real work, because the
+information asymmetry it creates is the whole point of going first.
 
 ---
 
@@ -1577,13 +1675,16 @@ guns-vs-butter tension. Re-adding any of them means re-testing that tension.
    a utility function over allocations for the economy, an influence map over the
    province graph for the military. §10.3 has what it does, what it got wrong on the
    way, and what it still cannot do.
-7. **Diplomacy** — **affinity done, unions not.** `src/affinity.ts` implements §6.4
-   whole: both channels, the decay, the saturating updates, the founding-neighbour seed,
-   the live terms and the underdog dividend, with the decision variable `W` exposed as
-   `Game.willingnessFrom`. War and the standings drive it today. The union events are
-   specified and implemented but nothing calls them, because unions themselves are the
-   part still missing — as is the acceptance test in §6.4, which measures unions per
-   turn and so cannot run yet.
+7. **Diplomacy** — **done, and needs tuning.** The one piece deliberately left out is
+   §6.2's live cocktail-party layout, where nations drift in and out of a forming union
+   in response to each other; what is built is a blind vote in the same order (§6.5).
+   `src/affinity.ts` implements §6.4 whole: both channels, the decay, the saturating
+   updates, the founding-neighbour seed, the live terms and the underdog dividend, with
+   the decision variable `W` exposed as
+   `Game.willingnessFrom`. `src/union.ts` adds §6.1 on top — formation in order of
+   weakness, the join rule, pooling, the attack restriction, and the diplomatic bill.
+   §6.4's acceptance test is instrumented in `npm run soak`. What it reports is in
+   §10.4, and it is not yet the curve §6.4 asks for.
 
 Three oracles are available while you build: the DOS build under emulation, the §8.1
 fixture, and the measurement CSVs via `npm run validate`.
@@ -1634,6 +1735,14 @@ change turned out to need:
   the purpose. Clicking a nation gives its strength, population, provinces and territory.
   **Food output is withheld for every nation but your own**, as a national secret; it is
   the one number that would tell you exactly when a rival is about to grow.
+- **What an army is armed with is public**, for every nation. Firepower is stored on
+  provinces as a bare number (§5.1), so the weapon behind it survives only in the
+  production that made it — which is why the production record is carried across the
+  turn boundary rather than cleared with the rest: the armies standing on the map were
+  armed last turn. It is shown rather than withheld because the secrecy rule above is
+  narrow and reasoned. Food says when a rival is *about to* grow; a weapon type only
+  describes strength the map is already displaying, and a tier tells you no more than
+  the firepower total already does.
 - **Execution replays the turn.** Each march travels from capital to capital and the map
   updates as it lands, because the ordering rules are invisible otherwise — that marching
   forces leave home before anything resolves (§5.6), and that waves on one province
@@ -1940,9 +2049,16 @@ victory metric (§1.3), so people are the unit of account and firepower is value
 what it protects and takes.
 
 **The economy is a utility AI.** Candidate allocations are scored by a weighted sum —
-garrison, food, growth, parity with whoever is massed against you, and the force to
-carry the cheapest crossing on your own frontier — and the best improving move is taken,
-coarse steps first. A move may be a single worker, or a whole input tree bought at once
+growth, a garrison, parity with whoever is massed against you, and the force to carry
+the cheapest crossing on your own frontier — and the best improving move is taken,
+coarse steps first.
+
+Growth carries the heaviest weight, because population is what the game is scored on
+(§1.3) and it has to be able to defend itself against the military terms. Garrison and
+parity are hard floors — one firepower per province is a garrison whether you post two
+or ten — while growth and the conquest threshold keep paying a little past themselves,
+so that once food is ample the margin splits between more food and more arms instead of
+reverting wholly to one of them. A move may be a single worker, or a whole input tree bought at once
 and proportioned the way the recipes need (§10.2), which is the only kind of move that
 can open a cold chain. The weights encode the same intent a
 priority list would, but they trade off rather than strictly outrank. Only improving
@@ -1989,6 +2105,41 @@ an attack, and the board did not move for sixty turns. The utility had no term f
 *offence*. It now scores the force that would carry the cheapest crossing on its frontier
 (`Position.opening`), weighted by militarism so a peaceable nation still declines to use
 it. The term rises as the neighbour arms, which is the arms race the game is named for.
+
+#### A sixth mistake: the wrong things were expensive
+
+Decomposing the score across the guns-and-butter split found three faults at once, and
+all of them pushed the same way.
+
+- **Growth was priced at a fortieth of a garrison.** As a fraction of population it was
+  worth 0.026 where posting one firepower per province was worth 2.0, so a four-member
+  union at Expert drove its food surplus from +102 to +1 — giving up all 47 people a
+  turn it could have grown — to buy 32 firepower. The victory metric could not defend
+  itself. It is now weighted at 3.0 and is the term the others trade against.
+- **A famine the floor absorbs was charged as though it were real.** A nation sitting on
+  its floor (§4.4.1) grows at zero however deep the shortfall goes, but the utility read
+  the *surplus* and charged up to −4.59 for starving at nobody's expense — which is why
+  every Expert nation sat at 7 to 10 firepower refusing to build. Reading growth instead
+  of surplus fixes this for free, because `nextPopulation` already knows about the
+  floor. A small `hunger` gradient on the raw surplus remains, because growth alone
+  leaves the whole sub-floor region a plateau for the climb to get lost on.
+- **Every need saturated hard.** The moment a garrison was posted the entire margin
+  reverted to food, and the moment food met its target the entire margin reverted to
+  arms. Growth and the conquest threshold now keep paying a log tail past themselves, so
+  the two trade at the margin.
+
+Measured over 30 turns at Expert on six continents, against the same runs before:
+
+| | before | after |
+| --- | --- | --- |
+| Battles per game | 36 | **84** |
+| Composition churn | 14% | **23%** |
+| World population | x7.6 | **x9.5** |
+| Games decided in 20 turns (all levels) | 3 of 12 | **6 of 12** |
+
+More fighting *and* more growth, which is the tell that the two had been competing for
+the same workers rather than trading honestly. Expert still decides no game inside 30
+turns; §10.4 has the reason, and it is not this.
 
 #### Where it stands
 
@@ -2127,6 +2278,123 @@ its own, the nudge could not start **at all**. Nothing consumes a sword, so with
 swords staffed no factory had a surplus to donate and it gave up on the first pass. The
 solver has no such state — a finished good on its own is the clearest possible statement
 of what the player wants.
+
+### 10.4 What unions do, measured
+
+§6.1 implemented as written, with §6.4's affinity gating membership, produces unions
+readily — and produces the same shape of union every turn.
+
+Across 18 games at Expert, 30 turns each:
+
+| | |
+| --- | --- |
+| Unions per turn | 2.00 early, 2.00 late — **flat**, which is what §6.4 asks for |
+| Mean size | 3.9 of 8 nations |
+| Nations attached | **94–99%** |
+| Composition changed | **14–22% of turns** |
+| World population over 30 turns | **x6 to x7.6** |
+| Games decided in 30 turns | **0 of 6** |
+
+The flat rate is the headline success: Crawford's failure is visibly a decay curve to
+zero (§6.3), and this does not decay. The cooperation dividend and the saturating
+updates do their job — distrust never ratchets shut.
+
+**But the composition barely moves, and that is the failure mode §6.4 names**: "if the
+rate holds but composition freezes, the underdog dividend is too strong relative to the
+live terms." The board settles into two blocs of four and stays there. Raising the join
+threshold hardly touches it — at `joinAt` 0.45, attachment only falls from 99% to 93% —
+because the target of a union is by construction the founder's worst enemy, who is
+usually the leader, whom the live terms make everyone dislike. So almost everyone
+prefers almost any founder to almost any target, and joins.
+
+Two consequences follow, and the second is the serious one:
+
+- **Expert stops being a war.** With 99% of nations in a union, almost nobody is free to
+  fight on their own account. No game reached a winner in 30 turns.
+- **Growth runs away.** Pooling four Expert economies is worth x6–x7.6 world population
+  in 30 turns, against nations that stagnate at their famine floor alone (§10.3). §6.3
+  records unions as the *only* brake on runaway growth; implemented faithfully they are
+  an accelerator instead.
+
+None of this is a defect in the code — it is §6.1 doing exactly what it says, which is
+the outcome §6.3 warns about arriving by a different road. The dials, in the order §6.4
+suggests turning them: the underdog `trust` component first, then `joinAt`, then a cap
+on union size, which is the one thing no source mentions and the one most likely to
+restore the churn.
+
+#### Relaxing the attack restriction changes almost nothing [F]
+
+§6.1 says members may attack the union's target and *nobody else*, neutrals included.
+Read literally that leaves a member whose target lies across the continent with no legal
+attack at all, however hostile the neighbour on its own border. `canAttack` therefore
+also permits attacking any nation in no union at all; blocs remain exclusive toward each
+other, and members still may not touch each other.
+
+**It was worth doing and it did not help.** The measured difference at Expert is inside
+the noise:
+
+| | §6.1 literal | relaxed |
+| --- | --- | --- |
+| Unions per turn | 2.00 | 2.03 |
+| Attached | 93–99% | 94–99% |
+| Composition churn | 15% | 14% |
+| World population, 30 turns | x6–x7.5 | x6–x7.6 |
+| Decided in 30 turns | 0 of 6 | 0 of 6 |
+
+The reason is the attachment rate. A permission to attack "anyone unaligned" is worth
+nothing when there is, on average, a tenth of a nation unaligned per turn. Raising
+`joinAt` to 0.45 only brings attachment to 94%, and still decides nothing.
+
+**So the funnel was never the binding constraint — universal membership is.** That
+relocates the problem: the dial to reach for is not the attack rule or the join
+threshold but whatever stops nine nations in ten joining something every single turn.
+§6.4's own candidate is the underdog dividend; a cap on union size is the blunter one,
+and is mentioned in no source.
+
+#### Pooled terrain buys nothing by itself, and costs the modicum [F]
+
+All four terrain types pool, and every raw in the union draws on the summed acreage, so
+a member with no mountains can put labour into coal that another member's mountains
+support. That much is §6.1 as written, and it is the reason a union can make petroleum
+when no member could alone.
+
+But raw capacity is `(base + m · acres) · L^a` (§2.2) and **the acreage term is linear**,
+so pooling acres multiplies nothing: double the acres and double the workers and the
+`m · acres` part simply scales through. The whole union gain is the labour exponent.
+Terrain decides *what* a union can make, never *how much more* per worker.
+
+There is a consequence worth stating plainly, because it looks like a bug when you meet
+it. `base` is the design dialogue's "modicum of natural resources" — what you extract
+with no favourable ground at all. One economic unit gets **one** modicum, where the
+members separately had one each:
+
+| Raw | `base` | union / separate, 4 members | pure labour gain `4^a` |
+| --- | --- | --- | --- |
+| Iron ore (nations with no mountains) | 0.53 | **1.21x** | 4.85x |
+| Lumber | 0.75 | 2.86x | 4.81x |
+| Sulfur | 0.02 | 10.65x | 11.03x |
+| Petroleum | 0.00 | 21.39x | 22.08x |
+
+Where the intercept is ~0 the union gets the full labour gain; where it dominates, four
+nations pooling get 1.21x the iron ore for 4x the workers. Measured against food
+surplus, giving each member's land its own modicum instead would be worth +40 to +131
+tons on a two-union and +55 to +472 on a four-union — the difference between a
+two-nation union starving and feeding itself on half the continents tested.
+
+**Kept as one modicum per union, deliberately.** The intercept was fitted as a
+per-economy floor across 53 readings, not as a property of any particular acre, so one
+economy taking one floor is the reading the measurement supports. The alternative —
+coefficients summing per member, `sum(base + m · acres_i)` — is defensible on the
+grounds that merging should not destroy natural resources, and it would make pooling
+cleanly equal to the labour exponent everywhere. It is a one-line change through the
+`overrides` hook if the runaway growth above ever needs offsetting in the other
+direction.
+
+None of this is a defect in the code — it is §6.1 doing exactly what it says, which is
+the outcome §6.3 warns about arriving by a different road. The dials, in the order §6.4
+suggests turning them: the underdog `trust` component first, then `joinAt`, then a cap
+on union size, which is the one thing no source mentions and the one most likely to
+restore the churn.
 
 ### What is still unmeasured
 

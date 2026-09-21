@@ -11,6 +11,7 @@ import { Economy } from "../src/economy.ts";
 import { nationState } from "../src/worldgen.ts";
 
 const playTurn = (game: Game) => {
+  if (game.phase === "union") game.advance(); // Expert only (§1.2)
   game.advance(); // production resolves
   const report = game.advance(); // orders resolve, and execution begins with the report
   game.advance(); // execution -> rankings
@@ -405,6 +406,156 @@ describe("moving whole workers (§3.6)", () => {
     assert.equal(moveWorkers(start, "sulfur", -50)["sulfur"], 0);
     assert.equal(moveWorkers(start, "sulfur", 9999)["sulfur"], total(start));
     assert.equal(total(moveWorkers(start, "sulfur", 9999)), total(start));
+  });
+});
+
+describe("the production ceiling as a game setting", () => {
+  it("rides on the world, so it survives a save", () => {
+    const game = Game.create("Kittycat", "intermediate", { productionCap: 500 });
+    assert.equal(game.world.productionCap, 500);
+    const resumed = Game.restore(game.snapshot());
+    assert.equal(resumed.world.productionCap, 500);
+  });
+
+  it("rebuilds the economy from the world on restore, ceiling and all", () => {
+    const game = Game.create("Kittycat", "intermediate", { productionCap: 40 });
+    game.human = -1;
+    const resumed = Game.restore(game.snapshot());
+    resumed.human = -1;
+    resumed.advance();
+    const report = resumed.advance()!;
+    for (const result of Object.values(report.production)) {
+      for (const c of Object.values(result.commodities)) {
+        assert.ok(c.output <= 40 + 1e-9, `${c.id} made ${c.output} through a ceiling of 40`);
+      }
+    }
+  });
+
+  it("is absent by default, and a game without one is unchanged", () => {
+    const plain = Game.create("Kittycat", "intermediate");
+    assert.equal(plain.world.productionCap, undefined);
+    assert.equal(Game.create("Kittycat", "intermediate").world.provinces.length,
+      plain.world.provinces.length, "the setting must not disturb worldgen");
+  });
+
+  it("plays a whole game through the ceiling without breaking an invariant", () => {
+    const game = Game.create("Kublai", "intermediate", { productionCap: 200 });
+    game.human = -1;
+    for (let turn = 0; turn < 8; turn++) {
+      playTurn(game);
+      for (const p of game.world.provinces) {
+        assert.ok(Number.isFinite(p.population) && p.population >= 0);
+        assert.ok(Number.isFinite(p.firepower) && p.firepower >= 0);
+      }
+      game.advance();
+    }
+  });
+});
+
+describe("what an army is armed with", () => {
+  it("adds up to exactly the firepower on the map", () => {
+    const game = Game.create("Kublai", "intermediate");
+    game.human = -1;
+    game.advance();
+    for (const nation of game.world.nations) {
+      const weapons = game.weaponsOf(nation.id);
+      const held = game.rankings().find((r) => r.nation === nation.id)!.firepower;
+      const sum = weapons.reduce((total, w) => total + w.firepower, 0);
+      assert.ok(Math.abs(sum - held) < 0.01,
+        `nation ${nation.id}: weapons total ${sum} against ${held} on the map`);
+    }
+  });
+
+  it("names every weapon in a mixed arsenal, strongest first", () => {
+    const economy = new Economy();
+    const game = Game.create("Kublai", "intermediate");
+    game.ai = false;
+    const { land, population } = nationState(game.world, 0);
+    const context = { level: "intermediate" as const, land, population };
+    // Ask for two weapons at once and let the balancer staff both chains.
+    game.setAllocation(0, balanceAllocation(economy, { sword: 0.5, musket: 0.5 }, context));
+    game.advance();
+
+    const weapons = game.weaponsOf(0);
+    assert.ok(weapons.length >= 2, `expected a mixed arsenal, got ${JSON.stringify(weapons)}`);
+    for (let i = 1; i < weapons.length; i++) {
+      assert.ok(weapons[i - 1]!.firepower >= weapons[i]!.firepower, "strongest first");
+    }
+    assert.ok(weapons.every((w) => w.firepower > 0), "a weapon nobody made is not listed");
+  });
+
+  it("still knows the arsenal at the start of the next turn", () => {
+    // The firepower standing on the map was made last turn, so clearing the production
+    // record with the turn would leave those armies carrying nothing identifiable.
+    const game = Game.create("Kublai", "intermediate");
+    game.human = -1;
+    while (game.turn < 2) game.advance();
+    assert.equal(game.phase, "production");
+    const armed = game.world.nations.filter((n) => game.weaponsOf(n.id).length > 0);
+    assert.ok(armed.length > 0, "the arsenal should survive into the next turn");
+  });
+});
+
+describe("where new people appear", () => {
+  const playTo = (game: Game, turn: number) => {
+    while (game.turn < turn) game.advance();
+  };
+
+  it("settles growth on farmland, so equal land gains equally however full it is", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.ai = false;
+    const mine = game.world.provinces.filter((p) => p.nation === 0);
+    // Two provinces with identical farmland, one of them emptied as a conquest would.
+    const [a, b] = [mine[0]!, mine[1]!];
+    game.world = { ...game.world, provinces: game.world.provinces.map((p) =>
+      p.id === a.id ? { ...p, land: { ...p.land, farmland: 60 }, population: 60 }
+      : p.id === b.id ? { ...p, land: { ...p.land, farmland: 60 }, population: 120 }
+      : p) };
+
+    playTo(game, 2);
+    const gainA = game.world.provinces[a.id]!.population - 60;
+    const gainB = game.world.provinces[b.id]!.population - 120;
+    assert.ok(gainA > 0, "the emptied province should grow at all");
+    assert.ok(Math.abs(gainA - gainB) <= 1,
+      `equal farmland should gain equally: ${gainA} against ${gainB}`);
+  });
+
+  it("closes the density gap a conquest opens, rather than holding it", () => {
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.ai = false;
+    const victim = game.world.provinces.find((p) => p.nation === 0)!;
+    game.world = { ...game.world, provinces: game.world.provinces.map((p) =>
+      p.id === victim.id ? { ...p, population: p.land.farmland } : p) };
+
+    const ratio = () => {
+      const p = game.world.provinces[victim.id]!;
+      const rest = game.world.provinces.filter((q) => q.nation === 0 && q.id !== p.id);
+      return (rest.reduce((s, q) => s + q.population, 0) / rest.reduce((s, q) => s + q.land.farmland, 0))
+        / (p.population / p.land.farmland);
+    };
+    const before = ratio();
+    playTo(game, 6);
+    assert.ok(ratio() < before - 0.05,
+      `the gap should narrow: ${before.toFixed(3)} -> ${ratio().toFixed(3)}`);
+  });
+
+  it("takes famine from where the people are, not from the acreage", () => {
+    // Distributing a loss by acreage would ask a province to give up people it has not
+    // got. A province with land and nobody on it should lose nobody.
+    const game = Game.create("Kittycat", "intermediate");
+    game.human = -1;
+    game.ai = false;
+    const mine = game.world.provinces.filter((p) => p.nation === 0);
+    const empty = mine[0]!;
+    game.world = { ...game.world, provinces: game.world.provinces.map((p) =>
+      p.id === empty.id ? { ...p, population: 0 } : p) };
+    // Starve the nation: everything into weapons, nothing into food.
+    game.setAllocation(0, { sword: 1 });
+    playTo(game, 2);
+    assert.equal(game.world.provinces[empty.id]!.population, 0, "nobody left to lose");
+    assert.ok(game.world.provinces.every((p) => p.population >= 0));
   });
 });
 

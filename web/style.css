@@ -41,13 +41,9 @@ h1 span { display: block; font-size: 0.8rem; color: var(--ink-soft); font-weight
 
 .turn { font-size: 1rem; font-weight: 600; letter-spacing: 0.03em; }
 
-/* The phase tracker sits above the panel whose phase it names, so the four steps read
-   as a column heading rather than as decoration in the title bar. */
 .phases { display: flex; gap: 0.35rem; flex: none; }
 .phases span {
-  flex: 1 1 0;
-  text-align: center;
-  padding: 0.28rem 0.4rem;
+  padding: 0.24rem 0.6rem;
   border: 1px solid var(--rule);
   border-radius: 2px;
   font-size: 0.78rem;
@@ -99,17 +95,15 @@ body.expanded #nations { display: none; }
 body.expanded .side {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
   overflow: hidden;
 }
-body.expanded #phases { grid-row: 1; grid-column: 1 / -1; }
-body.expanded #panel { grid-row: 2; grid-column: 1; min-height: 0; overflow-y: auto; }
+body.expanded #panel { grid-row: 1; grid-column: 1; min-height: 0; overflow-y: auto; }
 body.expanded #inspector { display: none; }
 body.expanded.inspecting .side { grid-template-columns: minmax(0, 1fr) 26rem; }
 body.expanded.inspecting #inspector {
   display: block;
-  grid-row: 2;
+  grid-row: 1;
   grid-column: 2;
   min-height: 0;
   overflow-y: auto;
@@ -363,11 +357,15 @@ tr.total td { border-top: 1px solid var(--rule); }
 }
 .march-control[hidden] { display: none; }
 .march-control b { color: var(--warn); }
-.march-control input[type="range"] { width: 7rem; }
+.march-control { flex-direction: column; align-items: stretch; gap: 0.2rem; }
+.march-control .row { display: flex; align-items: center; gap: 0.5rem; }
+/* The slider takes the slack, as the factory one does: precision here is width. */
+.march-control input[type="range"] { flex: 1 1 18rem; min-width: 12rem; }
 .march-control input[type="number"] { width: 3.6rem; }
 .march-control button { padding: 0 0.35rem; min-width: 1.4rem; }
-.march-control .who { margin-right: 0.2rem; }
-.march-control .dismiss { margin-left: 0.3rem; font-size: 1rem; line-height: 1; padding: 0 0.3rem; }
+.march-control .stays, .march-control .moving { flex: none; color: var(--ink-soft); }
+.march-control .stays { min-width: 5rem; text-align: right; }
+.march-control .dismiss { font-size: 1rem; line-height: 1; padding: 0 0.4rem; }
 
 /* Affinity, in the nation inspector. */
 h3 { font-size: 0.78rem; margin: 0.8rem 0 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
@@ -398,3 +396,50 @@ tr.idle button.link { color: inherit; }
 .delta { font-size: 0.82em; font-weight: 600; }
 .delta.up { color: var(--good); }
 .delta.down { color: var(--warn); }
+
+/* The union phase (§6.1). Offers read as a short list of deals on the table. */
+.offer { padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+.offer.chosen { background: #eef3ea; box-shadow: inset 3px 0 0 var(--good); padding-left: 0.5rem; }
+.offer dt { font-weight: 600; }
+.offer dd { margin: 0.15rem 0 0; }
+.declare { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.warn-line { color: var(--warn); font-weight: 600; }
+/* Somebody else is allocating your economy this turn, so say so before they scroll. */
+.union-line {
+  background: #f3efe2;
+  border-left: 3px solid var(--accent);
+  padding: 0.4rem 0.6rem;
+  margin: 0.4rem 0;
+}
+table.read-only { opacity: 0.75; }
+
+/* A union has three roles and the map says which is which: the leader whose economy it
+   is, the members who handed theirs over, and the one nation they may all attack. */
+svg.map .highlight.leader,
+svg.map .highlight.member,
+svg.map .highlight.foe,
+svg.map .highlight.held {
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+svg.map .highlight.leader { stroke: #fff; }
+svg.map .highlight.member { stroke: #e0b500; }
+svg.map .highlight.foe { stroke: #c0281c; }
+svg.map .highlight.held { stroke: #fff; }
+/* Redrawn over the role colour, so two neighbours wearing the same one still part. */
+svg.map .highlight.seam { stroke: #2f2a24; stroke-width: 2; stroke-linejoin: round; }
+
+.role {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.4rem;
+  border: 1px solid var(--rule);
+  vertical-align: baseline;
+}
+.role.leader { background: #fff; }
+.role.member { background: #e0b500; }
+.role.foe { background: #c0281c; }
+
+h2.sub { margin-top: 0.8rem; }
