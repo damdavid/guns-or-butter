@@ -56,8 +56,7 @@ export class Economy {
 
   /**
    * Labour-determined output ceiling, superlinear in labour — the economies-of-scale
-   * engine the whole design turns on (§3.4). Every exponent is measured, and they
-   * range from 1.126 (Lumber, Farm Tools, Sword) to 2.53 (Diesel Engine).
+   * engine the design turns on (§3.4). Every exponent is measured: 1.126 to 2.53.
    *
    * Raws draw their coefficient from their own terrain acreage; everything else has a
    * coefficient measured directly per level. Both vary by difficulty level, and the

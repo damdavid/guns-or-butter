@@ -78,17 +78,10 @@ export function commodityTable(
 /** Tier n yields 2^(n-1), for both food per ton of tool and firepower per ton (§4.3, §5.2). */
 export const tierYield = (tier: number): number => 2 ** (tier - 1);
 
+/** Display name. The ids are the binary's own names, lowercased and hyphenated (§3.2). */
 /**
- * Display name for a commodity. The ids are the lowercase, hyphenated names lifted from
- * the binary (§3.2); this is the same name as a player would read it.
- */
-/**
- * Which commodities exist at each difficulty level (§1.1).
- *
- * Read off the measurements rather than authored: the readings in `docs/*.csv` leave a
- * blank wherever a commodity could not be produced at that level, so the blanks are the
- * evidence. Beginner comes out at 12 where §1.1 says 13 — the manual's count is off by
- * one against what the binary actually offers, or it counts food as a commodity.
+ * Which commodities exist at each level (§1.1), read off the blanks in the measurement
+ * CSVs rather than authored. Beginner comes out at 12 where the manual says 13.
  */
 const BEGINNER: readonly CommodityId[] = [
   "lumber", "sulfur", "iron-ore", "coal",
@@ -126,12 +119,9 @@ export const PLAYERS: Record<Level, number> = {
 };
 
 /**
- * The ceiling a factory's output hit in the shipped game, in tons [C].
- *
- * 32640 is 255 x 128, which is what a byte of mantissa against a 128-ton quantum comes
- * to — the shape of a DOS-era fixed-point store rather than anything a designer chose.
- * It is offered as an option rather than applied always, because it is an artefact of
- * the machine and not of the design, and nothing else in §3 knows about it.
+ * The ceiling a factory's output hit in the shipped game [C]. 255 x 128 — a fixed-point
+ * artefact rather than a design choice, which is why §3.7 offers it rather than
+ * applying it.
  */
 export const ORIGINAL_PRODUCTION_CAP = 32640;
 
@@ -147,41 +137,25 @@ export const AGRICULTURE = {
 } as const;
 
 /**
- * Population response to food (§4.4), fitted to 29 readings from the DOS build (§4.4.1).
+ * Population response to food (§4.4), fitted to 29 DOS readings (§4.4.1).
  *
  *     growth  = growth * surplus / (1 + surplus / (saturation * population))
  *     decline = decline * deficit
  *     floor   = floorPerAcre * farmland        // decline stops here
  *
- * The manual's "square root" turns out not to be how the shipped game behaves: growth is
- * *linear* in surplus, and the diminishing return Crawford wanted — "we can't have them
- * doubling their population merely by doubling their food surplus" — comes from the
- * saturating denominator instead. Doubling a surplus of 0.34 per head multiplies growth
- * by 1.75, not 2.
- *
- * Accuracy against the readings: growth median 4.7%, worst 9.7%; decline median 0.0%,
- * worst 6.6%. `saturation` fitted to 2.02 and is written as measured.
+ * Growth is linear in surplus with a saturating denominator, not the manual's square
+ * root — §4.4.1 has the readings that settled it.
  */
 export const POPULATION = {
   growth: 0.4727,
   saturation: 2.0242,
-  /**
-   * Linear. Every measured deficit is shallow — at most 0.23 per head — and linear fits
-   * those to a median of 0.0%. It is taken as linear beyond them too: the saturation in
-   * the growth term exists to stop a nation buying unbounded growth with food it cannot
-   * otherwise use, and there is no counterpart to that on the way down (§4.4.1).
-   */
+  /** Linear, and taken as linear past the measured deficits too (§4.4.1). */
   decline: 0.6971,
   /**
-   * Famine will not take a nation below this multiple of its farmland. Six readings sat
-   * exactly here and lost nobody at all, to deficits as deep as 207 tons.
-   *
-   * The readings cannot tell this apart from "a nation cannot be starved below the
-   * population it started with", since a nation starts at exactly this ratio. It is
-   * farmland because a turn is a generation and nothing carries over (§3.1.1) — a
-   * remembered starting figure would be the one piece of persistent state in the design.
-   * So gaining farmland raises a nation's own floor, and taking farmland lowers its
-   * victim's.
+   * Famine will not take a nation below this multiple of its farmland. Farmland rather
+   * than a remembered starting figure, because nothing carries over (§3.1.1) — so
+   * taking land lowers your victim's floor. §4.4.1 records what the readings can and
+   * cannot tell apart here.
    */
   floorPerAcre: 1.4933,
 } as const;

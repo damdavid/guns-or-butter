@@ -1,14 +1,8 @@
 /**
- * Affinity between nations (§6.4).
- *
- * Design, not archaeology: none of this is recoverable from the original, and it exists
- * to fix the failure in §9.1, where distrust only ever accumulated and unions died out.
- * Two stored channels decay toward zero and saturate on update, so no number of
- * grievances can pin a relationship at the floor; live terms read off the current
- * standings, so threat can always overwhelm stale history.
- *
- * Unions are not built yet (§10 step 7). The union events are specified below and
- * implemented, but nothing calls them; what does fire today is war and the standings.
+ * Affinity between nations (§6.4) [F]. Exists to fix the failure in §9.1, where
+ * distrust only ever accumulated and unions died out: the two stored channels decay
+ * and saturate, so no run of grievances can pin a relationship at the floor, and live
+ * terms read the current standings so threat can overwhelm stale history.
  */
 import type { World } from "./types.ts";
 

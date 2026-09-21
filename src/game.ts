@@ -1,13 +1,8 @@
 /**
- * The turn loop (§1.2). Drives the economy, the map and the military through the phase
- * sequence, and is the first place the three actually meet.
+ * The turn loop (§1.2), and the only place the economy, the map and the military meet:
+ * weapons become firepower, food becomes population, conquest changes next turn's land.
  *
- * The couplings only exist here: weapon output becomes firepower on the map, food
- * surplus becomes population, conquest changes a nation's land and therefore next
- * turn's production, and scorched earth takes population back out again.
- *
- * Phases are strictly sequential and there is no going back mid-turn — the original was
- * emphatic about that, and offered `Undo Turn` at the Rankings phase as the one relief.
+ * Phases run one way only, with `Undo Turn` at Rankings as the single relief.
  */
 import { AGRICULTURE, commoditiesFor, tierYield } from "./data.ts";
 import { Economy } from "./economy.ts";
@@ -32,15 +27,7 @@ import { makeRng } from "./rng.ts";
 import { generateWorld, nationState, type WorldgenOptions } from "./worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Province, World } from "./types.ts";
 
-/**
- * The Economic Union phase (§6) is absent: diplomacy is specified but not built. When
- * it arrives it runs before production, and only at Expert.
- */
-/**
- * `union` is phase 0 and runs at Expert only (§1.2), which is where the Economic Union
- * exists at all (§1.1). `beginTurn` skips it at the other levels rather than making
- * every caller special-case an empty phase.
- */
+/** `union` is phase 0 and Expert only (§1.1); other levels never enter it. */
 export type Phase = "union" | "production" | "military-orders" | "military-execution" | "rankings";
 
 /** The phases a level actually runs. The union phase is Expert only (§1.1, §1.2). */
@@ -102,10 +89,8 @@ export interface GameSnapshot {
 }
 
 /**
- * Labour split for a nation with nothing better to do — scaffolding so the loop can be
- * exercised end to end, NOT an AI. Step 4 of §10 replaces it. It feeds the tier-1
- * agricultural chain, because a nation that allocates nothing starves immediately and
- * the loop has nothing to show.
+ * Opening split for a nation with nothing better to do. Raw, so it falls into the §3.5
+ * priority trap — callers balance it first (§10.1).
  */
 export function subsistenceAllocation(): Allocation {
   return {
@@ -118,19 +103,10 @@ export function subsistenceAllocation(): Allocation {
 }
 
 /**
- * Move one factory's share of the workforce, taking from or giving to the others
- * pro rata (§3.6).
+ * Move one factory's share, taking from or giving to the others pro rata (§3.6).
  *
- * This is the original's slider behaviour, and it is deliberately aggressive: the
- * manual warns that dumping everyone into one factory "can completely obliterate your
- * carefully considered worker allocations", and that falls straight out of the
- * arithmetic here rather than being a special case.
- *
- * Locked factories are pinned against the redistribution *and* against the player,
- * which is what makes the lock worth having — it is the only way to protect an
- * allocation you have got right while you fiddle with the rest.
- *
- * The total is preserved, so an allocation that starts fully committed stays that way.
+ * Deliberately aggressive, as the original's sliders were. Locked factories are pinned
+ * against the redistribution and against the player alike; the total is preserved.
  */
 export function reallocate(
   allocation: Allocation,
@@ -167,26 +143,15 @@ export function reallocate(
 }
 
 /**
- * Rebuild a labour split so that what the player has asked for is actually produced.
+ * Rebuild a labour split so what the player asked for is actually produced.
  *
- * The game's own advice is "when you see a factory that has too little or too much
- * output, just change the worker allocation until the surplus is close to zero", and an
- * earlier version did exactly that, one small nudge at a time. It could not cross a
- * valley: a cold chain yields nothing at any stage until every stage is staffed at once,
- * so no single nudge improved anything and the search stopped where it began. Worse, it
- * could not start at all from a finished good on its own — nothing consumes a sword, so
- * with only swords staffed there was no factory with a surplus to move labour from, and
- * it gave up on the first pass. On an expert two-nation union that cost 60 to 200 tons
- * of food, and the gap widened as the economy grew.
+ * Solved rather than searched (`src/planner.ts`): the finished goods with labour on
+ * them are the goods they want, the workforce is split between them in proportion, and
+ * each input tree is staffed to what its share can pay for. §10.2 records why nudging
+ * could not do this.
  *
- * So the split is solved rather than searched (see `src/planner.ts`). The finished goods
- * the player has put labour on are read as the goods they want; the workforce is divided
- * between them in proportion to that labour; and each one's whole input tree is staffed
- * to the largest tonnage its share can pay for.
- *
- * Locked factories are left exactly as they are, and their output is credited against
- * what the chains need, so locking a working iron mine helps the chains above it instead
- * of being ignored.
+ * Locked factories keep their labour, and their output is credited against what the
+ * chains need.
  */
 export function balanceAllocation(
   economy: Economy,
@@ -292,19 +257,12 @@ export function balanceAllocation(
 }
 
 /**
- * Move one factory to a whole number of workers, taking the difference from the other
- * unlocked factories pro rata — in whole workers, not in fractions (§3.6).
+ * Move one factory to a whole number of workers, in whole workers rather than shares
+ * (§3.6) — rounding shares back to integers moved factories the player had not touched.
  *
- * `reallocate` works in shares, which is what the model stores, but the player is moving
- * people. Rounding a share back into integers could take a worker off a factory the
- * player had not touched while handing two to another, so lowering sulfur by one could
- * lower charcoal by one as well. Working in integers makes the rule visible: raising a
- * factory lowers exactly one other, and lowering it raises exactly one other.
- *
- * `workforce` is the labour available to spend. Pass it and the idle pool is a
- * participant: labour stranded as unspent can be drawn back out, which is the only way a
- * factory can grow when every other factory is locked. Leave it out and the function
- * merely conserves whatever it was given.
+ * Pass `workforce` and the idle pool becomes a participant, which is the only way a
+ * factory can grow when every other one is locked. Leave it out and the total is
+ * merely conserved.
  */
 export function moveWorkers(
   current: Readonly<Record<CommodityId, number>>,
@@ -356,27 +314,19 @@ export function workersFor(
   population: number,
   farmland: number,
 ): Record<CommodityId, number> {
-  // Agricultural labour is locked at one worker per acre and is not the player's to
-  // spend (§4.1), so only the remainder can be allocated.
-  // Whole people. Population is continuous (§4.4) but a fraction of a worker cannot be
-  // put in a factory, and a fractional remainder showed up as unspendable idle labour.
+  // Only the remainder is the player's to spend: farm labour is fixed at one per acre
+  // (§4.1), and population is continuous (§4.4) where workers are whole.
   const spare = Math.floor(Math.max(0, population - farmland * AGRICULTURE.workersPerAcre));
   const total = Object.values(allocation).reduce((s, v) => s + Math.max(0, v), 0);
   if (total <= 0 || spare <= 0) return {};
-  // Fractions summing to 1 or less are taken literally, leaving the remainder idle;
-  // anything above 1 is normalised. Without that a player who deliberately holds
-  // labour back would find it silently spent anyway.
+  // Under 1 is taken literally so labour held back stays held back; over 1 normalises.
   const scale = total > 1 ? 1 / total : 1;
 
-  // Largest remainder, not a plain floor per commodity. Flooring each independently
-  // loses up to one worker per factory and reports the dust as idle labour, which is
-  // both wrong and maddening: the screen offers workers that cannot be spent because in
-  // fraction terms the allocation is already fully committed.
-  // The epsilon is not cosmetic. The UI works in whole workers and stores them back as
-  // `workers / spare`, and those fractions re-add to 0.9999999999 rather than 1 often
-  // enough to matter: the floor then swallowed a worker, and because largest remainder
-  // decides who loses it, pressing + on a factory could stop moving it at all. Typing
-  // the number worked, which is what made the bug look random.
+  // Largest remainder, not a plain floor per commodity, which would report a worker
+  // per factory as idle labour that cannot then be spent.
+  // The epsilon is not cosmetic: shares stored as `workers / spare` re-add to
+  // 0.9999999999 often enough that the floor swallowed a worker, which made the +
+  // button stop moving a factory while typing the number still worked (§10.1).
   const target = Math.floor(spare * Math.min(total, 1) + 1e-9);
   const wanted = Object.entries(allocation)
     .filter(([, fraction]) => fraction > 0)
@@ -501,11 +451,8 @@ export class Game {
   }
 
   /**
-   * What the round is waiting on you to answer, or null if it has nothing to ask.
-   *
-   * Declarations are taken one at a time, weakest first, and everyone who might follow
-   * answers without knowing what the others chose (§6.1). So this is the whole of what
-   * a player is entitled to see: who has declared, and against whom.
+   * What the round is waiting on, or null. Who declared and against whom is the whole
+   * of what a player may see — the answers are blind (§6.5).
    */
   unionAsk(): UnionAsk | null {
     return this.round?.ask ?? null;
@@ -560,23 +507,14 @@ export class Game {
     return conqueror(this.world);
   }
 
-  /**
-   * Standings, by population. Not territory and not firepower — Crawford made the
-   * measure of a nation the number of people in it, which is what gives the title its
-   * bite: guns cost you the very thing you are scored on.
-   */
+  /** Standings, by population — the measure that gives the title its bite (§1.3). */
   rankings(): Ranking[] {
     return rankingsOf(this.world);
   }
 
   /**
-   * The standings as they were before this turn's production and fighting.
-   *
-   * The snapshot is taken entering the production phase and is what undo restores, so
-   * subtracting it from `rankings()` gives the whole turn's work: growth from the food
-   * surplus and any ground that changed hands. Resuming a save mid-turn reseeds the
-   * snapshot from the position as found, so the first screen after a resume compares
-   * against itself and reports no change.
+   * The standings before this turn's production and fighting, so the difference is the
+   * whole turn's work. A resumed save reseeds the snapshot and so reports no change.
    */
   openingRankings(): Ranking[] {
     return rankingsOf(this.startOfTurn.world);
@@ -602,13 +540,8 @@ export class Game {
   }
 
   /**
-   * Pin every factory, including those standing at zero workers.
-   *
-   * Locking only the staffed ones was tried first, on the reasoning that a new industry
-   * should still be startable. In practice that is the wrong default: it leaves every
-   * unstaffed factory free to be raised, and raising one drains the unlocked economy
-   * behind your back. Locking everything and then releasing the two you mean to tune is
-   * the predictable workflow, and it makes "all" mean all.
+   * Pin every factory, unstaffed ones included: leaving those free lets raising one
+   * drain the unlocked economy behind your back, and it makes "all" mean all.
    */
   lockAll(nation: number): CommodityId[] {
     this.locked[nation] = [...this.economy.graph.table.keys()];
@@ -687,9 +620,7 @@ export class Game {
     this.unions = structuredClone(this.startOfTurn.unions ?? []);
     this.lastUnions = structuredClone(this.startOfTurn.lastUnions ?? []);
     this.round = null;
-    // Locks deliberately survive an undo. They are a standing instruction about which
-    // allocations to protect, not a move taken this turn, and losing them on undo would
-    // defeat the point of having them.
+    // Locks survive an undo: a standing instruction, not a move taken this turn.
     this.orders = {};
     this.production = {};
     this.transfers = [];
@@ -792,9 +723,8 @@ export class Game {
   }
 
   /**
-   * Leaving the union phase with a question outstanding is answering it with a shrug:
-   * you declined. The alternative — refusing to advance — makes the phase a trap for a
-   * player who has stopped caring about diplomacy this turn.
+   * Advancing with a question outstanding declines it. Refusing to advance would trap
+   * a player who has stopped caring about diplomacy this turn.
    */
   private resolveUnions(): void {
     while (this.round && !this.round.done) {
@@ -806,15 +736,8 @@ export class Game {
   }
 
   /**
-   * A union's economy, run once over the pooled land and population (§6.1).
-   *
-   * The founder's allocation drives all of it, and the food *requirement* pools along
-   * with everything else, so a member that cannot feed itself is fed by one that can.
-   * At Expert that is not a nicety: no nation there can feed itself alone (§10.3).
-   *
-   * §6.1 pools the inputs and says nothing about the outputs, so growth and firepower
-   * are split back by population share — the members share the gain in the proportion
-   * they brought the people.
+   * A union's economy, run once over the pooled land and population (§6.1). The food
+   * requirement pools too, so a member that cannot feed itself is fed by one that can.
    */
   private resolveUnionProduction(union: Union): void {
     const { land, population } = poolOf(this.world, union.members);
@@ -916,22 +839,9 @@ export class Game {
   }
 
   /**
-   * Push a nation's population change back down to its provinces. The economy works on
-   * nation totals but the map holds population per province, and conquest moves
-   * provinces between nations, so the two have to be reconciled every turn.
-   *
-   * **Growth settles in proportion to farmland, not to the people already there.**
-   * Taking a province cuts its population to what its farmland can feed (§5.7), which
-   * leaves it at one person per acre where the rest of the nation sits at about 1.49.
-   * Distributing growth by population kept that gap open forever — every province grew
-   * by the same *percentage*, so the conquered one stayed exactly as far behind as the
-   * day it was taken. By farmland it collects the same absolute share as any equally
-   * fertile province and closes the gap instead, which makes a large food surplus the
-   * thing that repairs a conquest.
-   *
-   * Famine still takes people in proportion to population: hunger kills where the
-   * people are, and distributing a loss by acreage would ask provinces to give up
-   * people they do not have.
+   * Push a nation's population change down to its provinces. Growth settles in
+   * proportion to farmland so a food surplus repairs a conquest; famine follows
+   * population, because hunger kills where the people are (§1.2.1).
    */
   private applyPopulation(nation: number, before: number, after: number): void {
     if (before <= 0) return;
@@ -940,8 +850,7 @@ export class Game {
     const change = Math.max(0, after) - before;
     const acres = own.reduce((sum, p) => sum + p.land.farmland, 0);
 
-    // Land with nothing arable on it cannot be where new people go, so a nation holding
-    // no farmland at all falls back to spreading the change over its people.
+    // Nowhere arable to put new people, so fall back to spreading over the people.
     const byLand = change > 0 && acres > 0;
     const shareOf = (p: Province) =>
       byLand ? p.land.farmland / acres : p.population / before;

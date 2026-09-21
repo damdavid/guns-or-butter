@@ -1,21 +1,7 @@
 /**
- * AI opponents (§10 step 6).
- *
- * Nothing about Crawford's AI is recoverable beyond the union-declaration rule in §6.1,
- * so this is design. Two standard mechanisms, one per half:
- *
- * - **The economy is a utility AI.** Candidate allocations are scored by a weighted sum
- *   and the best improving move is taken, rather than following a list of priorities in
- *   order. The weights encode the same intent a priority list would — garrison first,
- *   then enough food to grow, then arms — but they trade off against each other instead
- *   of strictly outranking, so a little more food can beat a little more army.
- * - **The military is an influence map.** Each nation's firepower is diffused across the
- *   province graph, giving every province a threat and an opportunity value. Orders are
- *   then gradient ascent on the difference, which produces concentration for free: inland
- *   provinces flow toward the front, and the front strikes when it can win.
- *
- * The objective behind both is §1.3: population is the victory metric, so people are the
- * unit of account and firepower is valued for what it protects and takes.
+ * AI opponents [F]: a utility AI over allocations, an influence map over the province
+ * graph. Nothing of Crawford's AI is recoverable, so §10.3 is the design and the
+ * record of what each mistake cost.
  */
 import { POPULATION, commoditiesFor } from "./data.ts";
 import { affordableTons, staffChain, type PlanContext } from "./planner.ts";
@@ -27,27 +13,11 @@ import type { CommodityId, Land, World } from "./types.ts";
 export const AI = {
   /** Weight on holding a garrison in every province. */
   garrison: 2.0,
-  /**
-   * Weight on population growth, which is the victory metric (§1.3) and so has to be
-   * able to defend itself against the military terms. Expressed as a fraction of
-   * population it was worth 0.026 against a garrison worth 2.0, and the AI duly traded
-   * away every person it could grow in order to post one firepower per province.
-   */
+  /** Weight on growth. Heaviest, so the victory metric can defend itself (§10.3). */
   growth: 3.0,
-  /**
-   * A gentle pull out of famine. Growth alone cannot guide the climb there: at the
-   * famine floor every depth of deficit yields exactly zero growth, so the whole region
-   * is a plateau and no single move improves anything (§10.3). This is a gradient, not
-   * a cost — it is deliberately small, because below the floor the deficit charges
-   * nobody.
-   */
+  /** A gradient out of famine, not a cost: below the floor, growth alone is a plateau. */
   hunger: 0.4,
-  /**
-   * How much a need keeps paying once it is met. Hard saturation meant that the moment
-   * a garrison was posted the whole margin reverted to food, and the moment food hit
-   * its target the whole margin reverted to arms. A log tail lets the two trade at the
-   * margin instead, which is what "balanced" means here.
-   */
+  /** How much a need keeps paying once met, so food and arms trade at the margin. */
   tail: 0.35,
   /** Weight on matching the force massed against you. */
   parity: 1.4,
@@ -86,12 +56,8 @@ export function temperamentFor(world: World, nation: number): Temperament {
 }
 
 /**
- * Food surplus needed for a given growth rate.
- *
- * Growth is linear in surplus with a saturating denominator (§4.4.1), and the
- * denominator is negligible at the rates an AI aims for, so the inverse is just the
- * coefficient. Note this is *not* the manual's square root: that claim did not survive
- * the readings, and a square-root rule asks for 2.3x too much food.
+ * Food surplus needed for a given growth rate. The saturating denominator (§4.4.1) is
+ * negligible at the rates an AI aims for, so the inverse is just the coefficient.
  */
 export function surplusForGrowth(population: number, rate: number): number {
   return (population * rate) / POPULATION.growth;
@@ -104,11 +70,8 @@ export interface Position {
   /** Enemy firepower in provinces bordering this nation. */
   pressure: number;
   /**
-   * Force that would carry the cheapest crossing on the frontier, or 0 if there is no
-   * frontier. Without this the utility has no reason to arm past a garrison: both
-   * saturating military terms are met at one firepower per province, so two efficient
-   * neighbours each sat on exactly enough to defend, neither could ever attack, and the
-   * board did not move for sixty turns.
+   * Force that would carry the cheapest crossing, or 0 with no frontier. Without it
+   * nothing pays for an army past a garrison and the board never moves (§10.3).
    */
   opening: number;
 }
@@ -153,14 +116,11 @@ export function positionOf(world: World, nation: number | readonly number[]): Po
 // --- the economy -----------------------------------------------------------------
 
 /**
- * Score an allocation. Higher is better; the units are deliberately mixed and the
- * weights are what reconciles them.
+ * Score an allocation; higher is better, and the weights reconcile mixed units.
  *
- * Population is the victory metric (§1.3), so growth carries the heaviest weight and is
- * what the rest trade against. Garrison and parity are floors — one firepower per
- * province is a garrison whether you post two or ten — while growth and the conquest
- * threshold keep paying a little past themselves, so that once food is ample the margin
- * splits between more food and more arms instead of reverting wholly to one of them.
+ * Growth is heaviest because population is the victory metric (§1.3). Garrison and
+ * parity are floors; growth and the conquest threshold keep paying past themselves so
+ * the margin splits rather than reverting wholly to food or to arms (§10.3).
  */
 export function score(
   economy: Economy,
@@ -177,29 +137,22 @@ export function score(
   const foodNeed = Math.max(1, surplusForGrowth(state.population, temperament.growthTarget));
   const matchNeed = position.pressure > firepower * AI.matchAt ? position.pressure : garrisonNeed;
 
-  // A floor, for the things there is no point overshooting: one firepower per province
-  // is a garrison whether you post two or ten.
+  /** A floor there is no point overshooting. */
   const met = (have: number, need: number) => Math.min(1, have / need);
-  // A floor that keeps paying a little past itself, for the things where more is still
-  // worth something. Linear below the need, so shortfalls hurt in proportion and
-  // partial progress is visible to the climb; a log tail above it.
+  /** A floor that keeps paying past itself: linear below, a log tail above. */
   const reach = (have: number, need: number) => {
     const ratio = have / need;
     return ratio <= 1 ? ratio : 1 + AI.tail * Math.log(ratio);
   };
 
-  // Growth rather than surplus, which also settles what to do about a deficit the
-  // famine floor absorbs: `nextPopulation` already knows about the floor, so a nation
-  // sitting on it reads as growing at zero however deep the shortfall goes — which is
-  // the truth. It was previously charged up to -4.59 for starving at no cost to anyone.
+  // Growth rather than surplus, so a deficit the famine floor absorbs costs nothing:
+  // `nextPopulation` already knows about the floor.
   const growth = state.population > 0
     ? (result.nextPopulation - state.population) / state.population
     : 0;
 
-  // Enough to garrison every province *and* mass the cheapest crossing. The other two
-  // military terms are met by a bare garrison, so this is the only one that pays for an
-  // army big enough to attack with, and it rises as the neighbour arms. Massing is the
-  // marching phase's job (§5.6): no single province has to carry a crossing alone.
+  // A garrison everywhere *and* the cheapest crossing: the only term that pays for an
+  // army worth attacking with. Massing it is the marching phase's job (§5.6).
   const conquestNeed = garrisonNeed + position.opening;
 
   return (
@@ -212,12 +165,8 @@ export function score(
 }
 
 /**
- * Hill-climb the allocation, coarse steps first.
- *
- * Only improving moves are taken, which is the difference from `balanceAllocation`:
- * that one chases the largest shortfall and can walk past a better allocation (§10.2).
- * Starting coarse also lets a whole cold chain open at once — a single worker into iron
- * pays nothing, sixteen might.
+ * Hill-climb the allocation, coarse steps first so a cold chain can open at once.
+ * Only improving moves are taken.
  */
 export function planProduction(
   economy: Economy,
@@ -289,15 +238,9 @@ export function planProduction(
 }
 
 /**
- * Hand `workers` people to `id`'s whole chain, proportioned the way the recipes need,
- * taking them from everyone else pro rata.
- *
- * `warmChain` puts the same flat number of people into every link, which is not how a
- * chain runs: a ton of muskets wants a particular tonnage of iron behind it and no more,
- * so a flat split starves one stage while another idles. Solving the proportions is what
- * lets the climb open a cold chain that actually produces — without it, an allocation
- * already solved for food had no improving move left and the nation built no weapons at
- * all for sixty turns.
+ * Hand `workers` to `id`'s whole chain, proportioned as the recipes need, taken from
+ * everyone else pro rata. `warmChain`'s flat split starves one stage while another
+ * idles, so this is the move that opens a cold chain (§10.3).
  */
 function investInChain(
   economy: Economy,
@@ -314,11 +257,8 @@ function investInChain(
   const staff = staffChain(economy, state, id, tons);
   if (Object.keys(staff).some((c) => !allowed.has(c))) return null;
 
-  // Affordability is worked out in fractional people but staffing rounds every stage
-  // up, so a chain that fits on paper need not fit in whole workers: a nation down to
-  // two spare could "afford" a five-stage chain and then be handed a plan needing five.
-  // Scaling the other factories to nothing does not claw that back, and the overshoot
-  // was stored as an allocation whose shares summed past 1.
+  // Affordability is fractional but staffing rounds every stage up, so a chain that
+  // fits on paper need not fit in whole workers (§10.3).
   const cost = Object.values(staff).reduce((sum, n) => sum + n, 0);
   if (cost > spare) return null;
   const used = Object.values(current).reduce((sum, n) => sum + Math.max(0, n), 0);
@@ -432,11 +372,9 @@ const prizeOf = (world: World, id: number) =>
 /**
  * Firepower needed to take `to` from `from`, inverting §5.5.
  *
- * The road matters more than anything else here: off a road the attack is quartered, so
- * the same province costs four times as much to take. An influence map that weighs only
- * the prize sends every army to the wrong border — measured, it produced a permanent
- * stalemate, with 53 firepower staring at a cross-country target it could never carry
- * while the road in was held by a province with 3.
+ * The road dominates: off it the attack is quartered, so the same province costs four
+ * times as much to take. Weighing the prize alone sends every army to the wrong
+ * border (§10.3).
  */
 export function forceNeeded(world: World, from: number, to: number): number {
   const road = world.provinces[from]!.neighbours.find((n) => n.province === to)?.road ?? false;
@@ -457,17 +395,10 @@ export function appealOf(world: World, nation: number, from: number): number {
 /**
  * Diffuse threat and opportunity across the province graph.
  *
- * Opportunity is seeded on *your own* front provinces rather than on enemy ground,
- * because the question a reserve is answering is "which of our borders should I go
- * to?" — and the answer is the one with the cheapest way in, not the one nearest the
- * fattest prize. Marching is gradient ascent on opportunity alone: an inland province
- * sees the best jumping-off point as uphill and goes there.
- *
- * Threat is deliberately *not* in that gradient. Subtracting it makes the border the
- * least attractive ground on the map, since that is where the enemy is — measured, an
- * interior province ended up sitting on 132 of a nation's 194 firepower and never
- * moving, because every neighbour looked worse than home. Threat decides whether a
- * province holds what it has, which is a different question from where to send it.
+ * Opportunity is seeded on *your own* front provinces, because what a reserve is
+ * asking is which of our borders to go to — the one with the cheapest way in, not the
+ * one nearest the fattest prize. Threat decides whether a province holds, and stays
+ * out of the marching gradient (§10.3).
  */
 export function influenceMap(world: World, nation: number): Influence {
   const n = world.provinces.length;
@@ -514,13 +445,6 @@ export function canTake(world: World, from: number, to: number): boolean {
   return effective > defender.firepower + COMBAT.defenderBonus;
 }
 
-/**
- * Orders for one nation: strike where the sums work, otherwise flow toward the front.
- *
- * Deliberate funnelling is the intent, not a side effect. A province that cannot win
- * alone marches to whichever neighbour stands better on `opportunity - threat`, which
- * pools force on the province facing the weakest, richest enemy until it *can* win.
- */
 /** What one province's assault actually lands, after §5.5's arrival loss and terrain. */
 function effectiveFrom(world: World, from: number, to: number): number {
   const road = world.provinces[from]!.neighbours.find((n) => n.province === to)?.road ?? false;
@@ -529,14 +453,9 @@ function effectiveFrom(world: World, from: number, to: number): number {
 }
 
 /**
- * Provinces that together could carry a target none of them could carry alone.
- *
- * §5.6 resolves several attacks on one province in sequence, each wave softening the
- * defender for the next, so a combined assault is a real tactic rather than a
- * coincidence. Each wave pays the arrival loss separately, which is what the `10 *
- * waves` term accounts for. Without this the AI stalled one province short of winning:
- * every attacker could see it could not take the last province alone, and none of them
- * ever tried it together.
+ * Provinces that together could carry a target none could carry alone. §5.6 resolves
+ * waves in sequence, each softening the defender for the next, so this is a real
+ * tactic and not a coincidence.
  */
 function combinedAssault(world: World, nation: number, target: number): number[] | null {
   const attackers = world.provinces
@@ -559,6 +478,13 @@ function combinedAssault(world: World, nation: number, target: number): number[]
   return null;
 }
 
+/**
+ * Orders for one nation: strike where the sums work, otherwise flow toward the front.
+ *
+ * Funnelling is the intent. A province that cannot win alone marches up `opportunity`,
+ * pooling force on the cheapest crossing until it can. Threat gates holding, never
+ * marching — subtracting it makes the border the least attractive ground (§10.3).
+ */
 export function planOrders(
   world: World,
   nation: number,

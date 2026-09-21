@@ -1,17 +1,9 @@
 /**
- * Exact chain staffing (§3.5).
+ * Exact chain staffing (§3.5). Output is `k * workers^a` and recipes are fixed ratios,
+ * so the labour a target tonnage costs can be computed outright and climbs
+ * monotonically with the target: one binary search gives the most a workforce can make.
  *
- * `balanceAllocation` moves one small share at a time, from whoever has output to spare
- * to whatever is throttling something else. That cannot cross a valley. A cold chain
- * produces nothing at any stage until every stage is staffed at once, so no single move
- * improves anything and the search stops where it started. Measured on an expert
- * two-nation union it left 60 to 200 tons of food unclaimed, and — the part that gives
- * it away — its shortfall grew as the economy grew, while the reachable optimum shrank.
- *
- * Staffing is not really a search. Output is `k * workers^a` per factory and recipes are
- * fixed ratios, so the labour any target tonnage costs can be computed outright, and it
- * climbs monotonically with the target. One binary search therefore gives the most a
- * given workforce can actually make.
+ * §10.2 records what nudging a share at a time cost instead.
  */
 import type { Economy } from "./economy.ts";
 import { tierYield } from "./data.ts";
@@ -50,11 +42,8 @@ export function workersForTons(
 }
 
 /**
- * Tons of every commodity needed to deliver `tons` of `good`, the good itself included.
- *
- * Contributions add rather than overwrite, because the tree is a graph: iron ore feeds
- * both pig iron and iron, and a plan that ordered enough for only one of them would come
- * up short at exactly the moment both chains ran.
+ * Tons of every commodity needed for `tons` of `good`, itself included. Contributions
+ * add rather than overwrite: the tree is a graph, and iron ore feeds two chains.
  */
 export function chainDemand(
   economy: Economy,
@@ -155,15 +144,9 @@ export interface FoodPlan {
 }
 
 /**
- * The tool chain that feeds the most people, and the labour to run it.
- *
- * `allowed`, when given, must contain every commodity in the chain and not merely the
- * tool at the end of it.
- *
- * Which tool wins is a property of the ground, not of the difficulty: forest makes the
- * farm-tools chain cheap through lumber and charcoal, while mountains and coal favour
- * iron plows, whose tier-2 ton is worth two of food instead of one. Both were the right
- * answer on two of four measured continents, so the choice has to be made per nation.
+ * The tool chain that feeds the most people, and the labour to run it. Which tool wins
+ * is a property of the ground rather than the level (§10.3), so it is chosen per
+ * nation. `allowed` must cover the whole chain, not just the tool at the end of it.
  */
 export function bestFoodChain(
   economy: Economy,
