@@ -26,7 +26,7 @@ import {
   type TurnReport,
 } from "../src/game.ts";
 import { poolOf } from "../src/union.ts";
-import { compact, grouped } from "../src/format.ts";
+import { compact, grouped, standing } from "../src/format.ts";
 import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/svg.ts";
 import { borderSegments, generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
@@ -496,7 +496,7 @@ function factoryHtml(id: CommodityId): string {
       <dt>Size</dt><dd>${whole(r.capacity)} tons, at this labour</dd>
       <dt>Output</dt><dd>${whole(r.output)} tons</dd>
       <dt>Surplus</dt>
-      <dd class="${r.surplus < -0.5 ? "short" : ""}">${whole(r.surplus)} tons</dd>
+      <dd class="${standing(r.surplus) === "short" ? "short" : ""}">${whole(r.surplus)} tons</dd>
       ${endUse}
     </dl>
     ${inputs.length === 0
@@ -746,7 +746,7 @@ function productionPanel(): string {
       const frozen = !mine || locked;
       const limited = c.limitingFactor !== "Labor";
       return `<tr class="${w === 0 ? "idle" : ""} ${limited ? "limited" : ""} ${
-        c.surplus < -0.5 ? "deficit" : ""
+        standing(c.surplus) === "short" ? "deficit" : ""
       }" data-row="${id}">
         <td class="lock"><input type="checkbox" data-lock="${id}" ${locked ? "checked" : ""}
           ${!mine ? "disabled" : ""}
@@ -755,7 +755,7 @@ function productionPanel(): string {
           >${commodityLabel(id)}</button></td>
         <td data-cell="cap" class="capacity">${whole(c.capacity)}</td>
         <td data-cell="out">${whole(c.output)}</td>
-        <td data-cell="sur" class="${c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : ""}">${whole(c.surplus)}</td>
+        <td data-cell="sur" class="${standing(c.surplus)}">${whole(c.surplus)}</td>
         <td data-cell="lim" class="lim">${c.limitingFactor === "Labor" ? "&mdash;" : commodityLabel(c.limitingFactor)}</td>
         <td class="tune">
           <button type="button" data-step="${id}" data-by="-1" ${frozen ? "disabled" : ""}>&minus;</button
@@ -859,11 +859,11 @@ function refreshNumbers(editing?: Element | null): void {
     row.querySelector<HTMLElement>('[data-cell="out"]')!.textContent = whole(c.output);
     const sur = row.querySelector<HTMLElement>('[data-cell="sur"]')!;
     sur.textContent = whole(c.surplus);
-    sur.className = c.surplus < -0.5 ? "short" : c.surplus > 0.5 ? "spare" : "";
+    sur.className = standing(c.surplus);
     row.querySelector<HTMLElement>('[data-cell="lim"]')!.textContent =
       c.limitingFactor === "Labor" ? "—" : commodityLabel(c.limitingFactor);
     row.classList.toggle("limited", c.limitingFactor !== "Labor");
-    row.classList.toggle("deficit", c.surplus < -0.5);
+    row.classList.toggle("deficit", standing(c.surplus) === "short");
     row.classList.toggle("idle", w === 0);
     for (const input of row.querySelectorAll<HTMLInputElement>("[data-slider], [data-workers]")) {
       if (input !== editing) input.value = String(w);
