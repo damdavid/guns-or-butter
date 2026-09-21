@@ -24,7 +24,7 @@ await build({
   outfile: out("dist/app.js"),
 });
 
-const pages = ["index.html", "play.html", "style.css", "home.css", "favicon.ico"];
+const pages = ["index.html", "play.html", "404.html", "style.css", "home.css", "favicon.ico"];
 for (const file of pages) await cp(web(file), out(file));
 await cp(web("art"), out("art"), { recursive: true });
 
