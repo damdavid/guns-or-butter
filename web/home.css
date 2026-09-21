@@ -103,3 +103,8 @@ footer p { margin: 1rem 0 0; }
   .hero { gap: 1.25rem; }
   .art { width: 100%; max-width: 320px; margin: 0 auto; }
 }
+
+/* The 404. Same furniture as the landing page, with the rule above the heading
+   dropped — there is nothing above it to divide it from. */
+.lost { border-top: 0; padding-top: 0; }
+.lost h1 { margin-bottom: 0.8rem; }

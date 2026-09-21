@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
     "dev": "esbuild web/main.ts --bundle --format=esm --sourcemap --outfile=web/dist/app.js --servedir=web --serve=5173",
     "build": "esbuild web/main.ts --bundle --format=esm --minify --outfile=web/dist/app.js",
+    "build:site": "node scripts/build-site.ts",
+    "deploy": "node scripts/build-site.ts && npx --yes wrangler deploy",
     "fixture": "node test/report-fixture.ts",
     "validate": "node test/validate-calibration.ts",
     "map": "node test/render-map.ts",

@@ -4,6 +4,9 @@ A reimplementation of Chris Crawford's *The Global Dilemma: Guns or Butter* (199
 rebuilt from the original manual, Crawford's design retrospective, and measurements
 taken from the DOS binary running under emulation.
 
+**Play it at [gb.mitchthefat.com](https://gb.mitchthefat.com)** — it runs in the
+browser, needs no install, and saves your game in the page.
+
 No source code for the game survives — Crawford's own
 [source-release page](https://www.erasmatazz.com/library/source-code/index.html) notes
 he does not think he has anything on this title — so the design is reconstructed rather
@@ -77,6 +80,21 @@ and economic unions are specified but not yet built. See §10 of the spec.
 The game takes `?continent=`, `?level=`, `?nation=` and `?caps=original` query
 parameters, so `localhost:5173/play.html?continent=Kublai&level=expert` skips the start
 screen and opens a particular world.
+
+## Deploying
+
+The game is entirely static — no server, no API, saves in `localStorage` — so it is
+served as files from the edge.
+
+    npm run build:site   # assemble site/ : pages, styles, art, minified bundle
+    npm run deploy       # assemble, then push it to Cloudflare Workers
+
+`wrangler.jsonc` declares `gb.mitchthefat.com` as a custom domain. The zone is already
+on Cloudflare DNS, so the first deploy creates the record and its certificate; there is
+nothing to set up in the dashboard. Authenticate once with `npx wrangler login`.
+
+`site/` is assembled rather than committed: `web/` mixes source and output, and a host
+should not be handed `main.ts`.
 
 Developed and verified on Node 26.8.2, which `.nvmrc` pins — `nvm use` picks it up.
 Node runs the TypeScript directly, with no build step for anything outside `web/`.
