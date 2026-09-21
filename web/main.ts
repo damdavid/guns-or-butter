@@ -9,11 +9,12 @@
  * to the result, because the ordering rules (§5.6, and waves within a battle) are
  * invisible otherwise.
  */
-import { commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
+import { ORIGINAL_PRODUCTION_CAP, commoditiesFor, commodityLabel, tierYield } from "../src/data.ts";
 import { Economy } from "../src/economy.ts";
 import {
   Game,
   balanceAllocation,
+  economyFor,
   moveWorkers,
   phasesFor,
   subsistenceAllocation,
@@ -30,7 +31,7 @@ import { NATION_FILL, continentBounds, renderMapSvg, type Rect } from "../src/sv
 import { borderSegments, generateWorld, nationState } from "../src/worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Point, World } from "../src/types.ts";
 
-const economy = new Economy();
+let economy = new Economy();
 const you = 0;
 
 let game: Game;
@@ -1192,7 +1193,9 @@ function render(): void {
   el("turn").textContent = `Turn ${game.turn}`;
 
   const mine = game.rankings().find((r) => r.nation === you);
-  el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}
+  const capped = game.world.productionCap !== undefined;
+  el("standing").innerHTML = `Continent <b>${game.world.name}</b> &middot; ${game.world.level}${
+    capped ? " &middot; original caps" : ""}
        &middot; you are <b>${nationName(you)}</b> &middot; ${people(mine?.population ?? 0)} people,
        ${mine?.provinces ?? 0} provinces`;
 
@@ -1478,8 +1481,13 @@ function offerResume(): void {
 
 // --- start and finish ------------------------------------------------------------
 
-function begin(continent: string, nation: string, level: Level): void {
-  game = Game.fromWorld(generateWorld(continent, level, { playerNation: nation }), economy);
+function begin(continent: string, nation: string, level: Level, caps: boolean): void {
+  const world = generateWorld(continent, level, {
+    playerNation: nation,
+    ...(caps ? { productionCap: ORIGINAL_PRODUCTION_CAP } : {}),
+  });
+  economy = economyFor(world);
+  game = Game.fromWorld(world, economy);
   // Balanced, not raw. `subsistenceAllocation` is a plausible-looking split that falls
   // straight into the §3.5 priority trap: charcoal is shallower in the graph than farm
   // tools, so it takes every ton of lumber and the tools make nothing at all. Handing
@@ -1506,6 +1514,7 @@ el<HTMLFormElement>("start-form").addEventListener("submit", (event) => {
     String(data.get("continent") ?? "").trim() || "Kittycat",
     String(data.get("nation") ?? "").trim() || "Babylon",
     (String(data.get("level")) || "intermediate") as Level,
+    data.get("caps") === "original",
   );
 });
 
@@ -1554,6 +1563,7 @@ if (params.get("continent")) {
     params.get("continent")!,
     params.get("nation") ?? "Babylon",
     (params.get("level") ?? "intermediate") as Level,
+    params.get("caps") === "original",
   );
 } else {
   offerResume();

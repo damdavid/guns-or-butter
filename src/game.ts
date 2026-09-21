@@ -29,7 +29,7 @@ import {
   type RoundState, type Union, type UnionAsk,
 } from "./union.ts";
 import { makeRng } from "./rng.ts";
-import { generateWorld, nationState } from "./worldgen.ts";
+import { generateWorld, nationState, type WorldgenOptions } from "./worldgen.ts";
 import type { CommodityId, EconomyResult, Land, Level, Province, World } from "./types.ts";
 
 /**
@@ -397,6 +397,15 @@ export function workersFor(
   return workers;
 }
 
+/**
+ * The economy a world is played under. The production ceiling is a game setting that
+ * has to survive a save, so it rides on the world and the economy is rebuilt from it
+ * rather than being passed around alongside.
+ */
+export function economyFor(world: World): Economy {
+  return new Economy({ productionCap: world.productionCap });
+}
+
 export class Game {
   world: World;
   turn = 1;
@@ -537,11 +546,12 @@ export class Game {
       .sort((a, b) => b.willingness - a.willingness);
   }
 
-  static create(continent: string, level: Level): Game {
-    return new Game(generateWorld(continent, level), new Economy());
+  static create(continent: string, level: Level, options: WorldgenOptions = {}): Game {
+    const world = generateWorld(continent, level, options);
+    return new Game(world, economyFor(world));
   }
 
-  static fromWorld(world: World, economy = new Economy()): Game {
+  static fromWorld(world: World, economy = economyFor(world)): Game {
     return new Game(world, economy);
   }
 
@@ -711,7 +721,7 @@ export class Game {
     return `${this.world.name.trim().toUpperCase()}-${this.world.level}`;
   }
 
-  static restore(snapshot: GameSnapshot, economy = new Economy()): Game {
+  static restore(snapshot: GameSnapshot, economy = economyFor(snapshot.world)): Game {
     const game = new Game(structuredClone(snapshot.world), economy);
     game.turn = snapshot.turn;
     game.allocations = structuredClone(snapshot.allocations);

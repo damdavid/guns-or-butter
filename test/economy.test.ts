@@ -5,7 +5,7 @@
  */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { AGRICULTURE, POPULATION, tierYield } from "../src/data.ts";
+import { AGRICULTURE, ORIGINAL_PRODUCTION_CAP, POPULATION, tierYield } from "../src/data.ts";
 import { rawCoefficient, rawParams } from "../src/terrain.ts";
 import { PARAMS } from "../src/calibration.ts";
 import { Economy, nextPopulation } from "../src/economy.ts";
@@ -18,6 +18,61 @@ const state = (over: Partial<EconomyState> = {}): EconomyState => ({
   population: 1000,
   workers: {},
   ...over,
+});
+
+describe("the original production ceiling (§3.7)", () => {
+  it("is off unless asked for", () => {
+    const plain = new Economy();
+    const state = {
+      level: "expert" as const,
+      land: { farmland: 4000, forest: 4000, mountains: 4000, desert: 4000 },
+      population: 20_000,
+      workers: { lumber: 8000 },
+    };
+    assert.ok(plain.capacity(state, "lumber") > ORIGINAL_PRODUCTION_CAP,
+      "the premise: this much labour would exceed the ceiling");
+  });
+
+  it("holds a factory to 32,640 tons however much labour it is given", () => {
+    const capped = new Economy({ productionCap: ORIGINAL_PRODUCTION_CAP });
+    const land = { farmland: 4000, forest: 4000, mountains: 4000, desert: 4000 };
+    for (const workers of [8000, 20_000, 80_000]) {
+      const at = capped.capacity(
+        { level: "expert", land, population: 200_000, workers: { lumber: workers } }, "lumber");
+      assert.ok(at <= ORIGINAL_PRODUCTION_CAP + 1e-9, `${workers} workers made ${at}`);
+    }
+    assert.equal(
+      capped.capacity(
+        { level: "expert", land, population: 200_000, workers: { lumber: 80_000 } }, "lumber"),
+      ORIGINAL_PRODUCTION_CAP,
+    );
+  });
+
+  it("leaves a factory below the ceiling exactly where it was", () => {
+    const land = { farmland: 400, forest: 400, mountains: 400, desert: 400 };
+    const state = {
+      level: "expert" as const, land, population: 2000, workers: { lumber: 80 },
+    };
+    assert.equal(
+      new Economy({ productionCap: ORIGINAL_PRODUCTION_CAP }).capacity(state, "lumber"),
+      new Economy().capacity(state, "lumber"),
+    );
+  });
+
+  it("caps capacity, so the chain above stops ordering what cannot be made", () => {
+    // Capping the output alone would leave consumers demanding tonnage the factory can
+    // never deliver, and the labour and raws feeding it wasted (§3.5).
+    const capped = new Economy({ productionCap: 10 });
+    const land = { farmland: 400, forest: 400, mountains: 400, desert: 400 };
+    const result = capped.resolve({
+      level: "intermediate", land, population: 2000,
+      workers: { lumber: 200, charcoal: 60, "iron-ore": 80, "pig-iron": 60, "farm-tools": 60 },
+    });
+    for (const c of Object.values(result.commodities)) {
+      assert.ok(c.capacity <= 10 + 1e-9, `${c.id} capacity ${c.capacity}`);
+      assert.ok(c.output <= 10 + 1e-9, `${c.id} output ${c.output}`);
+    }
+  });
 });
 
 describe("productivity function (§3.4)", () => {

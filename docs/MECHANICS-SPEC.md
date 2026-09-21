@@ -769,6 +769,36 @@ terms the allocation is already fully committed.
 
 ---
 
+### 3.7 The original production ceiling [C], offered as an option [F]
+
+The shipped game could not hold more than **32,640 tons** in one factory. That is
+255 x 128 — a byte of mantissa against a 128-ton quantum — so it is the shape of a
+DOS-era fixed-point store rather than a number anyone chose. Nothing else in §3 knows
+about it, and the measured productivity parameters were fitted well below it.
+
+It is therefore **off by default and offered as a setting on the start screen**, beside
+the continent name and the difficulty: *Standard* has no ceiling, *Original production
+caps* applies 32,640. The setting rides on the `World`, so it survives a save and the
+economy is rebuilt from it on restore rather than being carried alongside.
+
+**The ceiling is applied to capacity, not to output.** A factory that cannot exceed it
+should not be demanding inputs for tonnage it will never make: capping the output alone
+would leave the labour and raws above it ordered and wasted, which is §3.5 working
+against the player for no reason.
+
+When it bites, measured over 40-turn Expert games on three continents:
+
+| | Standard | Original caps |
+| --- | --- | --- |
+| Peak single-factory output | 49,008 (petroleum, turn 39) | 32,640 (coal, turn 37) |
+| Factory-turns at or above 32,640 | 29 | 17 |
+| Final world population | 37,968 / 38,516 / 39,377 | 37,968 / 38,516 / 39,377 |
+
+So it does bind, late, on a handful of raws — and changes nothing that matters. The
+populations are identical to the person, because the commodities that hit the ceiling
+were not the ones limiting food. Worth knowing before anyone tunes against it: at
+present this is a faithfulness setting, not a balance one.
+
 ## 4. Agriculture and population
 
 The cleanest-derived part of the model — every number below closes exactly against

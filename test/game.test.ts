@@ -409,6 +409,49 @@ describe("moving whole workers (§3.6)", () => {
   });
 });
 
+describe("the production ceiling as a game setting", () => {
+  it("rides on the world, so it survives a save", () => {
+    const game = Game.create("Kittycat", "intermediate", { productionCap: 500 });
+    assert.equal(game.world.productionCap, 500);
+    const resumed = Game.restore(game.snapshot());
+    assert.equal(resumed.world.productionCap, 500);
+  });
+
+  it("rebuilds the economy from the world on restore, ceiling and all", () => {
+    const game = Game.create("Kittycat", "intermediate", { productionCap: 40 });
+    game.human = -1;
+    const resumed = Game.restore(game.snapshot());
+    resumed.human = -1;
+    resumed.advance();
+    const report = resumed.advance()!;
+    for (const result of Object.values(report.production)) {
+      for (const c of Object.values(result.commodities)) {
+        assert.ok(c.output <= 40 + 1e-9, `${c.id} made ${c.output} through a ceiling of 40`);
+      }
+    }
+  });
+
+  it("is absent by default, and a game without one is unchanged", () => {
+    const plain = Game.create("Kittycat", "intermediate");
+    assert.equal(plain.world.productionCap, undefined);
+    assert.equal(Game.create("Kittycat", "intermediate").world.provinces.length,
+      plain.world.provinces.length, "the setting must not disturb worldgen");
+  });
+
+  it("plays a whole game through the ceiling without breaking an invariant", () => {
+    const game = Game.create("Kublai", "intermediate", { productionCap: 200 });
+    game.human = -1;
+    for (let turn = 0; turn < 8; turn++) {
+      playTurn(game);
+      for (const p of game.world.provinces) {
+        assert.ok(Number.isFinite(p.population) && p.population >= 0);
+        assert.ok(Number.isFinite(p.firepower) && p.firepower >= 0);
+      }
+      game.advance();
+    }
+  });
+});
+
 describe("what an army is armed with", () => {
   it("adds up to exactly the firepower on the map", () => {
     const game = Game.create("Kublai", "intermediate");

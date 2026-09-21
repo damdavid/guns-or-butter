@@ -438,6 +438,8 @@ export interface WorldgenOptions {
   provinces?: number;
   /** What the player calls their nation. Nation 0, and kept out of the AI draw. */
   playerNation?: string;
+  /** Ceiling on a single factory's output, in tons (§3.7). Omit for no ceiling. */
+  productionCap?: number;
 }
 
 export function generateWorld(
@@ -614,6 +616,7 @@ export function generateWorld(
   return {
     name,
     level,
+    ...(options.productionCap === undefined ? {} : { productionCap: options.productionCap }),
     width: WORLDGEN.width,
     height: WORLDGEN.height,
     outline,

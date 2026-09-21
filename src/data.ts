@@ -125,6 +125,16 @@ export const PLAYERS: Record<Level, number> = {
   expert: 8,
 };
 
+/**
+ * The ceiling a factory's output hit in the shipped game, in tons [C].
+ *
+ * 32640 is 255 x 128, which is what a byte of mantissa against a 128-ton quantum comes
+ * to — the shape of a DOS-era fixed-point store rather than anything a designer chose.
+ * It is offered as an option rather than applied always, because it is an artefact of
+ * the machine and not of the design, and nothing else in §3 knows about it.
+ */
+export const ORIGINAL_PRODUCTION_CAP = 32640;
+
 export const AGRICULTURE = {
   /** Tons of food per acre with no tools (§4.2). */
   baseYield: 1.0,

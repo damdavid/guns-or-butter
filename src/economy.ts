@@ -25,14 +25,18 @@ export interface EconomyOptions {
    * src/calibration.ts — see the §8.2 pig iron test for the motivating case.
    */
   overrides?: Partial<Record<CommodityId, { k?: number; a?: number }>>;
+  /** Ceiling on a single factory's output, in tons (§3.7). Omit for no ceiling. */
+  productionCap?: number;
 }
 
 export class Economy {
   readonly graph: Graph;
   private readonly overrides: NonNullable<EconomyOptions["overrides"]>;
+  private readonly cap: number;
 
   constructor(options: EconomyOptions = {}) {
     const table = commodityTable(options.pigIron);
+    this.cap = options.productionCap ?? Infinity;
     this.overrides = options.overrides ?? {};
     for (const id of Object.keys(this.overrides)) {
       if (!table.has(id)) throw new Error(`override for unknown commodity: ${id}`);
@@ -65,15 +69,18 @@ export class Economy {
     const workers = state.workers[id] ?? 0;
     if (workers <= 0) return 0;
     const over = this.overrides[id];
+    // Capping capacity rather than output is what makes the ceiling behave: a factory
+    // that cannot exceed it does not demand inputs for tonnage it will never make, so
+    // the labour and the raws above it are freed rather than wasted (§3.5).
     if (c.kind === "raw") {
       const p = rawParams(c, state.level);
       if (!p) return 0;
       const K = over?.k ?? rawCoefficient(c, state.level, acresOf(state.land, c.terrain));
-      return K * workers ** (over?.a ?? p.a);
+      return Math.min(this.cap, K * workers ** (over?.a ?? p.a));
     }
     const p = PARAMS[c.id]?.[state.level] ?? nearestParams(c.id, state.level);
     if (!p && over?.k === undefined) return 0;
-    return (over?.k ?? p!.k) * workers ** (over?.a ?? p?.a ?? 1.1);
+    return Math.min(this.cap, (over?.k ?? p!.k) * workers ** (over?.a ?? p?.a ?? 1.1));
   }
 
   resolve(state: EconomyState): EconomyResult {
