@@ -1504,12 +1504,7 @@ el("quit").addEventListener("click", () => {
 });
 
 el("exit").addEventListener("click", () => {
-  // Only works for a window a script opened, so fall back to saying so plainly.
-  window.close();
-  el("splash-title").textContent = "Thanks for playing";
-  el("splash-body").textContent =
-    "Close the tab when you are ready, or start another game.";
-  el<HTMLButtonElement>("exit").hidden = true;
+  location.href = "index.html";
 });
 
 // A continent in the URL skips the start screen, which is what the test harness uses.

@@ -4,89 +4,76 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>The Global Dilemma: Guns or Butter</title>
-    <link rel="stylesheet" href="style.css" />
+    <meta name="description" content="A faithful reconstruction of Chris Crawford's 1990
+      strategy game, rebuilt from the manual, his own retrospective, and 644 measurements
+      taken from the DOS binary." />
+    <link rel="stylesheet" href="home.css" />
   </head>
   <body>
-    <div id="start" class="overlay">
-      <form id="start-form" class="card">
-        <h1>The Global Dilemma<span>Guns or Butter</span></h1>
-        <p class="blurb">A reconstruction of Chris Crawford's 1990 design. You rule one
-          nation on a continent of rivals. Every worker you put into weapons is a worker
-          not growing food, and you are scored on people, not territory.</p>
-        <label for="f-nation">Your nation</label>
-        <input id="f-nation" name="nation" type="text" maxlength="24" value="Babylon"
-          autocomplete="off" required />
-        <label for="f-continent">Continent</label>
-        <input id="f-continent" name="continent" type="text" maxlength="24" value="Kittycat"
-          autocomplete="off" required />
-        <p class="hint">The continent's name is its seed: the same name always makes the
-          same world.</p>
-        <label for="f-level">Difficulty</label>
-        <select id="f-level" name="level">
-          <option value="beginner">Beginner &mdash; 2 nations</option>
-          <option value="intermediate" selected>Intermediate &mdash; 4 nations</option>
-          <option value="expert">Expert &mdash; 8 nations</option>
-        </select>
-        <label for="f-caps">Production</label>
-        <select id="f-caps" name="caps">
-          <option value="standard" selected>Standard &mdash; no ceiling</option>
-          <option value="original">Original production caps &mdash; 32,640 tons a factory</option>
-        </select>
-        <p class="hint">The shipped game could not store more than 32,640 tons in one
-          factory. That is a limit of the machine rather than the design, so it is
-          offered rather than assumed.</p>
-        <button type="submit" class="primary">Begin</button>
-        <button id="resume" type="button" hidden>Resume</button>
-      </form>
-    </div>
-
-    <div id="splash" class="overlay" hidden>
-      <div class="card">
-        <h1 id="splash-title"></h1>
-        <p id="splash-body"></p>
-        <dl id="splash-rank" class="rank"></dl>
-        <div class="controls">
-          <button id="again" type="button" class="primary">Start new game</button>
-          <button id="exit" type="button">Exit</button>
-        </div>
-      </div>
-    </div>
-
-    <header>
-      <h1>The Global Dilemma<span>Guns or Butter</span></h1>
-      <div id="turn" class="turn"></div>
-      <div id="phases" class="phases"></div>
-      <div id="standing" class="standing"></div>
-    </header>
-
     <main>
-      <section class="pane map-pane">
-        <div class="map-tools">
-          <button id="zoom-in" type="button" title="Zoom in">+</button>
-          <button id="zoom-out" type="button" title="Zoom out">&minus;</button>
-          <button id="zoom-fit" type="button" title="Fit the continent">Fit</button>
-          <span id="map-hint" class="hint"></span>
+      <header class="hero">
+        <img class="art" src="art/guns-or-butter.jpg" alt="Rifles lying in a wheat field
+          beneath a globe" width="512" height="512" />
+        <div class="titling">
+          <h1>The Global Dilemma<span>Guns or Butter</span></h1>
+          <p class="lede">You rule one nation on a continent of rivals. Every worker you
+            put into weapons is a worker not growing food &mdash; and you are scored on
+            people, not territory.</p>
+          <a class="play" href="play.html">Play</a>
+          <p class="note">Runs in the browser. Nothing to install, and your game is saved
+            in the page.</p>
         </div>
-        <div id="map"></div>
-        <div id="march-control" class="march-control" hidden></div>
+      </header>
+
+      <section>
+        <h2>The dilemma</h2>
+        <p>Chris Crawford built this in 1990 around a single tension. Your factories are
+          fed by people, and so is your army; the same workers cannot do both. Arm
+          yourself and you stop growing. Grow and you invite a neighbour to take what you
+          have built.</p>
+        <p>Production has <em>economies of scale</em> &mdash; a factory of two hundred
+          makes more than twice what a factory of a hundred does &mdash; so the strong
+          get stronger, and a nation that falls behind struggles to catch up by industry
+          alone. Conquest is the other way, and it costs you the very thing you are
+          measured on: taking a province kills the people its farmland cannot feed.</p>
       </section>
 
-      <!-- Top to bottom: what this phase is asking of you, then whatever you have
-           clicked on to read about, then the standings. -->
-      <section class="side">
-        <div id="panel" class="pane"></div>
-        <div id="inspector" class="pane inspect" hidden></div>
-        <div id="nations" class="pane"></div>
+      <section>
+        <h2>What is in it</h2>
+        <dl class="facts">
+          <dt>Three difficulties</dt>
+          <dd>Beginner offers 12 commodities, intermediate 19, expert all 33 &mdash; and
+            expert adds the Economic Union, where nations pool their land and people for
+            a turn under one of their number.</dd>
+          <dt>Opponents that play</dt>
+          <dd>Each rival weighs food against arms for itself, and reads the map for a
+            frontier worth crossing. They form unions, resent whoever is winning, and
+            remember who turned on them.</dd>
+          <dt>A continent per name</dt>
+          <dd>The continent's name is its seed, so the same name always makes the same
+            world. Share a name and you share a map.</dd>
+        </dl>
       </section>
+
+      <section>
+        <h2>How it was rebuilt</h2>
+        <p>The original is a DOS game from 1990. This is not an emulation of it but a
+          reconstruction: the rules were recovered from the manual, from Crawford's own
+          retrospective on the design, and from <strong>644 output measurements</strong>
+          taken from the binary under emulation, which is what fixes the productivity of
+          every factory at every difficulty.</p>
+        <p>Where the sources disagreed with the readings, the readings won &mdash; the
+          manual's square-root population rule is not what the shipped game does. Where
+          nothing could be recovered, the gap is marked as design rather than
+          archaeology. <a href="https://github.com/damdavid/guns-or-butter/blob/main/docs/MECHANICS-SPEC.md">The
+          mechanics specification</a> records which is which, line by line.</p>
+      </section>
+
+      <footer>
+        <a class="play small" href="play.html">Play</a>
+        <p>A reconstruction, not the original. The 1990 game is Chris Crawford's.
+          <a href="https://github.com/damdavid/guns-or-butter">Source on GitHub</a>.</p>
+      </footer>
     </main>
-
-    <footer>
-      <button id="advance" type="button"></button>
-      <button id="undo" type="button" hidden>Undo turn</button>
-      <span id="notice" class="notice"></span>
-      <button id="quit" type="button" class="quit">Exit to start</button>
-    </footer>
-
-    <script type="module" src="dist/app.js"></script>
   </body>
 </html>
