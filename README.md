@@ -10,7 +10,9 @@ browser, needs no install, and saves your game in the page.
 No source code for the game survives — Crawford's own
 [source-release page](https://www.erasmatazz.com/library/source-code/index.html) notes
 he does not think he has anything on this title — so the design is reconstructed rather
-than ported.
+than ported. The whole game is here: the economy, map generation, combat, the turn
+loop, AI opponents and the Expert economic unions. What each rule is derived from, and
+where the reconstruction had to invent, is recorded in the spec.
 
 ## Layout
 
@@ -23,59 +25,27 @@ than ported.
 - `docs/SOURCES.md` — where to obtain the copyrighted source material, which is not
   committed here.
 - `src/` — the simulation. No runtime dependencies.
+- `scripts/build-site.ts` — assembles the deployable site out of `web/`.
 - `web/` — the browser front end: plain TypeScript and direct DOM, bundled by esbuild.
   `index.html` is the landing page; `play.html` is the game. The map renderer in
   `src/svg.ts` is shared with the command-line one.
 
-## Status
-
-**Economy sim complete and calibrated.** Production graph, superlinear productivity,
-demand-driven allocation with input hoarding and depth-ordered priority, agriculture,
-population. All 33 commodities have measured parameters; exponents span 1.13 to 2.53.
-The population response is measured too, from 29 readings — which cost the manual two of
-its stated rules, since growth turns out to be linear with saturation rather than a square
-root, and the "30% growth" boundary condition is 14.5% in the shipped game.
-
-**Map generation complete.** Continents are seeded by name, as in the original.
-Capitals, a Delaunay spoke graph, provinces as its centroid dual, roads on half the
-spokes, terrain on the rest, and contiguous nations — feeding straight into the economy.
-
-**Military and the turn loop complete.** Continuous firepower, the combat formula,
-transfers-before-battles, and a phase loop that ties the three subsystems together —
-production, orders, execution, rankings, undo.
-
-**Browser UI.** `npm run dev`, then `localhost:5173`. A landing page, and behind it the
-game: a start screen for the continent, your nation's name and
-the difficulty; worker allocation that *previews* the pro-rata redistribution before it is
-committed, with a number box and nudge buttons for fine work; a pannable, zoomable map
-cropped to the continent; province and nation inspectors, with food output withheld as a
-national secret; military orders given by clicking province to province; and an execution
-phase that replays each march across the map rather than cutting to the result.
-Deliberately built before the AI: the UI is where the original lost, and it is the only
-subsystem whose defects are invisible to tests — playing it has found thirteen so far that the
-unit tests did not. See §10.1.
-
-**AI opponents, first pass.** `src/ai.ts`: a utility function over labour allocations
-for the economy, an influence map over the province graph for the military, and a seeded
-temperament per nation. Rivals arm, grow, mass on the cheapest way in, and attack
-together when none of them could win alone.
-
-**Affinity built, unions not.** `src/affinity.ts` implements §6.4: two decaying
-channels, saturating updates, founding-neighbour ties, and live penalties for leading on
-population or on firepower. Clicking a nation shows how it regards the others. The AI
-and economic unions are specified but not yet built. See §10 of the spec.
-
 ## Commands
 
     npm run dev       # play it in a browser on localhost:5173
-    npm test          # 316 tests, including the 1990 manual's p.12 reference state
-    npm run typecheck
-    npm run build     # bundle the browser app to web/dist/
+    npm test          # 397 tests, including the 1990 manual's p.12 reference state
+    npm run typecheck # both configs: Node for src/, DOM for web/
     npm run validate  # score the sim against all 644 measurements
     npm run fixture   # print the reference state as a Production Summary
     npm run map -- Kittycat expert out.svg   # render a generated continent
     npm run play -- Kublai intermediate 20   # watch the turn loop run
     npm run game -- Kittycat intermediate    # play it yourself in the terminal
+    npm run soak -- 30 16                    # every level and continent, checking
+                                             # invariants on every turn
+
+`npm test` is fast enough to run constantly. `npm run soak` is not — it plays whole
+games and takes about twenty minutes — but it has caught defects the unit tests did
+not, so it is worth running after touching the economy, the planner or the AI.
 
 The game takes `?continent=`, `?level=`, `?nation=` and `?caps=original` query
 parameters, so `localhost:5173/play.html?continent=Kublai&level=expert` skips the start
@@ -96,6 +66,8 @@ nothing to set up in the dashboard. Authenticate once with `npx wrangler login`.
 `site/` is assembled rather than committed: `web/` mixes source and output, and a host
 should not be handed `main.ts`.
 
+## Running it
+
 Developed and verified on Node 26.8.2, which `.nvmrc` pins — `nvm use` picks it up.
 Node runs the TypeScript directly, with no build step for anything outside `web/`.
 
@@ -104,7 +76,8 @@ Requires Node >= 22.18, the release that made type stripping the default. Below 
 `--experimental-strip-types` flag is no longer needed and is not used.
 
 Nothing ships at runtime; the dev dependencies are `typescript`, `@types/node`, and
-`esbuild` for the browser bundle.
+`esbuild` for the browser bundle. `wrangler` is not one of them — `npm run deploy`
+fetches it through `npx` on the rare occasions it is wanted.
 
 ## License
 
