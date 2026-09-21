@@ -1,5 +1,5 @@
 /**
- * The browser app's contract with the things it does not own: the ids in index.html and
+ * The browser app's contract with the things it does not own: the ids in play.html and
  * the `data-` hooks in the SVG. Both are strings crossing a file boundary, so nothing
  * else would catch a typo in them.
  */
@@ -10,7 +10,7 @@ import { generateWorld } from "../src/worldgen.ts";
 import { continentBounds, renderMapSvg } from "../src/svg.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-const html = read("web/index.html");
+const html = read("web/play.html");
 const main = read("web/main.ts");
 const css = read("web/style.css");
 
@@ -32,7 +32,7 @@ test("every element the app looks up exists in the page or in its own markup", (
   for (const id of shell) {
     assert.ok(
       looked.has(id) || labelled.has(id),
-      `index.html defines #${id}, which the app never touches and no label points at`,
+      `play.html defines #${id}, which the app never touches and no label points at`,
     );
   }
   assert.ok(labelled.size > 0, "expected the start form's fields to be labelled");
@@ -44,10 +44,10 @@ test("every element the app looks up exists in the page or in its own markup", (
 test("the page loads the bundle the build script writes", () => {
   const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
   const src = /src="([^"]+)"/.exec(html)?.[1];
-  assert.ok(src, "index.html loads no script");
+  assert.ok(src, "play.html loads no script");
   assert.ok(
     pkg.scripts.build!.includes(`--outfile=web/${src}`),
-    `index.html loads ${src}, which the build script does not produce`,
+    `play.html loads ${src}, which the build script does not produce`,
   );
 });
 

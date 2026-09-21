@@ -21,7 +21,8 @@ than ported.
   committed here.
 - `src/` — the simulation. No runtime dependencies.
 - `web/` — the browser front end: plain TypeScript and direct DOM, bundled by esbuild.
-  The map renderer in `src/svg.ts` is shared with the command-line one.
+  `index.html` is the landing page; `play.html` is the game. The map renderer in
+  `src/svg.ts` is shared with the command-line one.
 
 ## Status
 
@@ -40,7 +41,8 @@ spokes, terrain on the rest, and contiguous nations — feeding straight into th
 transfers-before-battles, and a phase loop that ties the three subsystems together —
 production, orders, execution, rankings, undo.
 
-**Browser UI.** `npm run dev`. A start screen for the continent, your nation's name and
+**Browser UI.** `npm run dev`, then `localhost:5173`. A landing page, and behind it the
+game: a start screen for the continent, your nation's name and
 the difficulty; worker allocation that *previews* the pro-rata redistribution before it is
 committed, with a number box and nudge buttons for fine work; a pannable, zoomable map
 cropped to the continent; province and nation inspectors, with food output withheld as a
@@ -72,8 +74,9 @@ and economic unions are specified but not yet built. See §10 of the spec.
     npm run play -- Kublai intermediate 20   # watch the turn loop run
     npm run game -- Kittycat intermediate    # play it yourself in the terminal
 
-The browser app takes `?continent=`, `?level=` and `?nation=` query parameters, so
-`localhost:5173/?continent=Kublai&level=expert` starts a different world.
+The game takes `?continent=`, `?level=`, `?nation=` and `?caps=original` query
+parameters, so `localhost:5173/play.html?continent=Kublai&level=expert` skips the start
+screen and opens a particular world.
 
 Developed and verified on Node 26.8.2, which `.nvmrc` pins — `nvm use` picks it up.
 Node runs the TypeScript directly, with no build step for anything outside `web/`.

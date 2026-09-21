@@ -1,0 +1,105 @@
+/* The landing page. Same paper-and-ink palette as the game, but a reading layout
+   rather than a working one: one column, generous measure, no panels. */
+:root {
+  --ink: #241f1a;
+  --ink-soft: #5d554b;
+  --paper: #f4f0e6;
+  --panel: #fbf8f1;
+  --rule: #cbc0ac;
+  --accent: #7a5c2e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.25rem 3rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.6 Georgia, "Times New Roman", serif;
+}
+
+main { max-width: 52rem; margin: 0 auto; }
+
+.hero {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 2.5rem;
+}
+.art {
+  width: 260px;
+  height: auto;
+  flex: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: 0 4px 18px rgba(36, 31, 26, 0.22);
+}
+.titling { flex: 1 1 18rem; }
+
+h1 {
+  font-size: 1.9rem;
+  margin: 0 0 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+}
+h1 span {
+  display: block;
+  font-size: 1.15rem;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+.lede { font-size: 1.05rem; margin: 0 0 1.2rem; }
+
+/* The one thing the page is for, so it is the one thing that looks clickable. */
+.play {
+  display: inline-block;
+  background: var(--ink);
+  color: var(--paper);
+  text-decoration: none;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  padding: 0.55rem 2.2rem;
+  border-radius: 2px;
+}
+.play:hover { background: var(--accent); }
+.play.small { font-size: 0.95rem; padding: 0.45rem 1.6rem; }
+
+.note { font-size: 0.85rem; color: var(--ink-soft); margin: 0.7rem 0 0; }
+
+section { border-top: 1px solid var(--rule); padding-top: 1.4rem; margin-bottom: 2rem; }
+
+h2 {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+  margin: 0 0 0.7rem;
+  font-weight: 600;
+}
+
+p { margin: 0 0 0.9rem; }
+
+.facts { margin: 0; }
+.facts dt { font-weight: 600; margin-top: 0.8rem; }
+.facts dt:first-child { margin-top: 0; }
+.facts dd { margin: 0.15rem 0 0; color: var(--ink-soft); }
+
+a { color: var(--accent); }
+
+footer {
+  border-top: 1px solid var(--rule);
+  padding-top: 1.4rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+footer p { margin: 1rem 0 0; }
+
+@media (max-width: 34rem) {
+  .hero { gap: 1.25rem; }
+  .art { width: 100%; max-width: 320px; margin: 0 auto; }
+}
