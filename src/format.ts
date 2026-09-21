@@ -51,3 +51,17 @@ export function grouped(n: number): string {
   const whole = String(Math.floor(Math.abs(n)));
   return sign + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
+
+/**
+ * Whether a tonnage reads as short, spare, or neither — decided on the figure the
+ * player can see, not on the one behind it.
+ *
+ * Displays floor (§10.1), so a surplus of -0.3 shows as "-1". Judging the raw value
+ * against a half-ton threshold meant that row read as a deficit and was not
+ * highlighted: a minus sign on screen with nothing to mark it. Floor first, then judge,
+ * and the colour always agrees with the number beside it.
+ */
+export function standing(tons: number): "short" | "spare" | "" {
+  const shown = Math.floor(tons);
+  return shown < 0 ? "short" : shown > 0 ? "spare" : "";
+}

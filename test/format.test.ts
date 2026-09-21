@@ -4,7 +4,7 @@
  */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { compact, grouped } from "../src/format.ts";
+import { compact, grouped, standing } from "../src/format.ts";
 
 describe("compact numbers", () => {
   it("matches the three cases the rule was written from", () => {
@@ -125,5 +125,33 @@ describe("grouped numbers", () => {
 
   it("handles negatives, which a population should never be", () => {
     assert.equal(grouped(-1_234), "-1,234");
+  });
+});
+
+describe("short or spare", () => {
+  it("agrees with the figure the player is shown", () => {
+    // The bug: the class tested the raw tonnage against half a ton while the cell
+    // floored it, so -0.3 displayed as "-1" with nothing to mark it as a deficit.
+    for (const tons of [-0.01, -0.3, -0.49, -0.5, -0.9, -1, -12.7]) {
+      assert.equal(standing(tons), "short", `${tons} displays as ${Math.floor(tons)}`);
+    }
+  });
+
+  it("calls nothing short or spare when it displays as zero", () => {
+    for (const tons of [0, 0.01, 0.4, 0.5, 0.99]) {
+      assert.equal(standing(tons), "", `${tons} displays as ${Math.floor(tons)}`);
+    }
+  });
+
+  it("calls a visible surplus spare", () => {
+    for (const tons of [1, 1.2, 40, 3000.7]) assert.equal(standing(tons), "spare");
+  });
+
+  it("never disagrees with the sign of the displayed whole number", () => {
+    for (let tons = -5; tons <= 5; tons += 0.07) {
+      const shown = Math.floor(tons);
+      const want = shown < 0 ? "short" : shown > 0 ? "spare" : "";
+      assert.equal(standing(tons), want, `${tons.toFixed(2)} shows ${shown}`);
+    }
   });
 });
