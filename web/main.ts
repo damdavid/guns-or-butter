@@ -1461,6 +1461,17 @@ function begin(continent: string, nation: string, level: Level, caps: boolean): 
   el("start").hidden = true;
   render();
   save();
+  recordStart(continent, nation, level, caps);
+}
+
+/** Logged for /reports. Best effort: the dev server has no endpoint, and play goes on. */
+function recordStart(continent: string, nation: string, level: Level, caps: boolean): void {
+  fetch("/api/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ continent, nation, level, caps }),
+    keepalive: true,
+  }).catch(() => {});
 }
 
 el<HTMLFormElement>("start-form").addEventListener("submit", (event) => {

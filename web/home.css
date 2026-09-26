@@ -108,3 +108,10 @@ footer p { margin: 1rem 0 0; }
    dropped — there is nothing above it to divide it from. */
 .lost { border-top: 0; padding-top: 0; }
 .lost h1 { margin-bottom: 0.8rem; }
+
+/* The start log. Wider than the reading column, since it is a table to scan. */
+main.reports { max-width: 68rem; }
+.reports table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 1.2rem; }
+.reports th, .reports td { text-align: left; padding: 0.3rem 0.7rem 0.3rem 0; border-bottom: 1px solid var(--rule); }
+.reports th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); }
+.reports td:first-child, .reports td:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }

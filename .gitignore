@@ -13,3 +13,6 @@ web/dist/
 
 # Assembled for deploy; rebuilt by `npm run build:site`.
 site/
+
+# Local state from `wrangler dev`, including the local D1 database.
+.wrangler/
