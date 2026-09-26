@@ -26,6 +26,7 @@ where the reconstruction had to invent, is recorded in the spec.
   committed here.
 - `src/` — the simulation. No runtime dependencies.
 - `scripts/build-site.ts` — assembles the deployable site out of `web/`.
+- `worker/` — the Worker behind `/api/start` and `/reports`; `migrations/` is its D1 schema.
 - `web/` — the browser front end: plain TypeScript and direct DOM, bundled by esbuild.
   `index.html` is the landing page; `play.html` is the game. The map renderer in
   `src/svg.ts` is shared with the command-line one.
@@ -53,8 +54,10 @@ screen and opens a particular world.
 
 ## Deploying
 
-The game is entirely static — no server, no API, saves in `localStorage` — so it is
-served as files from the edge.
+The game itself is static — saves live in `localStorage` — so it is served as files
+from the edge. A small Worker (`worker/index.ts`) sits in front of two paths only: the
+game posts each start to `/api/start`, which records it in D1, and `/reports` lists
+those starts with nation, continent, difficulty, caps and IP address.
 
     npm run build:site   # assemble site/ : pages, styles, art, minified bundle
     npm run deploy       # assemble, then push it to Cloudflare Workers
@@ -62,6 +65,13 @@ served as files from the edge.
 `wrangler.jsonc` declares `gb.mitchthefat.com` as a custom domain. The zone is already
 on Cloudflare DNS, so the first deploy creates the record and its certificate; there is
 nothing to set up in the dashboard. Authenticate once with `npx wrangler login`.
+
+`/reports` expects a Cloudflare Access application covering `gb.mitchthefat.com/reports`,
+set up in the Zero Trust dashboard. The Worker refuses any request that did not come
+through Access, so until that policy exists the page returns 403.
+
+Schema changes go in `migrations/`, applied with
+`npx wrangler d1 migrations apply guns-or-butter --remote` (`--local` for `wrangler dev`).
 
 `site/` is assembled rather than committed: `web/` mixes source and output, and a host
 should not be handed `main.ts`.
