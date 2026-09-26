@@ -43,7 +43,8 @@ test("every element the app looks up exists in the page or in its own markup", (
 
 test("the page loads the bundle the build script writes", () => {
   const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
-  const src = /src="([^"]+)"/.exec(html)?.[1];
+  // Absolute URLs are third-party tags, not something the build produces.
+  const src = /src="(?!https?:)([^"]+)"/.exec(html)?.[1];
   assert.ok(src, "play.html loads no script");
   assert.ok(
     pkg.scripts.build!.includes(`--outfile=web/${src}`),
