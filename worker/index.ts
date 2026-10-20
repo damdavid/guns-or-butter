@@ -1,6 +1,10 @@
 /**
  * Records each game start in D1 and renders them at /reports. Everything else is the
  * static site, served from the assets binding.
+ *
+ * The game is published at https://mitchellunited.com/guns-or-butter/. The mitchell-united
+ * Worker strips that prefix and forwards here, so paths below are prefix-free. This Worker
+ * also still owns the old gb.mitchthefat.com hostname, which only redirects to the new home.
  */
 
 // The slice of the Workers runtime used here, so wrangler's types are not a dependency.
@@ -23,13 +27,24 @@ interface Start {
   ip: string | null;
 }
 
+const OLD_HOST = "gb.mitchthefat.com";
+// Public home of the game; the reports page links its assets with absolute paths under it.
+const BASE = "/guns-or-butter";
+const NEW_ORIGIN = "https://mitchellunited.com";
+
 const LEVELS = new Set(["beginner", "intermediate", "expert"]);
 // Names are typed freely by players and the endpoint is public.
 const MAX_NAME = 64;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const { pathname } = new URL(request.url);
+    const url = new URL(request.url);
+    if (url.hostname === OLD_HOST) {
+      // 308 keeps the method and body for anything that is not a plain page view.
+      const status = request.method === "GET" || request.method === "HEAD" ? 301 : 308;
+      return Response.redirect(`${NEW_ORIGIN}${BASE}${url.pathname}${url.search}`, status);
+    }
+    const { pathname } = url;
     if (pathname === "/api/start" && request.method === "POST") return recordStart(request, env);
     if (pathname === "/reports" || pathname === "/reports/") return reports(request, env);
     return env.ASSETS.fetch(request);
@@ -83,8 +98,8 @@ async function reports(request: Request, env: Env): Promise<Response> {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <title>Reports &mdash; The Global Dilemma: Guns or Butter</title>
-    <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="stylesheet" href="/home.css" />
+    <link rel="icon" href="${BASE}/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="${BASE}/home.css" />
   </head>
   <body>
     <main class="reports">

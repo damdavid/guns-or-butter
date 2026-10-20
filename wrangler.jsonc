@@ -1,16 +1,21 @@
 {
-  // Mostly a static site served from `site/`. The Worker only answers the paths in
-  // `run_worker_first`: logging game starts, and the /reports page behind Access.
-  // Because mitchthefat.com is already on Cloudflare DNS the custom domain below
-  // provisions its own record and certificate.
+  // Mostly a static site served from `site/`. The Worker handles logging game starts and the
+  // /reports page behind Access, and passes everything else to the assets.
+  // The game is published at mitchellunited.com/guns-or-butter/, reached through a service
+  // binding from the mitchell-united Worker (which strips the prefix). The custom domain
+  // below is the OLD home; the Worker 301s it to the new one.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "guns-or-butter",
+  // Pinned: the Wrangler login can see two accounts and refuses to guess.
+  "account_id": "ebaf1fc2addc185bec4bb5384241addd",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-21",
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/reports", "/reports/"],
+    // Every path goes through the Worker first: the old gb.mitchthefat.com host must redirect
+    // on any URL, and everything that is not /api/* or /reports falls through to the assets.
+    "run_worker_first": true,
     // `/play` serves play.html, and a bad path gets a 404 rather than the home page —
     // there is no client-side router here for it to hand off to.
     "html_handling": "auto-trailing-slash",

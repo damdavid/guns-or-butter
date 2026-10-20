@@ -4,7 +4,7 @@ A reimplementation of Chris Crawford's *The Global Dilemma: Guns or Butter* (199
 rebuilt from the original manual, Crawford's design retrospective, and measurements
 taken from the DOS binary running under emulation.
 
-**Play it at [gb.mitchthefat.com](https://gb.mitchthefat.com)** — it runs in the
+**Play it at [mitchellunited.com/guns-or-butter](https://mitchellunited.com/guns-or-butter/)** — it runs in the
 browser, needs no install, and saves your game in the page.
 
 No source code for the game survives — Crawford's own
@@ -55,20 +55,31 @@ screen and opens a particular world.
 ## Deploying
 
 The game itself is static — saves live in `localStorage` — so it is served as files
-from the edge. A small Worker (`worker/index.ts`) sits in front of two paths only: the
-game posts each start to `/api/start`, which records it in D1, and `/reports` lists
-those starts with nation, continent, difficulty, caps and IP address.
+from the edge. A small Worker (`worker/index.ts`) sits in front: the game posts each start to
+`/api/start`, which records it in D1, and `/reports` lists those starts with nation,
+continent, difficulty, caps and IP address. Every other path falls through to the static
+assets (and the old `gb.mitchthefat.com` host redirects to the new location).
 
     npm run build:site   # assemble site/ : pages, styles, art, minified bundle
     npm run deploy       # assemble, then push it to Cloudflare Workers
 
-`wrangler.jsonc` declares `gb.mitchthefat.com` as a custom domain. The zone is already
-on Cloudflare DNS, so the first deploy creates the record and its certificate; there is
-nothing to set up in the dashboard. Authenticate once with `npx wrangler login`.
+The game is published at **mitchellunited.com/guns-or-butter/**. That site's own Worker
+(the `mitchell-united` repo) forwards `/guns-or-butter/*` here through a service binding,
+stripping the prefix, so this Worker still sees `/`, `/play`, `/api/start` and `/reports`.
+The game's pages use relative URLs for that reason; keep it that way (the one exception is
+`web/404.html`, which can be served at any depth and so links assets under `/guns-or-butter/`).
 
-`/reports` expects a Cloudflare Access application covering `gb.mitchthefat.com/reports`,
-set up in the Zero Trust dashboard. The Worker refuses any request that did not come
-through Access, so until that policy exists the page returns 403.
+`wrangler.jsonc` still declares `gb.mitchthefat.com` as a custom domain, but only so the
+Worker can 301 it (paths and query kept) to the new location. Authenticate once with
+`npx wrangler login`; with two Cloudflare accounts, `account_id` must be pinned.
+
+Deploy order matters when the prefix routing changes: deploy `mitchell-united` first, then
+this Worker.
+
+`/reports` is at **mitchellunited.com/guns-or-butter/reports** and expects a Cloudflare
+Access application covering that path, set up in the Zero Trust dashboard. The Worker
+refuses any request that did not come through Access, so until that policy exists the page
+returns 403.
 
 Schema changes go in `migrations/`, applied with
 `npx wrangler d1 migrations apply guns-or-butter --remote` (`--local` for `wrangler dev`).
